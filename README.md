@@ -1,5 +1,7 @@
 # Lottery · 彩票数据可视化与智能推荐
 
+🌐 **在线访问**：[https://doudoutech.cloud/](https://doudoutech.cloud/)
+
 **前后端分离**的彩票数据站。
 支持 **双色球 (SSQ)** 与 **大乐透 (DLT)**，提供历史开奖可视化、号码频率/冷热/遗漏分析、走势图，以及 **89 个推荐算法**（12 大分类）驱动的算法广场、智能推荐与滚动回测。
 
@@ -96,15 +98,15 @@ npm run build        # 产物到 frontend/dist
 
 ## 服务器部署（无 Docker）
 
-1. 把整个 `lottery_web/` 上传到服务器 `/opt/lottery_easy`：
+1. 把整个 `lottery_web/` 上传到服务器 `/opt/lottery`：
    ```bash
-   rsync -avz --exclude 'node_modules' --exclude '.venv' lottery_web/ user@<IP>:/opt/lottery_easy/
+   rsync -avz --exclude 'node_modules' --exclude '.venv' --exclude 'app/data' lottery_web/ user@<IP>:/opt/lottery/
    ```
 2. 在服务器以 root 执行一键部署：
    ```bash
-   sudo bash /opt/lottery_easy/deploy/install.sh
+   sudo bash /opt/lottery/deploy/install.sh
    ```
-3. 浏览器访问 `http://<服务器公网IP>/`。
+3. 浏览器访问 [https://doudoutech.cloud/](https://doudoutech.cloud/)。
 
 部署脚本会自动：安装 nginx/python 依赖 → 建虚拟环境装包（含 numpy/scikit-learn）→ 爬取数据 → 配置 Nginx(80) → 配置 systemd 自启 → 开放防火墙。
 
