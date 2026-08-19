@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #070810;
+  color: #e7e9f0;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 全局背景光晕 */
+.bg-aurora {
+  background:
+    radial-gradient(900px circle at 12% -8%, rgba(255, 59, 92, 0.16), transparent 45%),
+    radial-gradient(800px circle at 92% 0%, rgba(59, 130, 246, 0.16), transparent 45%),
+    radial-gradient(700px circle at 50% 120%, rgba(245, 196, 81, 0.08), transparent 50%),
+    #070810;
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.gradient-text {
+  background: linear-gradient(100deg, #ff3b5c, #ff7a45 40%, #f5c451);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.gradient-text-blue {
+  background: linear-gradient(100deg, #22d3ee, #3b82f6 60%, #818cf8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.card-hover {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s, border-color 0.25s;
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.7);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #1b1f2b 25%, #272c3a 37%, #1b1f2b 63%);
+  background-size: 400% 100%;
+}

@@ -1,0 +1,13 @@
+[Unit]
+Description=Lottery Easy · 每日 0:00 触发全量算法入库
+Requires=lottery-easy-algos.service
+
+[Timer]
+# 每天 00:00 触发；Persistent=true 防止服务器关机错过当天，重启后补跑一次
+OnCalendar=*-*-* 00:00:00
+Persistent=true
+AccuracySec=30s
+Unit=lottery-easy-algos.service
+
+[Install]
+WantedBy=timers.target

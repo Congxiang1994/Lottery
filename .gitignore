@@ -1,0 +1,21 @@
+# 依赖
+node_modules/
+backend/.venv/
+__pycache__/
+*.pyc
+
+# 本地日志
+*.log
+
+# 系统
+.DS_Store
+
+# 数据文件（本地生成 / 历史数据，不入库）
+backend/app/data/
+*.db
+
+# 构建产物
+frontend/dist/
+
+# vite 临时文件
+frontend/vite.config.ts.timestamp-*.mjs

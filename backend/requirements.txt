@@ -1,0 +1,7 @@
+fastapi>=0.111
+uvicorn[standard]>=0.30
+gunicorn>=22.0
+requests>=2.31
+lunar_python>=1.0.0
+numpy>=1.26
+scikit-learn>=1.4

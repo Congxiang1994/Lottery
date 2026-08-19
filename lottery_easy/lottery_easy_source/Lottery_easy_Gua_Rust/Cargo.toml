@@ -1,0 +1,51 @@
+[package]
+name = "lottery_easy_gua"
+version = "1.0.0"
+edition = "2021"
+authors = ["周易彩票预测系统"]
+description = "基于周易卦象的彩票预测系统 - Rust重写版"
+license = "MIT"
+
+[dependencies]
+# 日期时间处理
+chrono = "0.4"
+chrono-tz = "0.8"
+
+# 序列化/反序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# 并行计算
+rayon = "1.8"
+
+# 进度条
+indicatif = "0.17"
+
+# 命令行参数
+clap = { version = "4.4", features = ["derive"] }
+
+# 随机数
+rand = "0.8"
+
+# 数值计算
+num-traits = "0.2"
+
+# 文件系统
+dirs = "5.0"
+
+# 正则表达式
+regex = "1.10"
+
+# 静态变量
+lazy_static = "1.4"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true

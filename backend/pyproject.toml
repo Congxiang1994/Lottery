@@ -1,0 +1,21 @@
+[project]
+name = "lottery-easy-backend"
+version = "1.0.0"
+description = "彩票数据服务后端 (FastAPI) - 双色球/大乐透"
+authors = [{ name = "WorkBuddy" }]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "gunicorn>=22.0",
+    "requests>=2.31",
+    "lunar_python>=1.0.0",
+]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "app" }]

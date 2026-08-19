@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#
+# Lottery Easy · 一键部署脚本（无 Docker）
+# 在 Ubuntu 服务器上以 root 或 sudo 运行。
+# 前置：项目文件已放到 /opt/lottery_easy（含 backend/ frontend/dist/ deploy/）。
+#
+set -euo pipefail
+
+APP_DIR=/opt/lottery_easy
+BACKEND="$APP_DIR/backend"
+PY="$BACKEND/.venv/bin/python"
+GUNICORN="$BACKEND/.venv/bin/gunicorn"
+
+step() { echo -e "\n\033[36m==> $1\033[0m"; }
+
+step "[1/6] 安装系统依赖 (nginx / python3-venv)"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y nginx python3-venv python3-pip git curl
+
+step "[2/6] 创建 Python 虚拟环境并安装后端依赖"
+python3 -m venv "$BACKEND/.venv"
+"$PY" -m pip install --upgrade pip -q
+"$PY" -m pip install -r "$BACKEND/requirements.txt" -q
+
+step "[3/6] 抓取 / 校准历史数据（500彩票网）"
+if (cd "$BACKEND" && PYTHONPATH="$BACKEND" "$PY" scripts/fetch_data.py); then
+  echo "数据抓取完成"
+else
+  echo "⚠️ 抓取失败，将使用已附带的历史数据（ssq.json / dlt.json）"
+fi
+
+step "[4/6] 配置 Nginx（80 端口）"
+cp "$APP_DIR/deploy/nginx.conf" /etc/nginx/sites-available/lottery_easy.conf
+ln -sf /etc/nginx/sites-available/lottery_easy.conf /etc/nginx/sites-enabled/lottery_easy.conf
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl reload nginx 2>/dev/null || systemctl restart nginx
+
+step "[5/7] 配置 systemd 服务（gunicorn）"
+cp "$APP_DIR/deploy/lottery-easy.service" /etc/systemd/system/lottery-easy.service
+chown -R ubuntu:ubuntu "$APP_DIR"
+systemctl daemon-reload
+systemctl enable --now lottery-easy
+
+step "[6/7] 配置每日 0:00 全量算法入库（systemd timer）"
+cp "$APP_DIR/deploy/lottery-easy-algos.service" /etc/systemd/system/lottery-easy-algos.service
+cp "$APP_DIR/deploy/lottery-easy-algos.timer"    /etc/systemd/system/lottery-easy-algos.timer
+systemctl daemon-reload
+systemctl enable --now lottery-easy-algos.timer
+# 装完立刻跑一次（异步，不阻塞 deploy）
+systemctl start lottery-easy-algos.service 2>/dev/null || true
+
+step "[7/7] 开放防火墙 80 端口"
+ufw allow 80/tcp 2>/dev/null || true
+
+echo -e "\n\033[32m✅ 部署完成！\033[0m"
+echo "   访问地址： http://<服务器公网IP>/"
+echo "   API 健康检查： curl http://127.0.0.1/api/health"
+echo "   查看后端日志： journalctl -u lottery-easy -f"
+echo "   查看入库日志： journalctl -u lottery-easy-algos -f"
+echo "   下次定时跑批： systemctl list-timers lottery-easy-algos.timer"
+echo "   手动立即跑批： systemctl start lottery-easy-algos.service"
+echo "   重新抓取数据：  cd $BACKEND && $PY scripts/fetch_data.py"

@@ -1,0 +1,287 @@
+# 彩票预测系统集合 - 开源许可证 / Lottery Prediction System Collection - Open Source License
+# 本项目**不采用通用MIT/Apache/GPL等标准协议**，使用作者独立编写的专属开源协议。
+
+**版权所有 (c) 2026 carpenterma7 / Copyright (c) 2026 Lottery Prediction System Collection Author**
+
+本许可证以中英文双语表述，两种文本具有同等法律效力。如中英文文本存在歧义，以中文文本为准。
+
+This license is provided in both Chinese and English, both versions having equal legal effect. In case of ambiguity between the Chinese and English versions, the Chinese version shall prevail.
+
+---
+
+# 中文版本
+
+## 第一条 授权范围
+
+1. **个人使用**：在遵守本许可证全部条款的前提下，任何人（以下简称"被授权人"）可免费获取、使用、复制、修改、合并本软件及其衍生作品，用于个人学习、研究和技术交流目的。
+
+2. **非商业用途**：本软件可用于非商业性质的教育、学术研究和个人技术探讨。被授权人在非商业用途下享有本许可证授予的全部权利。
+
+3. **源代码获取**：被授权人有权获取、阅读、分析本软件的全部源代码，并在此基础上进行学习和技术研究。
+
+## 第二条 商业化授权
+
+1. **商业使用限制**：任何形式的商业使用、商业化运营、有偿服务、直接或间接盈利行为，包括但不限于：
+   - 将本软件或其衍生作品用于销售、出租、许可或订阅服务；
+   - 将本软件集成至商业产品或付费服务中；
+   - 利用本软件提供有偿预测、咨询或分析服务；
+   - 以本软件为基础开发商业应用或平台；
+   - 通过本软件获取直接或间接经济利益的其他行为；
+
+   **均须事先获得原始著作权人的书面授权。**
+
+2. **授权申请**：商业使用授权需向原始著作权人提出书面申请，经双方协商一致并签署正式商业授权协议后方可进行。未经书面授权的商业使用行为构成侵权。
+
+3. **授权范围与费用**：商业授权的具体范围、期限、费用及其他条款由双方在商业授权协议中另行约定。
+
+## 第三条 7% 赠与条款
+
+1. **赠与义务**：若被授权人因使用、修改、分发本软件或其衍生作品而获得任何形式的利润或经济收益，被授权人应根据以下区分向原始著作权人赠与该收益的 **7%（百分之七）**：
+
+2. **赠与性质区分**：
+   - **彩票中奖（自愿赠与）**：若被授权人因使用本软件而中得彩票大奖，7% 的赠与为**自愿性质**。此因彼果：每个算法作者都跑过若干次，有的算法几百上千次的改进，有成果，算是因；若被授权人因本项目的某些影响而中了大奖，心中难平，算是果；此因彼果，可自愿赠与 7%。赠与基数为中奖金额扣除法定税费后的净额。
+   - **商业利润（强制赠与）**：若被授权人通过商业运营、有偿服务、再分发或其他商业行为获得利润，7% 的赠与为**强制性质**。被授权人必须将该商业净利润的 7% 赠与原始著作权人。此为使用本软件进行商业活动的必要条件。
+
+3. **履行方式**：
+   - **商业利润的强制赠与**：被授权人应在获得利润后的 30 日内主动与原始著作权人联系并履行赠与义务。原始著作权人有权要求被授权人提供合理的收益证明。
+   - **彩票中奖的自愿赠与**：被授权人可自愿联系原始著作权人履行赠与。
+
+## 第四条 再分发条款
+
+1. **再分发条件**：被授权人可在遵守以下条件的前提下再分发本软件或其衍生作品：
+   - 保留本许可证文件的完整内容；
+   - 保留原始版权声明和作者署名信息；
+   - 在修改后的文件中注明修改内容、修改日期及修改者信息；
+   - 再分发的作品须以本许可证或同等 restrictive 的许可证授权。
+
+2. **衍生作品**：基于本软件创作的衍生作品须：
+   - 明确标注其衍生自本软件；
+   - 保留原始著作权人的署名；
+   - 遵守本许可证的全部条款，包括商业授权条款和 7% 赠与条款。
+
+## 第五条 修改权限
+
+1. **修改权利**：被授权人有权出于个人学习和研究目的修改本软件源代码。
+
+2. **修改义务**：
+   - 修改后的文件须添加显著的修改声明，注明修改内容、修改日期及修改者；
+   - 不得删除或篡改原始版权声明和许可证信息；
+   - 修改后的作品若对外分发，须以本许可证授权，并遵守全部条款。
+
+3. **修改声明格式**：
+   ```
+   修改记录：
+   - 修改者：<姓名/ID>
+   - 修改日期：YYYY-MM-DD
+   - 修改内容：<简要描述>
+   ```
+
+## 第六条 署名要求
+
+1. **署名义务**：被授权人在使用、引用、再分发或基于本软件创作衍生作品时，须以显著方式标注原始著作权人的署名。
+
+2. **署名格式**：
+   ```
+   本项目基于「彩票预测系统集合」开发
+   原作者：carpenterma7
+   项目地址：<GitHub 仓库地址>
+   ```
+
+3. **学术引用**：在学术论文、技术报告或其他公开出版物中引用本软件时，须按学术规范注明出处。
+
+## 第七条 免责声明
+
+1. **无担保**：本软件按"现状"（AS IS）提供，不附带任何明示或暗示的担保，包括但不限于：
+   - 适销性担保；
+   - 特定用途适用性担保；
+   - 不侵权担保；
+   - 准确性、可靠性或有效性担保。
+
+2. **责任限制**：在任何情况下，原始著作权人均不对因使用或无法使用本软件而产生的任何直接、间接、附带、特殊、惩罚性或后果性损害承担责任，包括但不限于：
+   - 数据丢失；
+   - 利润损失；
+   - 业务中断；
+   - 购买替代产品或服务的费用；
+   - 彩票投注损失。
+
+3. **风险承担**：被授权人使用本软件即表示其理解并自愿承担全部风险。被授权人须对其使用本软件的行为及由此产生的一切后果承担全部责任。
+
+4. **彩票本质声明**：彩票中奖号码本质上是随机事件，本软件中的所有预测结果仅供技术探讨与学习交流，不构成任何形式的投注建议。本软件无法、也不保证能够准确预测彩票号码。被授权人应理性对待彩票，切勿沉迷。
+
+5. **法律合规与违法责任**：
+   - **守法义务**：使用本代码的任何个人或组织，无论出于何种目的，均不得违反中华人民共和国及代码使用地所在国家或地区的法律法规。
+   - **违法责任承担**：如因使用本代码而产生任何违法违规行为，相关法律责任由使用者自行承担。
+   - **损失赔偿**：若因使用者的违法违规行为导致代码作者或相关方遭受任何损失（包括但不限于法律诉讼、经济赔偿、名誉损害等），使用者应承担全部赔偿责任，包括但不限于直接损失、间接损失以及为解决纠纷所产生的合理费用（如律师费、诉讼费等）。
+
+## 第八条 知识产权
+
+1. **著作权归属**：本软件的著作权归原始著作权人所有。本许可证不转让著作权，仅授予使用许可。
+
+2. **商标权**：本许可证不授予使用原始著作权人商标、名称或标识的任何权利。
+
+3. **专利权**：本许可证不授予使用原始著作权人任何专利的任何权利。
+
+## 第九条 终止条款
+
+1. **自动终止**：若被授权人违反本许可证的任何条款，本许可证及其授予的全部权利自动终止，无需另行通知。
+
+2. **终止后果**：许可证终止后，被授权人须立即：
+   - 停止使用本软件；
+   - 销毁所有副本；
+   - 履行已产生的赠与义务。
+
+3. **存续条款**：第七条（免责声明）、第三条（7% 赠与条款）和第六条（署名要求）在许可证终止后继续有效。
+
+## 第十条 其他条款
+
+1. **许可证修改**：原始著作权人保留随时修改本许可证的权利。修改后的许可证自发布之日起对新获取本软件的用户生效。
+
+2. **可分割性**：若本许可证的任何条款被认定为无效或不可执行，不影响其余条款的效力。
+
+3. **完整协议**：本许可证构成双方就本软件使用事项的完整协议。
+
+4. **适用法律**：本许可证受中华人民共和国法律管辖。
+
+---
+
+# English Version
+
+## Article 1: Grant of Rights
+
+1. **Personal Use**: Subject to full compliance with all terms of this license, any person (hereinafter "Licensee") may obtain, use, copy, modify, and merge this software and its derivative works for personal learning, research, and technical exchange purposes, free of charge.
+
+2. **Non-Commercial Use**: This software may be used for non-commercial educational, academic research, and personal technical exploration purposes. The Licensee enjoys all rights granted by this license for non-commercial use.
+
+3. **Source Code Access**: The Licensee has the right to obtain, read, and analyze the complete source code of this software, and to conduct learning and technical research based on it.
+
+## Article 2: Commercialization Authorization
+
+1. **Commercial Use Restrictions**: Any form of commercial use, commercial operation, paid services, or direct or indirect profit-making activities, including but not limited to:
+   - Selling, renting, licensing, or subscribing to this software or its derivative works;
+   - Integrating this software into commercial products or paid services;
+   - Providing paid prediction, consulting, or analysis services using this software;
+   - Developing commercial applications or platforms based on this software;
+   - Any other activity that obtains direct or indirect economic benefits through this software;
+
+   **shall require prior written authorization from the original copyright holder.**
+
+2. **Authorization Application**: Commercial use authorization must be submitted in writing to the original copyright holder. Commercial use may only proceed after both parties have reached an agreement through negotiation and signed a formal commercial authorization agreement. Commercial use without written authorization constitutes infringement.
+
+3. **Scope and Fees**: The specific scope, duration, fees, and other terms of commercial authorization shall be separately agreed upon by both parties in the commercial authorization agreement.
+
+## Article 3: 7% Gift Clause
+
+1. **Gift Obligation**: If the Licensee obtains any form of profit or economic gain from the use, modification, or distribution of this software or its derivative works, the Licensee shall gift **7% (seven percent)** of such gains to the original copyright holder, in accordance with the following distinction:
+
+2. **Nature of Gift**:
+   - **Lottery Winnings (Voluntary Gift)**: If the Licensee wins a lottery prize through the use of this software, the 7% gift is **voluntary in nature**. Cause and effect: The author has run each algorithm numerous times, with some algorithms undergoing hundreds or thousands of iterations of improvement. These results can be considered the "cause." If the Licensee, influenced by this project, wins a grand prize and feels compelled to give back, this can be considered the "effect." This cause leads to that effect; a voluntary gift of 7% is appreciated. The gift basis is the net amount of the prize after deducting statutory taxes and fees.
+   - **Commercial Profits (Mandatory Gift)**: If the Licensee obtains profits through commercial operation, paid services, redistribution, or other commercial activities, the 7% gift is **mandatory in nature**. The Licensee must gift 7% of the net commercial profit to the original copyright holder. This is a necessary condition for using this software for commercial activities.
+
+3. **Performance Method**:
+   - **Mandatory gift for commercial profits**: The Licensee shall proactively contact the original copyright holder and fulfill the gift obligation within 30 days of obtaining the profits. The original copyright holder has the right to request reasonable proof of income from the Licensee.
+   - **Voluntary gift for lottery winnings**: The Licensee may voluntarily contact the original copyright holder to fulfill the gift.
+
+## Article 4: Redistribution Terms
+
+1. **Redistribution Conditions**: The Licensee may redistribute this software or its derivative works subject to the following conditions:
+   - Retain the complete content of this license file;
+   - Retain the original copyright notice and author attribution information;
+   - Indicate the modified content, modification date, and modifier information in modified files;
+   - Redistributed works must be licensed under this license or an equally restrictive license.
+
+2. **Derivative Works**: Derivative works created based on this software must:
+   - Clearly indicate that they are derived from this software;
+   - Retain the attribution of the original copyright holder;
+   - Comply with all terms of this license, including the commercial authorization clause and the 7% gift clause.
+
+## Article 5: Modification Permissions
+
+1. **Right to Modify**: The Licensee has the right to modify the source code of this software for personal learning and research purposes.
+
+2. **Modification Obligations**:
+   - Modified files must include a prominent modification statement indicating the modified content, modification date, and modifier;
+   - Original copyright notices and license information must not be deleted or tampered with;
+   - Modified works distributed externally must be licensed under this license and comply with all terms.
+
+3. **Modification Statement Format**:
+   ```
+   Modification Record:
+   - Modified by: <Name/ID>
+   - Modification Date: YYYY-MM-DD
+   - Modified Content: <Brief description>
+   ```
+
+## Article 6: Attribution Requirements
+
+1. **Attribution Obligation**: The Licensee must prominently attribute the original copyright holder when using, citing, redistributing, or creating derivative works based on this software.
+
+2. **Attribution Format**:
+   ```
+   This project is developed based on "Lottery Prediction System Collection"
+   Original Author: Lottery Prediction System Collection Author
+   Project URL: <GitHub repository URL>
+   ```
+
+3. **Academic Citation**: When citing this software in academic papers, technical reports, or other public publications, the source must be acknowledged in accordance with academic standards.
+
+## Article 7: Disclaimer
+
+1. **No Warranty**: This software is provided "AS IS", without any express or implied warranties, including but not limited to:
+   - Warranty of merchantability;
+   - Warranty of fitness for a particular purpose;
+   - Warranty of non-infringement;
+   - Warranty of accuracy, reliability, or effectiveness.
+
+2. **Limitation of Liability**: In no event shall the original copyright holder be liable for any direct, indirect, incidental, special, punitive, or consequential damages arising from the use or inability to use this software, including but not limited to:
+   - Loss of data;
+   - Loss of profits;
+   - Business interruption;
+   - Costs of purchasing substitute products or services;
+   - Lottery betting losses.
+
+3. **Assumption of Risk**: By using this software, the Licensee acknowledges understanding and voluntarily assumes all risks. The Licensee shall bear full responsibility for their use of this software and all consequences arising therefrom.
+
+4. **Lottery Nature Declaration**: Lottery winning numbers are essentially random events. All prediction results in this software are for technical discussion and learning exchange purposes only and do not constitute any form of betting advice. This software cannot and does not guarantee accurate prediction of lottery numbers. The Licensee should treat lotteries rationally and avoid addiction.
+
+5. **Legal Compliance and Liability for Violations**:
+   - **Obligation to Comply with Law**: Any individual or organization using this code, regardless of purpose, shall not violate the laws and regulations of the People's Republic of China and the country or region where the code is used.
+   - **Liability for Violations**: If any illegal or non-compliant behavior arises from the use of this code, the relevant legal liability shall be borne solely by the user.
+   - **Compensation for Losses**: If the user's illegal or non-compliant behavior causes any losses to the code author or related parties (including but not limited to legal proceedings, economic compensation, reputational damage, etc.), the user shall bear full compensation liability, including but not limited to direct losses, indirect losses, and reasonable expenses incurred in resolving disputes (such as attorney fees, litigation costs, etc.).
+
+## Article 8: Intellectual Property
+
+1. **Copyright Ownership**: The copyright of this software belongs to the original copyright holder. This license does not transfer copyright; it only grants a license to use.
+
+2. **Trademark Rights**: This license does not grant any right to use the trademarks, names, or logos of the original copyright holder.
+
+3. **Patent Rights**: This license does not grant any right to use any patents held by the original copyright holder.
+
+## Article 9: Termination
+
+1. **Automatic Termination**: If the Licensee violates any term of this license, this license and all rights granted herein shall automatically terminate, without further notice.
+
+2. **Consequences of Termination**: Upon termination of the license, the Licensee shall immediately:
+   - Cease use of this software;
+   - Destroy all copies;
+   - Fulfill any gift obligations that have already accrued.
+
+3. **Survival Clause**: Article 7 (Disclaimer), Article 3 (7% Gift Clause), and Article 6 (Attribution Requirements) shall survive termination of this license.
+
+## Article 10: Miscellaneous
+
+1. **License Modification**: The original copyright holder reserves the right to modify this license at any time. The modified license shall take effect for new users who obtain this software from the date of publication.
+
+2. **Severability**: If any provision of this license is held to be invalid or unenforceable, the remaining provisions shall remain in full force and effect.
+
+3. **Entire Agreement**: This license constitutes the entire agreement between the parties regarding the use of this software.
+
+4. **Governing Law**: This license shall be governed by the laws of the People's Republic of China.
+
+---
+
+**本许可证自被授权人获取本软件之日起生效。**
+**This license takes effect from the date the Licensee obtains this software.**
+
+**原始著作权人 / Original Copyright Holder：carpenterma7 / Lottery Prediction System Collection Author**
+
+**联系方式 / Contact：** 详见项目 README.md 中的联系方式章节 / See the contact section in the project's README.md
