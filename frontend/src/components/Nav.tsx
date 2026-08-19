@@ -1,5 +1,7 @@
 import { NavLink, Link } from "react-router-dom";
-import { Dices, LayoutDashboard, History, Sparkles, Layers } from "lucide-react";
+import { Dices, LayoutDashboard, History, Sparkles, Layers, Github } from "lucide-react";
+
+const GITHUB_URL = "https://github.com/Congxiang1994/Lottery";
 
 const links = [
   { to: "/", label: "首页", icon: LayoutDashboard },
@@ -39,6 +41,17 @@ export default function Nav() {
               <span className="hidden sm:inline">{l.label}</span>
             </NavLink>
           ))}
+
+          <a
+            href={GITHUB_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="⭐ 给项目点个 Star，支持开源！"
+            className="group ml-1 flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-white/75 transition hover:border-brand-red/50 hover:bg-brand-red/10 hover:text-white"
+          >
+            <Github size={15} className="transition group-hover:scale-110" />
+            <span className="hidden sm:inline">Star</span>
+          </a>
         </nav>
       </div>
     </header>
