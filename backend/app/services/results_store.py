@@ -6,7 +6,7 @@
 表结构保证 (lottery, algo_id, run_date) 唯一，重跑当天数据会 UPSERT。
 查询「最新一批」就是 ORDER BY run_date DESC LIMIT 89*2 后筛 lottery。
 
-路径：/opt/lottery_easy/backend/app/data/algo_results.db
+路径：/opt/lottery/backend/app/data/algo_results.db
 """
 from __future__ import annotations
 
