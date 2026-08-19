@@ -17,7 +17,7 @@ export default function Nav() {
             <Dices size={18} />
           </span>
           <span className="text-lg font-extrabold tracking-tight">
-            Lottery<span className="gradient-text">Easy</span>
+            Lottery
           </span>
         </Link>
 
