@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Draw } from "../types";
 
 /**
- * 500 彩票网风格开奖走势图（Canvas 绘制）
+ * 500 彩票网风格开奖走势图（Canvas 绘制，自适应容器宽度，无横向滚动条）
  *
  * - 左列：期号
  * - 中部：红球 1..redMax 列（浅红底），右侧蓝球 1..blueMax 列（浅蓝底）
@@ -19,28 +19,43 @@ interface Props {
   title?: string;
 }
 
-const ISSUE_W = 64;
-const COL_W = 30;
-const ROW_H = 26;
-const OMIT_H = 30;
-const HEAD_H = 24;
-
 export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit, title }: Props) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const ref = useRef<HTMLCanvasElement>(null);
+  const [cw, setCw] = useState(0);
+
+  // 监听容器宽度，响应式重绘
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () => setCw(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = ref.current;
-    if (!canvas || draws.length === 0) return;
+    if (!canvas || draws.length === 0 || cw === 0) return;
     const dpr = window.devicePixelRatio || 1;
+
+    // 自适应列宽：列数固定，总宽铺满容器，因此绝不出现横向滚动条
+    const ISSUE_W = Math.min(64, Math.max(44, cw * 0.06));
     const cols = redMax + blueMax;
-    const width = ISSUE_W + cols * COL_W;
+    const COL_W = (cw - ISSUE_W) / cols;
+    const ROW_H = 24;
+    const OMIT_H = 28;
+    const HEAD_H = 22;
+    const width = cw;                       // = ISSUE_W + cols * COL_W
     const height = HEAD_H + draws.length * ROW_H + OMIT_H;
+
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
     const ctx = canvas.getContext("2d")!;
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
     const RED = "#ff3b5c";
@@ -49,9 +64,11 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
     const CELL_BG = "rgba(255,255,255,0.03)";
     const RED_BG = "rgba(255,59,92,0.05)";
     const BLUE_BG = "rgba(59,130,246,0.06)";
+    const r = Math.min(10.5, COL_W * 0.4);
+    const headFont = `${Math.max(9, Math.min(11, COL_W * 0.5))}px Inter, sans-serif`;
 
     // ---------- 表头 ----------
-    ctx.font = "10px Inter, sans-serif";
+    ctx.font = headFont;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "rgba(255,255,255,0.45)";
@@ -59,7 +76,7 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
     for (let n = 1; n <= redMax; n++) {
       const x = ISSUE_W + (n - 1) * COL_W + COL_W / 2;
       ctx.fillStyle = RED;
-      ctx.font = "bold 11px Inter, sans-serif";
+      ctx.font = `bold ${headFont}`;
       ctx.fillText(String(n), x, HEAD_H / 2);
     }
     for (let n = 1; n <= blueMax; n++) {
@@ -125,20 +142,18 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
     }
 
     // ---------- 号码球 + 期号 ----------
-    ctx.font = "bold 10px Inter, sans-serif";
     for (let i = 0; i < draws.length; i++) {
       const d = draws[i];
       const y = rowY(i);
       // 期号
       ctx.textAlign = "right";
       ctx.fillStyle = "rgba(255,255,255,0.55)";
-      ctx.font = "10px Inter, monospace";
+      ctx.font = `${Math.max(9, Math.min(11, COL_W * 0.5))}px Inter, monospace`;
       ctx.fillText(d.issue, ISSUE_W - 8, y);
       ctx.textAlign = "center";
-      ctx.font = "bold 10px Inter, sans-serif";
+      ctx.font = `bold ${Math.max(8, Math.min(10, COL_W * 0.46))}px Inter, sans-serif`;
       const drawBall = (colIdx: number, text: string, isBlue: boolean) => {
         const x = colX(colIdx);
-        const r = 10.5;
         const g = ctx.createRadialGradient(x - 3, y - 3, 1.5, x, y, r);
         if (isBlue) { g.addColorStop(0, "#60a5fa"); g.addColorStop(1, BLUE); }
         else { g.addColorStop(0, "#ff6b85"); g.addColorStop(1, RED); }
@@ -162,7 +177,7 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
     const omitY = HEAD_H + draws.length * ROW_H + OMIT_H / 2;
     ctx.textAlign = "right";
     ctx.fillStyle = "rgba(255,255,255,0.45)";
-    ctx.font = "10px Inter, sans-serif";
+    ctx.font = `${Math.max(9, Math.min(11, COL_W * 0.5))}px Inter, sans-serif`;
     ctx.fillText("遗漏", ISSUE_W - 8, omitY);
     ctx.textAlign = "center";
     for (let n = 1; n <= redMax; n++) {
@@ -175,12 +190,12 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
       ctx.fillStyle = v === 0 ? "rgba(59,130,246,0.85)" : "rgba(255,255,255,0.4)";
       ctx.fillText(v === 0 ? "0" : String(v), colX(redMax + n - 1), omitY);
     }
-  }, [draws, redMax, blueMax, redOmit, blueOmit]);
+  }, [draws, redMax, blueMax, redOmit, blueOmit, cw]);
 
   return (
-    <div className="w-full overflow-x-auto">
+    <div ref={wrapRef} className="w-full overflow-x-hidden">
       {title && (
-        <div className="mb-2 flex items-center gap-3 text-[11px] text-white/45">
+        <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px] text-white/45">
           {title}
           <span className="flex items-center gap-1"><span className="h-[2px] w-5 bg-brand-red/60" /> 直落（同号连开）</span>
           <span className="flex items-center gap-1"><span className="h-[2px] w-5 bg-brand-gold/60" /> 斜连（±1 邻号）</span>
