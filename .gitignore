@@ -19,3 +19,4 @@ frontend/dist/
 
 # vite 临时文件
 frontend/vite.config.ts.timestamp-*.mjs
+*.bak
