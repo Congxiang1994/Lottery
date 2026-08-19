@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 
 from app.routers import lottery as lottery_router
 
-app = FastAPI(title="Lottery Easy · 彩票数据服务", version="1.0.0")
+app = FastAPI(title="Lottery · 彩票数据服务", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

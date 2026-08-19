@@ -1,13 +1,13 @@
 [Unit]
-Description=Lottery Easy API (FastAPI + gunicorn)
+Description=Lottery API (FastAPI + gunicorn)
 After=network.target
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/opt/lottery_easy/backend
+WorkingDirectory=/opt/lottery/backend
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/lottery_easy/backend/.venv/bin/gunicorn \
+ExecStart=/opt/lottery/backend/.venv/bin/gunicorn \
     -k uvicorn.workers.UvicornWorker \
     -w 2 \
     -b 127.0.0.1:8000 \

@@ -1,4 +1,4 @@
-# Lottery Easy · 彩票数据可视化与智能推荐
+# Lottery · 彩票数据可视化与智能推荐
 
 **前后端分离**的彩票数据站。
 支持 **双色球 (SSQ)** 与 **大乐透 (DLT)**，提供历史开奖可视化、号码频率/冷热/遗漏分析、走势图，以及 **89 个推荐算法**（12 大分类）驱动的算法广场、智能推荐与滚动回测。
@@ -67,7 +67,7 @@ lottery_web/
 ├── frontend/                # React 前端
 │   ├── src/pages/  (Home / History / Predict / Algorithms)
 │   └── dist/                # 生产构建产物
-└── deploy/                  # install.sh / nginx.conf / lottery-easy.service
+└── deploy/                  # install.sh / nginx.conf / lottery.service
 ```
 
 ---
@@ -110,9 +110,9 @@ npm run build        # 产物到 frontend/dist
 
 常用运维：
 ```bash
-journalctl -u lottery-easy -f        # 后端日志
-systemctl restart lottery-easy      # 重启后端
-cd /opt/lottery_easy/backend && .venv/bin/python scripts/fetch_data.py   # 更新数据
+journalctl -u lottery -f        # 后端日志
+systemctl restart lottery      # 重启后端
+cd /opt/lottery/backend && .venv/bin/python scripts/fetch_data.py   # 更新数据
 ```
 
 ---

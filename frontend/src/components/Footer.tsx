@@ -13,7 +13,7 @@ export default function Footer() {
           </p>
         </div>
         <div className="mt-6 flex flex-col items-center justify-between gap-2 text-xs text-white/35 sm:flex-row">
-          <span>Lottery Easy · 彩票数据可视化与智能推荐</span>
+          <span>Lottery · 彩票数据可视化与智能推荐</span>
           <span>理性购彩 · 量力而行</span>
         </div>
       </div>
