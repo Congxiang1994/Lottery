@@ -30,6 +30,16 @@ else
   echo "⚠️ 抓取失败，将使用已附带的历史数据（ssq.json / dlt.json）"
 fi
 
+step "[3.5/7] 创建持久化数据目录 /data/lottery（独立于部署目录，重部署不丢数据）"
+mkdir -p /data/lottery
+chown -R ubuntu:ubuntu /data/lottery
+# 首次部署：若旧路径有库则迁移过来（幂等，不覆盖已有新库）
+if [ -f "$BACKEND/app/data/algo_results.db" ] && [ ! -f /data/lottery/algo_results.db ]; then
+  cp "$BACKEND/app/data/algo_results.db" /data/lottery/algo_results.db
+  chown ubuntu:ubuntu /data/lottery/algo_results.db
+  echo "已迁移旧库 → /data/lottery/algo_results.db"
+fi
+
 step "[4/6] 配置 Nginx（80 端口）"
 cp "$APP_DIR/deploy/nginx.conf" /etc/nginx/sites-available/lottery.conf
 ln -sf /etc/nginx/sites-available/lottery.conf /etc/nginx/sites-enabled/lottery.conf
@@ -55,7 +65,7 @@ step "[7/7] 开放防火墙 80 端口"
 ufw allow 80/tcp 2>/dev/null || true
 
 echo -e "\n\033[32m✅ 部署完成！\033[0m"
-echo "   访问地址： http://<服务器公网IP>/"
+echo "   访问地址： https://doudoutech.cloud/"
 echo "   API 健康检查： curl http://127.0.0.1/api/health"
 echo "   查看后端日志： journalctl -u lottery -f"
 echo "   查看入库日志： journalctl -u lottery-algos -f"

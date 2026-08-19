@@ -6,7 +6,7 @@
 表结构保证 (lottery, algo_id, run_date) 唯一，重跑当天数据会 UPSERT。
 查询「最新一批」就是 ORDER BY run_date DESC LIMIT 89*2 后筛 lottery。
 
-路径：/opt/lottery/backend/app/data/algo_results.db
+路径：/data/lottery/algo_results.db（独立于部署目录，重部署不丢数据）
 """
 from __future__ import annotations
 
@@ -17,10 +17,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
-from app.config import DATA_DIR
 from app.algorithms.base import CATEGORIES
 
-DB_PATH = DATA_DIR / "algo_results.db"
+# 固定持久化路径：放在项目目录之外，部署（rsync / git pull）不会覆盖或清空。
+# 除非表结构变更，否则不要删除此目录下的数据。
+DB_PATH = Path("/data/lottery") / "algo_results.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS algo_results (
@@ -99,7 +100,7 @@ CREATE TABLE IF NOT EXISTS global_run_lock (
 
 @contextmanager
 def _conn():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH, timeout=30)
     con.execute("PRAGMA journal_mode=WAL;")
     con.execute("PRAGMA synchronous=NORMAL;")
