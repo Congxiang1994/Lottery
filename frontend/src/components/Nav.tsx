@@ -1,16 +1,26 @@
-import { NavLink, Link } from "react-router-dom";
+import { NavLink, Link, useLocation } from "react-router-dom";
 import { Dices, LayoutDashboard, History, Sparkles, Layers, Github } from "lucide-react";
 
 const GITHUB_URL = "https://github.com/Congxiang1994/Lottery";
 
-const links = [
+// 聚合门户首页只保留「首页」入口；进入具体产品（如彩票数据站）后再展示其内部导航。
+const portalLinks = [{ to: "/", label: "首页", icon: LayoutDashboard }];
+
+const lotteryLinks = [
   { to: "/", label: "首页", icon: LayoutDashboard },
   { to: "/history", label: "历史开奖", icon: History },
   { to: "/predict", label: "智能推荐", icon: Sparkles },
   { to: "/algorithms", label: "算法广场", icon: Layers },
 ];
 
+function useNavLinks() {
+  const { pathname } = useLocation();
+  // 根路径是聚合门户，其他路径目前都属于彩票数据站内部；后续新产品可在此扩展分支。
+  return pathname === "/" ? portalLinks : lotteryLinks;
+}
+
 export default function Nav() {
+  const links = useNavLinks();
   return (
     <header className="sticky top-0 z-30 border-b border-white/5 bg-ink-900/70 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
