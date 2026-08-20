@@ -40,6 +40,10 @@ fi
 step "[3.5/6] 创建持久化数据目录 /data/lottery（独立于部署目录，重部署不丢数据）"
 mkdir -p /data/lottery
 chown -R ubuntu:ubuntu /data/lottery
+
+# edu 模块（智慧教育平台资源下载助手）下载目录，独立于彩票数据
+mkdir -p /data/edu
+chown -R ubuntu:ubuntu /data/edu
 # 首次部署：若旧路径有库则迁移过来（幂等，不覆盖已有新库）
 if [ -f "$BACKEND/app/data/algo_results.db" ] && [ ! -f /data/lottery/algo_results.db ]; then
   cp "$BACKEND/app/data/algo_results.db" /data/lottery/algo_results.db
