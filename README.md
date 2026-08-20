@@ -75,6 +75,27 @@
 
 ---
 
+## 前端技术栈
+
+一个 React SPA，首屏为「产品矩阵」聚合门户（Portal），各功能以路由模块承载。构建产物 `dist/` 由 Nginx 静态托管，通过 `try_files` 做 SPA fallback，无服务端渲染。
+
+| 类别 | 技术 | 版本 | 说明 |
+|---|---|---|---|
+| 框架 | React / ReactDOM | 18.3.1 | 视图层 |
+| 路由 | React Router | 6.26.2 | 客户端路由（`/` 门户、`/lottery`、`/history`、`/predict`、`/algorithms`） |
+| 构建 | Vite | 5.4.3 | 构建工具 / 开发服务器（运行时 5.4.21） |
+| 语言 | TypeScript | 5.5.4 | 类型系统 |
+| 运行时 | Node.js | 22.22.2 | 本地构建（服务器不装 Node，部署的是预构建静态 `dist`） |
+| 样式 | TailwindCSS | 3.4.10 | 原子化 CSS；配 PostCSS + Autoprefixer |
+| 设计 | 自定义 design token | — | `brand-red`/`brand-gold`/`ink-900` 等；玻璃拟态 `glass`、渐变文字 `gradient-text`、卡片悬浮 `card-hover` |
+| 图表 | Recharts | 2.12.7 | 算法广场回测榜等图表 |
+| 图标 | lucide-react | — | 导航与产品卡片图标（`Dices`/`Github`/`LayoutDashboard` 等） |
+| 自绘 | Canvas + ResizeObserver | — | 历史开奖走势图 `TrendMatrix.tsx`：原生 Canvas 手写，监听容器宽度自适应，整图一屏显示、无横向滚动 |
+
+**设计取舍**：纯静态前端，数据全部走后端 REST API（`/api/...`），前端不直连数据库。
+
+---
+
 ## 目录结构（仓库根）
 
 ```
