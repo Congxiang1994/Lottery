@@ -16,7 +16,7 @@ const APPS: {
 }[] = [
   {
     id: "lottery",
-    title: "Lottery 彩票数据站",
+    title: "彩票数据站",
     desc: "双色球 / 大乐透历史开奖全量统计、走势追踪与多策略智能推荐，一站看透号码规律。",
     icon: Dices,
     tags: ["数据可视化", "AI 推荐"],
