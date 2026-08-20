@@ -234,5 +234,6 @@ export interface AllRunStatus {
   elapsed: number;
   eta: number;
   finished: boolean;
+  finished_at: string | null;
   error: string | null;
 }

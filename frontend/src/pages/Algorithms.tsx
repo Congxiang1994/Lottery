@@ -320,6 +320,11 @@ export default function Algorithms() {
         <Reveal className="mt-5">
           <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5 text-xs text-emerald-200">
             <CheckCircle2 size={14} /> 全量运行完成：双色球 + 大乐透 预测（{runStatus.done} 个算法）+ 回测已落库，共识推荐与回测榜已更新
+            {runStatus.finished_at && (
+              <span className="ml-1 font-mono text-emerald-300/90">
+                · 完成于 {runStatus.finished_at}
+              </span>
+            )}
           </div>
         </Reveal>
       )}

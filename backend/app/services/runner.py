@@ -188,6 +188,9 @@ def status_all() -> dict:
     elapsed = sum(s["elapsed"] for s in lot.values())
     eta = lot[active]["eta"] if active else 0.0
     error = next((s["error"] for s in lot.values() if s["error"]), None)
+    finished_at = max(
+        (s["finished_at"] for s in lot.values() if s["finished_at"]), default=None
+    )
     return {
         "lotteries": lot,
         "running": running,
@@ -201,5 +204,6 @@ def status_all() -> dict:
         "eta": round(eta, 1),
         "finished": all(not s["running"] and s["finished_at"]
                         for s in lot.values()),
+        "finished_at": finished_at,
         "error": error,
     }
