@@ -1,5 +1,7 @@
 # Lottery · 产品矩阵（Product Matrix）
 
+[![Website](https://img.shields.io/badge/Website-doudoutech.cloud-blue)](https://doudoutech.cloud/) [![GitHub](https://img.shields.io/badge/GitHub-Lottery-black)](https://github.com/Congxiang1994/Lottery)
+
 🌐 **在线访问**：[https://doudoutech.cloud/](https://doudoutech.cloud/) · ⭐ [GitHub](https://github.com/Congxiang1994/Lottery)
 
 > **这是一个聚合型项目（umbrella repo）。** 用同一套前端聚合门户 + 同一套后端框架，承载多个**独立产品模块**。
