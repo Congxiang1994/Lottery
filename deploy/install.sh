@@ -20,10 +20,10 @@ GUNICORN="$BACKEND/.venv/bin/gunicorn"
 
 step() { echo -e "\n\033[36m==> $1\033[0m"; }
 
-step "[1/6] 安装系统依赖 (nginx / python3-venv)"
+step "[1/6] 安装系统依赖 (nginx / python3-venv / ffmpeg)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y nginx python3-venv python3-pip git curl
+apt-get install -y nginx python3-venv python3-pip git curl ffmpeg
 
 step "[2/6] 创建 Python 虚拟环境并安装后端依赖"
 python3 -m venv "$BACKEND/.venv"

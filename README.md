@@ -51,6 +51,28 @@
 
 **滚动回测**：对最近 N 期做「留一预测」（只用当期之前的数据），统计各算法实际命中 vs 随机期望，得到 lift 排行榜。长期回测中所有算法 lift 应回归 1.0——这正是彩票随机性的客观证据。
 
+### 📚 智慧教育下载（`/edu`）
+
+国家级中小学智慧教育平台（basic.smartedu.cn）资源下载助手。该模块**整体移植自开源项目 `smart-edu-download`**（同作者仓库，MIT 协议衍生），并经重写为 Lottery 的独立子模块：复用同一套 FastAPI 后端框架与暗色 aurora 前端，API 全部挂在 `/api/edu` 前缀下（与彩票 `/api/v1` 互不冲突）。
+
+支持浏览平台目录树、解析教材/课时、直连或服务器下载视频与课件，并带实时进度、文件管理与书签一键授权。
+
+> **定位**：本模块是「资源解析与下载」工具，仅供个人学习、备课等教育用途，请遵守平台使用协议，勿作商业再分发。资源均来自官方开放接口，本项目不存储、不上传任何平台资源。
+
+**核心能力**
+
+| 能力 | 说明 |
+|---|---|
+| 资源浏览 | 加载平台目录树（课程教学 / 电子教材），逐级展开、勾选教材或课时 |
+| 资源解析 | 把选中的教材/课时解析为可下载清单（标题 / 类型 / 大小） |
+| 直连下载 | 普通文件（PDF/课件/音频/图片）浏览器直连平台 CDN，**不占服务器带宽** |
+| 服务器下载 | 视频（m3u8，需 ffmpeg 合并）走服务器，可批量下载 / 打包 ZIP |
+| 文件管理 | 已下载文件浏览、单文件下载、打包 ZIP、删除 |
+| 会话隔离 | 每个浏览器会话独立配置/使用自己的平台登录信息，互不干扰 |
+| 书签授权 | 登录平台后点一个书签即绑定 token，免开控制台；亦支持手动粘贴 Token |
+
+> ⚠️ 受限课件需配置平台登录信息（书签授权或手动 Token）；平台部分旧教材可能已下架，下载返回 403 属平台限制。登录信息绑定在服务器内存，重启后需重新配置。
+
 ---
 
 ## 架构
@@ -64,6 +86,7 @@
                                                        │  FastAPI (gunicorn 2 worker) │
                                                        │  ├─ 算法引擎（89 个算法）      │
                                                        │  ├─ 统计 / 玄学 / 数据服务     │
+                                                       │  ├─ 智慧教育下载（/api/edu）   │
                                                        │  └─ SQLite: /data/lottery/    │
                                                        └─────────────────────────────┘
 ```
@@ -82,7 +105,7 @@
 | 类别 | 技术 | 版本 | 说明 |
 |---|---|---|---|
 | 框架 | React / ReactDOM | 18.3.1 | 视图层 |
-| 路由 | React Router | 6.26.2 | 客户端路由（`/` 门户、`/lottery`、`/history`、`/predict`、`/algorithms`） |
+| 路由 | React Router | 6.26.2 | 客户端路由（`/` 门户、`/lottery`、`/history`、`/predict`、`/algorithms`、`/edu`、`/edu/browse`、`/edu/tasks`、`/edu/files`、`/edu/settings`） |
 | 构建 | Vite | 5.4.3 | 构建工具 / 开发服务器（运行时 5.4.21） |
 | 语言 | TypeScript | 5.5.4 | 类型系统 |
 | 运行时 | Node.js | 22.22.2 | 本地构建（服务器不装 Node，部署的是预构建静态 `dist`） |
@@ -105,6 +128,7 @@
 │   │   ├── main.py           # 入口，include_router 注册各模块路由
 │   │   ├── config.py         # 彩种 / 模块元数据
 │   │   ├── algorithms/       # 算法引擎（base + 12 个分类模块 + backtest）
+│   │   ├── edu/              # 智慧教育下载模块（移植自 smart-edu-download）
 │   │   ├── routers/          # API router（lottery.py 等，未来加 <module>.py）
 │   │   ├── services/         # scraper / stats / predictor / 结果存储
 │   │   └── data/             # ssq.json / dlt.json（爬取生成，不入库）
@@ -112,6 +136,7 @@
 │   └── requirements.txt
 ├── frontend/                # React 前端（单 SPA，含聚合门户 + 各模块页面）
 │   ├── src/pages/           # Portal(聚合首页) / Home / History / Predict / Algorithms
+│   ├── src/edu/             # 智慧教育下载模块（EduPortal/Browse/Tasks/Files/Settings + 组件 + api）
 │   ├── src/components/       # Nav / Footer / 图表组件
 │   └── dist/                # 生产构建产物（部署时由 Nginx 托管）
 └── deploy/                  # 部署相关
@@ -161,8 +186,12 @@ npm run build        # 产物到 frontend/dist
    ```bash
    sudo bash /opt/lottery/deploy/install.sh
    ```
-   脚本会自动：装系统依赖 → 建 venv 装包 → 爬取数据 → 建 `/data/lottery` 持久化目录（首次迁移旧库）→
-   配置 Nginx(:8081) → 注册并启动所有 `deploy/*.service/*.timer`（含未来的新模块服务）→ 开放防火墙。
+   脚本会自动：装系统依赖（含 **ffmpeg**，智慧教育模块视频合并所需）→ 建 venv 装包 → 爬取数据 →
+   建 `/data/lottery` 与 `/data/edu` 持久化目录（首次迁移旧库）→ 配置 Nginx(:8081) →
+   注册并启动所有 `deploy/*.service/*.timer`（含未来的新模块服务）→ 开放防火墙。
+
+   > ⚠️ **智慧教育模块**：视频（m3u8）下载依赖服务器上的 `ffmpeg`（合并分片流）。`install.sh` 已默认安装；
+   > 若手动部署未跑脚本，请先 `sudo apt install ffmpeg`。下载文件落在 `/data/edu`，与部署目录分离。
 
 3. 浏览器访问 [https://doudoutech.cloud/](https://doudoutech.cloud/)。
    （公网经 Cloudflare Tunnel 穿透；服务器本机可直连 `http://<IP>:8081` 调试。）
@@ -209,6 +238,32 @@ npm run build        # 产物到 frontend/dist
 | GET | `/api/v1/{ssq\|dlt}/combined?max_cost=` | 多算法加权融合共识号码 |
 | GET | `/api/v1/{ssq\|dlt}/backtest?folds=&max_cost=` | 滚动回测 lift 排行榜 |
 | POST | `/api/v1/{ssq\|dlt}/refresh` | 重新爬取数据 |
+
+---
+
+## API 速览（智慧教育下载模块 · `/api/edu`）
+
+移植自 `smart-edu-download`，全部接口挂在 `/api/edu` 前缀下（与彩票 `/api/v1` 隔离）。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/edu/auth` | 当前会话平台登录信息状态 |
+| POST | `/api/edu/auth` | 手动配置平台 Token |
+| GET | `/api/edu/auth/code` | 获取书签一键授权码 |
+| POST | `/api/edu/auth/code` | 用授权码绑定 token |
+| GET | `/api/edu/catalog?type=course\|textbook` | 平台目录树（带缓存） |
+| GET | `/api/edu/course/{book_id}` | 课程（教材）课时目录 |
+| POST | `/api/edu/parse` | 解析选中资源，返回可下载清单 |
+| POST | `/api/edu/direct` | 生成浏览器直连 CDN 链接（非视频） |
+| GET | `/api/edu/tasks` | 下载任务列表 |
+| POST | `/api/edu/tasks` | 提交下载任务 |
+| POST | `/api/edu/tasks/{id}/cancel` | 取消任务 |
+| GET | `/api/edu/files` | 已下载文件列表 |
+| GET | `/api/edu/files/download?path=` | 下载单个文件 |
+| POST | `/api/edu/files/zip` | 打包 ZIP 下载 |
+| DELETE | `/api/edu/files?path=` | 删除文件/目录 |
+
+> 下载文件保存在服务器 `/data/edu`（独立于部署目录，重部署不丢）；视频 m3u8 合并依赖 **ffmpeg**。
 
 ---
 
