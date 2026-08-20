@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import Nav from "./components/Nav";
 import Footer from "./components/Footer";
+import Portal from "./pages/Portal";
 import Home from "./pages/Home";
 import History from "./pages/History";
 import Predict from "./pages/Predict";
@@ -37,11 +38,13 @@ export default function App() {
         <Nav />
         <main className="mx-auto max-w-6xl px-5 pb-10">
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Portal />} />
+            <Route path="/lottery" element={<Home />} />
             <Route path="/history" element={<History />} />
             <Route path="/predict" element={<Predict />} />
             <Route path="/algorithms" element={<Algorithms />} />
-            <Route path="*" element={<Home />} />
+            {/* 兼容旧链接：/ 原为彩票首页，现统一指向聚合门户 */}
+            <Route path="*" element={<Portal />} />
           </Routes>
         </main>
         <Footer />
