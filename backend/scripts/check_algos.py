@@ -13,9 +13,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.algorithms import REGISTRY, catalog, engine_context, run_one  # noqa: E402
-from app.config import LOTTERIES  # noqa: E402
-from app.services import scraper  # noqa: E402
+from app.lottery.algorithms import REGISTRY, catalog, engine_context, run_one  # noqa: E402
+from app.lottery.config import LOTTERIES  # noqa: E402
+from app.lottery.services import scraper  # noqa: E402
 
 
 def main() -> int:
@@ -24,7 +24,7 @@ def main() -> int:
 
     data = scraper.load_lottery(lottery)
     if not data:
-        print(f"缺少 {lottery} 数据，请先运行 python -m app.services.scraper")
+        print(f"缺少 {lottery} 数据，请先运行 python -m app.lottery.services.scraper")
         return 1
     draws = data["draws"]
     ctx = engine_context(lottery, draws, LOTTERIES[lottery])

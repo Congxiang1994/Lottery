@@ -11,7 +11,7 @@ __pycache__/
 .DS_Store
 
 # 数据文件（本地生成 / 历史数据，不入库）
-backend/app/data/
+backend/app/lottery/data/
 *.db
 
 # 构建产物

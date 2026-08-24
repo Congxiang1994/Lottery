@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 
-from app.services import scraper
+from app.lottery.services import scraper
 
 
 def main() -> None:

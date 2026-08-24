@@ -123,22 +123,27 @@
 
 ```
 .
-├── backend/                 # FastAPI 后端（单应用，按模块拆分 router）
+├── backend/                 # FastAPI 后端（按功能域拆分模块）
 │   ├── app/
-│   │   ├── main.py           # 入口，include_router 注册各模块路由
-│   │   ├── config.py         # 彩种 / 模块元数据
-│   │   ├── algorithms/       # 算法引擎（base + 12 个分类模块 + backtest）
-│   │   ├── edu/              # 智慧教育下载模块（移植自 smart-edu-download）
-│   │   ├── routers/          # API router（lottery.py 等，未来加 <module>.py）
-│   │   ├── services/         # scraper / stats / predictor / 结果存储
-│   │   └── data/             # ssq.json / dlt.json（爬取生成，不入库）
+│   │   ├── main.py          # 入口，include_router 注册各功能域路由
+│   │   ├── common/          # 公共基础设施（db.get_conn 等跨域复用工具）
+│   │   ├── lottery/         # 彩票数据服务（/api/v1，自包含功能域）
+│   │   │   ├── config.py    # 彩种 / 模块元数据
+│   │   │   ├── router.py    # API 路由（history/predict/algorithms/run-all...）
+│   │   │   ├── algorithms/  # 算法引擎（base + 12 个分类模块 + backtest）
+│   │   │   ├── services/    # scraper / stats / predictor / 结果存储
+│   │   │   └── data/        # ssq.json / dlt.json（爬取生成，不入库）
+│   │   └── edu/             # 智慧教育下载模块（/api/edu，自包含功能域）
 │   ├── scripts/fetch_data.py # 爬取历史开奖
 │   └── requirements.txt
-├── frontend/                # React 前端（单 SPA，含聚合门户 + 各模块页面）
-│   ├── src/pages/           # Portal(聚合首页) / Home / History / Predict / Algorithms
-│   ├── src/edu/             # 智慧教育下载模块（EduPortal/Browse/Tasks/Files/Settings + 组件 + api）
-│   ├── src/components/       # Nav / Footer / 图表组件
+├── frontend/                # React 前端（单 SPA，与后端功能域一一对应）
+│   ├── src/common/          # 公共 UI（Nav / Footer）
+│   ├── src/portal/          # 聚合门户（产品矩阵首页）
+│   ├── src/lottery/         # 彩票站（api/types/context/components/pages）
+│   ├── src/edu/             # 智慧教育下载模块（页面 + 组件 + api）
 │   └── dist/                # 生产构建产物（部署时由 Nginx 托管）
+├── tools/                   # 工具类脚本（无前端页面）
+│   └── xiaoe-downloader/    # 小鹅通视频课程下载器
 └── deploy/                  # 部署相关
     ├── install.sh           # 一键部署（无 Docker）
     ├── nginx.conf           # Nginx 配置（listen 8081，反代 /api，SPA 回退）
@@ -176,10 +181,10 @@ npm run build        # 产物到 frontend/dist
    ```bash
    # 在本地仓库根执行
    cd frontend && npm run build && cd ..
-   rsync -az --exclude node_modules --exclude .venv --exclude 'app/data' --exclude '.git' \
+   rsync -az --exclude node_modules --exclude .venv --exclude 'app/lottery/data' --exclude '.git' \
      ./ user@<IP>:/opt/lottery/
    ```
-   > ⚠️ 必须排除 `app/data`：本地测试会生成 `algo_results.db`，若同步覆盖会冲掉服务器生产库。
+   > ⚠️ 必须排除 `app/lottery/data`：本地测试会生成历史数据缓存，若同步覆盖会冲掉服务器数据。
    > 生产库已固定在 `/data/lottery/`，与部署目录分离，正常重部署不会清空。
 
 2. 在服务器以 root 执行一键部署：
@@ -203,14 +208,15 @@ npm run build        # 产物到 frontend/dist
 新功能**直接放进本仓库**，遵循「前端页面 + 后端 router + 部署服务」三步：
 
 ### 1) 新增前端模块
-- 新建页面：`frontend/src/pages/<Feature>.tsx`
+- 按功能域建目录：`frontend/src/<feature>/`（页面 + 组件 + api 内聚，与后端功能域一一对应）
+- 纯 UI 基础设施放 `frontend/src/common/`；新增产品页在聚合门户注册
 - 注册路由：`frontend/src/App.tsx` 增加 `<Route path="/<feature>" element={<Feature/>} />`
-- 上架到聚合门户：`frontend/src/pages/Portal.tsx` 的 `APPS` 数组追加一项
+- 上架到聚合门户：`frontend/src/portal/Portal.tsx` 的 `APPS` 数组追加一项
   （`status: "live"` 可点击进入；`"soon"` 为灰度占位卡，用于展示平台扩展性）
 
 ### 2) 新增后端模块（可选，纯前端功能可跳过）
-- 新建 router：`backend/app/routers/<feature>.py`，用 `APIRouter` 写接口
-- 注册：`backend/app/main.py` 里 `app.include_router(<feature>_router, prefix="/api/v1/<feature>")`
+- 按功能域建目录：`backend/app/<feature>/`（router/config/services 内聚；跨域共享代码进 `app/common/`）
+- 注册：`backend/app/main.py` 里 `app.include_router(<feature>_router, prefix="/api/<feature>")`
 - 若需要独立后台任务 / 定时跑批：在 `deploy/` 放 `<feature>.service`（+ 可选 `<feature>.timer`），
   **重跑 `install.sh` 会自动发现并注册**，无需改脚本。
 

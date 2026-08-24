@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from app.routers import lottery as lottery_router
+from app.lottery import router as lottery_router
 from app.edu import routes as edu_routes
 from app.edu.downloader import init_manager
 

@@ -21,10 +21,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.algorithms import REGISTRY, engine_context, run_batch  # noqa: E402
-from app.algorithms.backtest import evaluate as backtest_evaluate  # noqa: E402
-from app.config import LOTTERIES  # noqa: E402
-from app.services import results_store, scraper  # noqa: E402
+from app.lottery.algorithms import REGISTRY, engine_context, run_batch  # noqa: E402
+from app.lottery.algorithms.backtest import evaluate as backtest_evaluate  # noqa: E402
+from app.lottery.config import LOTTERIES  # noqa: E402
+from app.lottery.services import results_store, scraper  # noqa: E402
 
 FOLDS = 5
 BACKTEST_MAX_COST = 4  # 全部算法（不区分快慢）
@@ -101,7 +101,7 @@ def main() -> int:
     results_store.init()
     if args.date:
         # 自定义日期时全局替换；调用方保证一次只跑一批
-        from app.services.results_store import _conn
+        from app.lottery.services.results_store import _conn
         with _conn() as con:
             con.execute("DELETE FROM algo_results WHERE run_date = ?", (args.date,))
 

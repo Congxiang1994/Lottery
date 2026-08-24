@@ -1,28 +1,20 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
-import Nav from "./components/Nav";
-import Footer from "./components/Footer";
-import Portal from "./pages/Portal";
-import Home from "./pages/Home";
-import History from "./pages/History";
-import Predict from "./pages/Predict";
-import Algorithms from "./pages/Algorithms";
+import { useEffect, useState } from "react";
+import { Routes, Route } from "react-router-dom";
+import Nav from "./common/Nav";
+import Footer from "./common/Footer";
+import Portal from "./portal/Portal";
+import Home from "./lottery/pages/Home";
+import History from "./lottery/pages/History";
+import Predict from "./lottery/pages/Predict";
+import Algorithms from "./lottery/pages/Algorithms";
 import EduPortal from "./edu/EduPortal";
 import EduBrowse from "./edu/Browse";
 import EduTasks from "./edu/Tasks";
 import EduFiles from "./edu/Files";
 import EduSettings from "./edu/Settings";
-import { api } from "./api";
-import { LotteryInfo } from "./types";
-
-interface Ctx {
-  lotteries: LotteryInfo[];
-  key: string;
-  setKey: (k: string) => void;
-}
-
-const LotteryCtx = createContext<Ctx>({ lotteries: [], key: "ssq", setKey: () => {} });
-export const useLottery = () => useContext(LotteryCtx);
+import { api } from "./lottery/api";
+import { LotteryInfo } from "./lottery/types";
+import { LotteryCtx } from "./lottery/context";
 
 export default function App() {
   const [lotteries, setLotteries] = useState<LotteryInfo[]>([]);
