@@ -1,0 +1,11 @@
+{
+  "_comment": "复制为 config.json 后填写。config.json 已被 .gitignore 忽略, 不会上传仓库。",
+  "base": "https://appmi6tuexg1562.h5.xet.pomoho.com",
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+  "cookie": "anony_token=xxx; ko_token=xxx; logintime=xxx",
+  "product_id": "p_64004ceee4b030cacb1e03ec",
+  "org_app_id": "appmi6TUexg1562",
+  "outdir": "/data/hanzi",
+  "max_workers": 4,
+  "ffmpeg_timeout": 90
+}
