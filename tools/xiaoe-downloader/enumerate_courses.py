@@ -89,7 +89,8 @@ def main():
     videos = []
     for i, it in enumerate(items, 1):
         title = it.get("title", "?")
-        rid = it.get("id")
+        # 兼容字段: 实测本店 id 为资源 id (早期笔记误记为 resource_id)
+        rid = it.get("id") or it.get("resource_id")
         t = it.get("resource_type", it.get("type"))
         flag = "视频" if is_video(it) else f"type={t}"
         print(f"{i:3d} [{flag:6s}] {title}  ({rid})")
