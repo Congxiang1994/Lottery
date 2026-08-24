@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Dices, ArrowRight, Github, Sparkles, type LucideIcon } from "lucide-react";
+import { Dices, ArrowRight, Github, Sparkles, Clapperboard, type LucideIcon } from "lucide-react";
 
 /**
  * 产品矩阵 —— 新增产品只需在此数组追加一项即可。
@@ -21,6 +21,15 @@ const APPS: {
     icon: Dices,
     tags: ["数据可视化", "AI 推荐"],
     href: "/lottery",
+    status: "live",
+  },
+  {
+    id: "hanzi",
+    title: "汉字是画出来的",
+    desc: "108 节汉字动画课视频点播：按名称模糊检索，点击即全屏播放，支持快进/后退 5 秒与上/下一集切换。",
+    icon: Clapperboard,
+    tags: ["视频点播", "儿童教育"],
+    href: "/hanzi",
     status: "live",
   },
   {

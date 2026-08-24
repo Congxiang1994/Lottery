@@ -15,8 +15,10 @@ const lotteryLinks = [
 
 function useNavLinks() {
   const { pathname } = useLocation();
-  // 根路径是聚合门户；其余路径属于彩票数据站内部。
-  return pathname === "/" ? portalLinks : lotteryLinks;
+  // 根路径是聚合门户；/hanzi 是独立视频产品（仅保留首页入口）；其余路径属于彩票数据站内部。
+  if (pathname === "/") return portalLinks;
+  if (pathname.startsWith("/hanzi")) return portalLinks;
+  return lotteryLinks;
 }
 
 export default function Nav() {
