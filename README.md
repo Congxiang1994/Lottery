@@ -32,15 +32,6 @@
 
 📖 实现逻辑与技术结构见 **[README_lottery.md](./README_lottery.md)**
 
-### 📚 智慧教育下载（`/edu`）· 在线产品
-
-国家级中小学智慧教育平台（basic.smartedu.cn）资源下载助手：浏览目录树、解析教材/课时、
-直连或服务器下载视频与课件，带实时进度、文件管理与书签一键授权。
-
-> **定位**：本模块是「资源解析与下载」工具，仅供个人学习、备课等教育用途，请遵守平台使用协议，勿作商业再分发。资源均来自官方开放接口，本项目不存储、不上传任何平台资源。
-
-📖 实现逻辑与技术结构见 **[README_edu.md](./README_edu.md)**
-
 ### 🛠 工具（`tools/`）· 无前端页面
 
 | 工具 | 说明 | 文档 |
@@ -61,7 +52,6 @@
                                                        │  ├─ lottery 域  (/api/v1)     │
                                                        │  │    ├─ 算法引擎（89 算法）   │
                                                        │  │    └─ 统计/玄学/数据服务    │
-                                                       │  ├─ edu 域    (/api/edu)      │
                                                        │  └─ SQLite: /data/lottery/    │
                                                        └─────────────────────────────┘
 ```
@@ -90,15 +80,13 @@
 │   ├── app/
 │   │   ├── main.py          # 入口，include_router 注册各功能域路由
 │   │   ├── common/          # 公共基础设施（db.get_conn 等跨域复用工具）
-│   │   ├── lottery/         # 彩票数据服务（/api/v1，自包含功能域）
-│   │   └── edu/             # 智慧教育下载模块（/api/edu，自包含功能域）
+│   │   └── lottery/         # 彩票数据服务（/api/v1，自包含功能域）
 │   ├── scripts/             # 爬取 / 定时跑批脚本
 │   └── requirements.txt
 ├── frontend/                # React 前端（单 SPA，与后端功能域一一对应）
 │   ├── src/common/          # 公共 UI（Nav / Footer）
 │   ├── src/portal/          # 聚合门户（产品矩阵首页）
 │   ├── src/lottery/         # 彩票站（api/types/context/components/pages）
-│   ├── src/edu/             # 智慧教育下载模块
 │   └── dist/                # 生产构建产物（Nginx 托管）
 ├── tools/                   # 工具类脚本（无前端页面）
 │   └── xiaoe-downloader/    # 小鹅通视频课程下载器
@@ -115,7 +103,6 @@ README 分两层：**根 README 讲「全站」**，**分册讲「各模块实�
 |---|---|
 | [README.md](./README.md) | 全站定位、功能与工具列表、整体技术框架、部署与扩展规范（本页） |
 | [README_lottery.md](./README_lottery.md) | 彩票模块：算法引擎设计、数据流、定时跑批、防并发设计、API 全表 |
-| [README_edu.md](./README_edu.md) | 智慧教育模块：解析链路、会话隔离、下载任务、文件管理、API 全表 |
 | [tools/xiaoe-downloader/README.md](./tools/xiaoe-downloader/README.md) | 小鹅通下载器：接口链路、踩坑记录、使用步骤 |
 
 ---
@@ -157,8 +144,8 @@ npm run build        # 产物到 frontend/dist
    ```bash
    sudo bash /opt/lottery/deploy/install.sh
    ```
-   脚本会自动：装系统依赖（含 **ffmpeg**，智慧教育模块视频合并所需）→ 建 venv 装包 → 爬取数据 →
-   建 `/data/lottery` 与 `/data/edu` 持久化目录（首次迁移旧库）→ 配置 Nginx(:8081) →
+   脚本会自动：装系统依赖（nginx / python3-venv / ffmpeg 等）→ 建 venv 装包 → 爬取数据 →
+   建 `/data/lottery` 持久化目录（首次迁移旧库）→ 配置 Nginx(:8081) →
    注册并启动所有 `deploy/*.service/*.timer`（含未来的新模块服务）→ 开放防火墙。
 
 3. 浏览器访问 [https://doudoutech.cloud/](https://doudoutech.cloud/)。

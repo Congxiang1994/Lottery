@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Dices, ArrowRight, Github, Sparkles, BookOpenCheck, type LucideIcon } from "lucide-react";
+import { Dices, ArrowRight, Github, Sparkles, type LucideIcon } from "lucide-react";
 
 /**
  * 产品矩阵 —— 新增产品只需在此数组追加一项即可。
@@ -21,15 +21,6 @@ const APPS: {
     icon: Dices,
     tags: ["数据可视化", "AI 推荐"],
     href: "/lottery",
-    status: "live",
-  },
-  {
-    id: "edu",
-    title: "智慧教育下载",
-    desc: "国家中小学智慧教育平台资源下载助手：浏览课程/教材目录，解析并下载视频与课件，支持直连与并发下载。",
-    icon: BookOpenCheck,
-    tags: ["资源下载", "教育"],
-    href: "/edu",
     status: "live",
   },
   {

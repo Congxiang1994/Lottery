@@ -7,11 +7,6 @@ import Home from "./lottery/pages/Home";
 import History from "./lottery/pages/History";
 import Predict from "./lottery/pages/Predict";
 import Algorithms from "./lottery/pages/Algorithms";
-import EduPortal from "./edu/EduPortal";
-import EduBrowse from "./edu/Browse";
-import EduTasks from "./edu/Tasks";
-import EduFiles from "./edu/Files";
-import EduSettings from "./edu/Settings";
 import { api } from "./lottery/api";
 import { LotteryInfo } from "./lottery/types";
 import { LotteryCtx } from "./lottery/context";
@@ -40,12 +35,6 @@ export default function App() {
             <Route path="/history" element={<History />} />
             <Route path="/predict" element={<Predict />} />
             <Route path="/algorithms" element={<Algorithms />} />
-            {/* 智慧教育资源下载助手（edu 模块） */}
-            <Route path="/edu" element={<EduPortal />} />
-            <Route path="/edu/browse" element={<EduBrowse />} />
-            <Route path="/edu/tasks" element={<EduTasks />} />
-            <Route path="/edu/files" element={<EduFiles />} />
-            <Route path="/edu/settings" element={<EduSettings />} />
             {/* 兼容旧链接：/ 原为彩票首页，现统一指向聚合门户 */}
             <Route path="*" element={<Portal />} />
           </Routes>

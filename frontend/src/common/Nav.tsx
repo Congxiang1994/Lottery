@@ -1,5 +1,5 @@
 import { NavLink, Link, useLocation } from "react-router-dom";
-import { Dices, LayoutDashboard, History, Sparkles, Layers, Github, BookOpenCheck, BookOpen, Download, FolderOpen, Settings } from "lucide-react";
+import { Dices, LayoutDashboard, History, Sparkles, Layers, Github } from "lucide-react";
 
 const GITHUB_URL = "https://github.com/Congxiang1994/Lottery";
 
@@ -13,20 +13,10 @@ const lotteryLinks = [
   { to: "/algorithms", label: "算法广场", icon: Layers },
 ];
 
-// 智慧教育资源下载助手（edu 模块）内部导航
-const eduLinks = [
-  { to: "/edu/browse", label: "资源浏览", icon: BookOpen },
-  { to: "/edu/tasks", label: "下载任务", icon: Download },
-  { to: "/edu/files", label: "已下载", icon: FolderOpen },
-  { to: "/edu/settings", label: "登录配置", icon: Settings },
-];
-
 function useNavLinks() {
   const { pathname } = useLocation();
-  // 根路径是聚合门户；/edu 开头的路径属于智慧教育资源下载助手；其余属于彩票数据站内部。
-  if (pathname === "/") return portalLinks;
-  if (pathname.startsWith("/edu")) return eduLinks;
-  return lotteryLinks;
+  // 根路径是聚合门户；其余路径属于彩票数据站内部。
+  return pathname === "/" ? portalLinks : lotteryLinks;
 }
 
 export default function Nav() {
