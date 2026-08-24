@@ -60,6 +60,7 @@ export default function HanziPlayer() {
   const [current, setCurrent] = useState<VideoItem | null>(null);
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [buffering, setBuffering] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -157,6 +158,21 @@ export default function HanziPlayer() {
     const p = v.play();
     if (p) p.then(() => setPlaying(true)).catch(() => setPlaying(false));
   }, [current]);
+
+  /* 当前集播放时，预取下一集（上/下一集连续观看无缝衔接） */
+  useEffect(() => {
+    if (!current || videos.length === 0) return;
+    const i = videos.findIndex((x) => x.url === current.url);
+    const next = i >= 0 && i < videos.length - 1 ? videos[i + 1] : videos[0];
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.as = "video";
+    link.href = next.url;
+    document.head.appendChild(link);
+    return () => {
+      document.head.removeChild(link);
+    };
+  }, [current, videos]);
 
   /* 键盘快捷键：空格播放/暂停，←/→ 后退/快进 5s，↑/↓ 上/下一集，Esc 退出 */
   useEffect(() => {
@@ -296,24 +312,38 @@ export default function HanziPlayer() {
               className="h-full w-full object-contain"
               playsInline
               webkit-playsinline="true"
+              preload="auto"
               onPlay={() => {
                 setPlaying(true);
                 setEnded(false);
+                setBuffering(false);
                 poke();
               }}
               onPause={() => {
                 setPlaying(false);
                 poke();
               }}
+              onWaiting={() => setBuffering(true)}
+              onCanPlay={() => setBuffering(false)}
+              onPlaying={() => setBuffering(false)}
               onEnded={() => {
                 setEnded(true);
                 setPlaying(false);
+                setBuffering(false);
                 setControlsVisible(true);
               }}
               onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
               onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
               onDurationChange={(e) => setDuration(e.currentTarget.duration)}
             />
+            {buffering && !ended && (
+              <div className="pointer-events-none absolute inset-0 grid place-items-center">
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 size={36} className="animate-spin text-white/80" />
+                  <span className="text-xs text-white/60">加载中…</span>
+                </div>
+              </div>
+            )}
             {(!playing || ended) && (
               <div className="absolute inset-0 grid place-items-center">
                 <button
