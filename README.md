@@ -32,6 +32,14 @@
 
 📖 实现逻辑与技术结构见 **[README_lottery.md](./README_lottery.md)**
 
+### 🖍 汉字是画出来的（`/hanzi`）· 在线产品
+
+《汉字是画出来的》**108 节动画课点播页**：按汉字名模糊检索、手机竖屏友好的卡片列表，
+点击卡片即全屏播放，播放器支持 播放/暂停、快进/后退 5s、上一集/下一集、进度条拖动，
+控制条自动隐藏。视频由 Nginx 直接文件服务（支持 Range 拖动）。
+
+📖 实现逻辑与技术结构见 **[README_hanzi.md](./README_hanzi.md)**
+
 ### 🛠 工具（`tools/`）· 无前端页面
 
 | 工具 | 说明 | 文档 |
@@ -52,13 +60,18 @@
                                                        │  ├─ lottery 域  (/api/v1)     │
                                                        │  │    ├─ 算法引擎（89 算法）   │
                                                        │  │    └─ 统计/玄学/数据服务    │
+                                                       │  ├─ hanzi 域   (/api/hanzi)   │
+                                                       │  │    └─ 视频列表（扫描目录）  │
                                                        │  └─ SQLite: /data/lottery/    │
                                                        └─────────────────────────────┘
+                                                       /hanzi/*.mp4  →  Nginx alias
+                                                       /data/hanzi/（视频静态服务，Range）
 ```
 
 - **前端**：React 18 + Vite + TailwindCSS + Recharts，暗色高端风、响应式、入场动效。单 SPA，首屏聚合门户，各功能一个路由模块（`src/<domain>/`）。
 - **后端**：FastAPI（纯 CPU 推理，numpy + scikit-learn，不依赖 torch/GPU）。按功能域拆包：`app/common/`（跨域共享）+ `app/<domain>/`（自包含）。
 - **数据**：开奖数据由爬虫落盘 JSON 缓存；算法结果持久化在 `/data/lottery/algo_results.db`（独立于部署目录，重部署不丢）。
+- **视频点播**：`/hanzi/` 视频（`/data/hanzi/`，108 个 mp4）由 Nginx `alias` 直接文件服务，天然支持 Range 拖动；列表接口走 FastAPI 扫描目录动态生成。视频目录同样独立于部署目录。
 - **域名访问**：国内云未备案域名 80/443 被拦截，用 **Cloudflare Tunnel** 穿透（服务器主动出站 QUIC，边缘按隧道路由回源），对外即 `https://doudoutech.cloud`，自带免费 HTTPS 证书。
 
 ### 技术栈
@@ -80,18 +93,23 @@
 │   ├── app/
 │   │   ├── main.py          # 入口，include_router 注册各功能域路由
 │   │   ├── common/          # 公共基础设施（db.get_conn 等跨域复用工具）
-│   │   └── lottery/         # 彩票数据服务（/api/v1，自包含功能域）
+│   │   ├── lottery/         # 彩票数据服务（/api/v1，自包含功能域）
+│   │   └── hanzi/           # 汉字课视频列表（/api/hanzi，自包含功能域）
 │   ├── scripts/             # 爬取 / 定时跑批脚本
 │   └── requirements.txt
 ├── frontend/                # React 前端（单 SPA，与后端功能域一一对应）
 │   ├── src/common/          # 公共 UI（Nav / Footer）
 │   ├── src/portal/          # 聚合门户（产品矩阵首页）
 │   ├── src/lottery/         # 彩票站（api/types/context/components/pages）
+│   ├── src/hanzi/           # 汉字课点播页（HanziPlayer.tsx）
 │   └── dist/                # 生产构建产物（Nginx 托管）
 ├── tools/                   # 工具类脚本（无前端页面）
 │   └── xiaoe-downloader/    # 小鹅通视频课程下载器
 └── deploy/                  # 部署相关（install.sh / nginx.conf / *.service / *.timer）
 ```
+
+> 视频文件不在仓库内：`/data/hanzi/` 独立于部署目录，rsync 重部署不会触碰。
+> Nginx 通过 `location /hanzi/ { alias /data/hanzi/; }` 对外提供视频静态服务（见 `deploy/nginx.conf`）。
 
 ---
 
@@ -103,6 +121,7 @@ README 分两层：**根 README 讲「全站」**，**分册讲「各模块实�
 |---|---|
 | [README.md](./README.md) | 全站定位、功能与工具列表、整体技术框架、部署与扩展规范（本页） |
 | [README_lottery.md](./README_lottery.md) | 彩票模块：算法引擎设计、数据流、定时跑批、防并发设计、API 全表 |
+| [README_hanzi.md](./README_hanzi.md) | 汉字课点播模块：列表接口、Nginx 视频静态服务、伪全屏播放器设计、安全要点 |
 | [tools/xiaoe-downloader/README.md](./tools/xiaoe-downloader/README.md) | 小鹅通下载器：接口链路、踩坑记录、使用步骤 |
 
 ---
@@ -173,9 +192,12 @@ npm run build        # 产物到 frontend/dist
 ### 3) 部署
 本地 `cd frontend && npm run build` → `rsync` 同步 → `sudo systemctl restart lottery`（后端改动时）。
 新增的后端服务：`sudo systemctl daemon-reload && sudo systemctl enable --now <feature>`。
+若新模块涉及**静态文件服务**（如视频/大文件）：在 `deploy/nginx.conf` 加
+`location /<prefix>/ { alias /data/<dir>/; }` 并同步生产配置，记得用正则 `location` 屏蔽非目标扩展名。
 
 > 设计约定：**单 SPA + 单 FastAPI 应用**即可承载多数模块；只有当某模块需要独立进程/端口时，
 > 才为其单独起服务并在 `deploy/` 放 unit 文件、在 `nginx.conf` 增加对应 `location /api/<feature>/` 反代。
+> 大文件静态资源一律交给 Nginx（`alias` + Range），不要让 FastAPI 经手。
 
 ---
 
