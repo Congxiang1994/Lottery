@@ -67,6 +67,8 @@ export default function HanziPlayer() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const hideTimer = useRef<number | null>(null);
+  /* 是否已为播放器压入历史记录（保证整个全屏会话只 push 一次） */
+  const pushedRef = useRef(false);
 
   useEffect(() => {
     fetch("/api/hanzi/list")
@@ -135,7 +137,7 @@ export default function HanziPlayer() {
     openVideo(i >= 0 && i < videos.length - 1 ? videos[i + 1] : videos[0]);
   };
 
-  const exit = () => {
+  const closePlayer = () => {
     const v = videoRef.current;
     if (v) v.pause();
     setCurrent(null);
@@ -144,6 +146,36 @@ export default function HanziPlayer() {
     setControlsVisible(true);
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
   };
+
+  const exit = () => {
+    if (pushedRef.current) {
+      /* 消费掉打开播放器时压入的历史条目，统一走 popstate → closePlayer 关闭 */
+      pushedRef.current = false;
+      window.history.back();
+    } else {
+      closePlayer();
+    }
+  };
+
+  /* 打开全屏播放器时压入一条历史记录：
+     手机返回手势 / 浏览器返回键 → 先关闭播放器（而非退出 /hanzi 页面） */
+  useEffect(() => {
+    if (current && !pushedRef.current) {
+      pushedRef.current = true;
+      window.history.pushState({ hanziPlayer: true }, "");
+    }
+  }, [current]);
+
+  /* 返回手势触发 popstate：关闭播放器（历史条目已被消费，不发生路由回退） */
+  useEffect(() => {
+    if (!current) return;
+    const onPop = () => {
+      pushedRef.current = false;
+      closePlayer();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [current]);
 
   /* 切换视频时自动加载播放 */
   useEffect(() => {
