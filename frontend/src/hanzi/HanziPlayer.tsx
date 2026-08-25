@@ -1,7 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Play, Search, Shuffle, X } from "lucide-react";
-import { loadProgress, HanziProgressMap } from "./progress";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Grid3X3,
+  Loader2,
+  Play,
+  Search,
+  Shuffle,
+  X,
+} from "lucide-react";
+import {
+  loadProgress,
+  loadAutoplay,
+  saveAutoplay,
+  saveProgress,
+  HanziProgressMap,
+} from "./progress";
+import { loadCachedList, saveCachedList } from "./listCache";
 
 interface VideoItem {
   id: number | null;
@@ -26,7 +42,7 @@ const ALPHA = [
 
 /**
  * 汉字列表页 /hanzi（水墨中国风）
- * 点击卡片跳转到独立播放页 /hanzi/:num。
+ * 点击卡片弹出悬浮播放器，四周高斯模糊背景。
  */
 export default function HanziPlayer() {
   const navigate = useNavigate();
@@ -37,15 +53,40 @@ export default function HanziPlayer() {
   const [alpha, setAlpha] = useState("全部");
   const [progress, setProgress] = useState<HanziProgressMap>(() => loadProgress());
 
+  /* 播放器 modal 状态 */
+  const [activeNum, setActiveNum] = useState<number | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [autoplay, setAutoplay] = useState<boolean>(() => loadAutoplay());
+  const [pickerProgress, setPickerProgress] = useState<HanziProgressMap>({});
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const lastSaveRef = useRef(0);
+  const resumedNumRef = useRef<number | null>(null);
+
+  /* 加载视频列表：当天缓存优先，跨天刷新，每天最多请求一次后端 */
   useEffect(() => {
+    const cached = loadCachedList<VideoItem>();
+    if (cached) {
+      setVideos(cached);
+      setLoading(false);
+      return;
+    }
     fetch("/api/hanzi/list")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d) => setVideos(Array.isArray(d.videos) ? d.videos : []))
-      .catch((e) => setError(e?.message || "加载失败"))
+      .then((d) => {
+        const list = Array.isArray(d.videos) ? d.videos : [];
+        setVideos(list);
+        saveCachedList(list);
+      })
+      .catch((e) => {
+        /* 请求失败：降级用任意旧缓存，避免页面空白 */
+        const stale = loadCachedList<VideoItem>({ allowStale: true });
+        if (stale) setVideos(stale);
+        else setError(e?.message || "加载失败");
+      })
       .finally(() => setLoading(false));
   }, []);
 
-  /* 从播放页返回时刷新观看进度（窗口重新聚焦 / 页面可见时） */
+  /* 窗口重新聚焦 / 页面可见时刷新观看进度 */
   useEffect(() => {
     const refresh = () => setProgress(loadProgress());
     window.addEventListener("focus", refresh);
@@ -70,24 +111,140 @@ export default function HanziPlayer() {
     return list;
   }, [videos, query, alpha]);
 
-  /* 搜索框回车：直达第一个匹配结果，简单高效 */
-  const goFirst = () => {
-    if (filtered.length && filtered[0].num != null) {
-      navigate(`/hanzi/${filtered[0].num}`);
+  const current = useMemo(
+    () => videos.find((v) => v.num === activeNum) || null,
+    [videos, activeNum]
+  );
+  const idx = useMemo(
+    () => videos.findIndex((v) => v.num === activeNum),
+    [videos, activeNum]
+  );
+  const prevVideo = idx > 0 ? videos[idx - 1] : null;
+  const nextVideo = idx >= 0 && idx < videos.length - 1 ? videos[idx + 1] : null;
+
+  /* 打开播放器时禁止背景滚动 */
+  useEffect(() => {
+    if (activeNum != null) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [activeNum]);
+
+  /* 切集时自动加载播放 + 刷新选集面板进度 */
+  useEffect(() => {
+    if (!current) return;
+    const v = videoRef.current;
+    if (v) {
+      v.load();
+      v.play().catch(() => {});
+    }
+    setPickerProgress(loadProgress());
+  }, [current]);
+
+  /* 续播：回到上次观看位置 */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || activeNum == null) return;
+    if (resumedNumRef.current === activeNum) return;
+    resumedNumRef.current = activeNum;
+    const p = loadProgress()[String(activeNum)];
+    if (p && p.dur > 0 && p.pos > 5 && p.pos < p.dur * 0.97) {
+      const seek = () => { if (v.duration > 0) v.currentTime = p.pos; };
+      if (v.readyState >= 1) seek();
+      else v.addEventListener("loadedmetadata", seek, { once: true });
+    }
+  }, [activeNum]);
+
+  /* 节流记录观看进度（3s 一次） */
+  const onTime = () => {
+    const v = videoRef.current;
+    if (!v || !current) return;
+    const now = Date.now();
+    if (now - lastSaveRef.current < 3000) return;
+    lastSaveRef.current = now;
+    saveProgress(current.num, v.currentTime, v.duration || 0);
+  };
+
+  /* 播完：标记已学 + 连播下一集 */
+  const onEnded = () => {
+    if (!current) return;
+    saveProgress(current.num, 0, 0, true);
+    if (autoplay && nextVideo?.num != null) {
+      setActiveNum(nextVideo.num);
     }
   };
 
-  /* 随机学一个 */
+  /* 预取下一集 */
+  useEffect(() => {
+    if (!nextVideo) return;
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.as = "video";
+    link.href = nextVideo.url;
+    document.head.appendChild(link);
+    return () => { document.head.removeChild(link); };
+  }, [nextVideo]);
+
+  /* 键盘快捷键 */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (activeNum == null) return;
+      if (e.key === "Escape") {
+        if (showPicker) setShowPicker(false);
+        else closeModal();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (prevVideo) setActiveNum(prevVideo.num);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (nextVideo) setActiveNum(nextVideo.num);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [prevVideo, nextVideo, showPicker, activeNum]);
+
+  const closeModal = () => {
+    const v = videoRef.current;
+    if (v && current) saveProgress(current.num, v.currentTime, v.duration || 0);
+    setActiveNum(null);
+    setShowPicker(false);
+    resumedNumRef.current = null;
+  };
+
+  const toggleAutoplay = () => {
+    const next = !autoplay;
+    setAutoplay(next);
+    saveAutoplay(next);
+  };
+
+  const pickVideo = (num: number | null) => {
+    setShowPicker(false);
+    if (num != null && num !== activeNum) {
+      setActiveNum(num);
+    }
+  };
+
+  /* 搜索框回车 / 随机 */
+  const goFirst = () => {
+    if (filtered.length && filtered[0].num != null) {
+      setActiveNum(filtered[0].num);
+    }
+  };
   const goRandom = () => {
     if (!filtered.length) return;
     const v = filtered[Math.floor(Math.random() * filtered.length)];
-    navigate(`/hanzi/${v.num}`);
+    setActiveNum(v.num);
   };
 
   const clearFilters = () => {
     setQuery("");
     setAlpha("全部");
   };
+
+  const pad = (n: number | null) => String(n ?? "").padStart(3, "0");
 
   return (
     <div className="min-h-screen" style={{ background: "#faf6f1" }}>
@@ -108,22 +265,6 @@ export default function HanziPlayer() {
         </div>
 
         <div className="relative mx-auto max-w-5xl text-center">
-          <div className="mb-6 flex items-center justify-center gap-4">
-            <Link
-              to="/"
-              title="返回首页"
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#c4a882]/40 text-[#8b7355] transition hover:border-[#a67c52] hover:text-[#5c4033]"
-            >
-              <ArrowLeft size={16} />
-            </Link>
-            <span
-              className="grid h-12 w-12 place-items-center rounded-lg bg-[#b93a3a] text-xl font-bold text-white shadow-md"
-              style={KAI}
-            >
-              字
-            </span>
-          </div>
-
           <h1
             className="mb-3 text-4xl font-bold tracking-widest text-[#3d2b1f] sm:text-5xl"
             style={KAI}
@@ -173,7 +314,7 @@ export default function HanziPlayer() {
           )}
         </div>
 
-        {/* 字母筛选：单行横向滑动，不再换行 */}
+        {/* 字母筛选：单行横向滑动 */}
         <div className="no-scrollbar -mx-4 mb-3 flex items-center gap-1.5 overflow-x-auto px-4 pb-1">
           {ALPHA.map((a) => (
             <button
@@ -246,11 +387,16 @@ export default function HanziPlayer() {
                   : p?.done
                     ? 100
                     : 0;
+              const isActive = v.num === activeNum;
               return (
-                <Link
+                <button
                   key={v.url}
-                  to={`/hanzi/${v.num}`}
-                  className="group relative flex flex-col items-center overflow-hidden rounded-xl border border-[#d4c4a8]/60 bg-paper-50 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg active:scale-[0.97]"
+                  onClick={() => v.num != null && setActiveNum(v.num)}
+                  className={`group relative flex flex-col items-center overflow-hidden rounded-xl border bg-paper-50 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg active:scale-[0.97] ${
+                    isActive
+                      ? "border-[#b93a3a] ring-2 ring-[#b93a3a]/50"
+                      : "border-[#d4c4a8]/60"
+                  }`}
                 >
                   {/* 序号 + 已学徽章 */}
                   <span className="absolute right-2 top-2 flex items-center gap-1">
@@ -292,7 +438,7 @@ export default function HanziPlayer() {
                       <Play size={14} className="ml-0.5" />
                     </span>
                   </span>
-                </Link>
+                </button>
               );
             })}
           </div>
@@ -311,6 +457,217 @@ export default function HanziPlayer() {
           — 象形汉字启蒙视频库 —
         </p>
       </div>
+
+      {/* ================================================================
+          弹出式播放器 Modal
+      ================================================================ */}
+      {activeNum != null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/50 p-4 backdrop-blur-md"
+          onClick={closeModal}
+        >
+          <div
+            className="w-full max-w-3xl overflow-hidden rounded-2xl border border-[#d4c4a8] bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {!current ? (
+              <div className="px-5 py-16 text-center text-sm text-[#8b7355]">
+                未找到编号「{activeNum}」的汉字
+              </div>
+            ) : (
+              <>
+                {/* 顶部信息栏 */}
+                <div className="flex items-center justify-between px-4 py-3 sm:px-5">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="text-3xl font-bold text-[#3d2b1f] sm:text-4xl"
+                      style={KAI}
+                    >
+                      {current.title}
+                    </span>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-[#8b7355]">
+                        {current.pinyin}
+                      </span>
+                      <button
+                        onClick={() => setShowPicker(true)}
+                        className="inline-flex items-center gap-1 text-[11px] text-[#a89078] transition hover:text-[#b93a3a]"
+                      >
+                        <Grid3X3 size={11} />
+                        第 {pad(current.num)} 个 · 共 {videos.length} 个
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {/* 连播开关 */}
+                    <button
+                      onClick={toggleAutoplay}
+                      title={autoplay ? "关闭自动连播" : "开启自动连播"}
+                      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition active:scale-95 ${
+                        autoplay
+                          ? "border-[#b93a3a]/50 bg-[#b93a3a]/10 text-[#b93a3a]"
+                          : "border-[#d4c4a8] text-[#a89078]"
+                      }`}
+                    >
+                      <span
+                        className={`relative h-3.5 w-6 rounded-full transition ${
+                          autoplay ? "bg-[#b93a3a]" : "bg-[#d4c4a8]"
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow transition-all ${
+                            autoplay ? "left-3" : "left-0.5"
+                          }`}
+                        />
+                      </span>
+                      连播
+                    </button>
+                    <button
+                      onClick={closeModal}
+                      title="关闭"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a] active:scale-95"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 视频 */}
+                <div className="relative bg-black">
+                  <video
+                    ref={videoRef}
+                    src={current.url}
+                    className="w-full"
+                    controls
+                    playsInline
+                    preload="auto"
+                    onTimeUpdate={onTime}
+                    onEnded={onEnded}
+                  />
+                </div>
+
+                {/* 底部导航 */}
+                <div className="flex items-stretch border-t border-[#d4c4a8]/40">
+                  {prevVideo ? (
+                    <button
+                      onClick={() => setActiveNum(prevVideo.num)}
+                      className="flex flex-1 items-center gap-2 px-4 py-3 text-left transition hover:bg-[#faf6f1] active:bg-[#f5efe6] sm:px-5"
+                    >
+                      <ChevronLeft size={18} className="shrink-0 text-[#a89078]" />
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-[#a89078]">上一个</span>
+                        <span
+                          className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
+                          style={KAI}
+                        >
+                          {prevVideo.title}
+                        </span>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="flex flex-1 cursor-not-allowed items-center gap-2 px-4 py-3 text-left opacity-40 sm:px-5">
+                      <ChevronLeft size={18} className="shrink-0 text-[#a89078]" />
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-[#a89078]">上一个</span>
+                        <span
+                          className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
+                          style={KAI}
+                        >
+                          已是第一集
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="w-px bg-[#d4c4a8]/40" />
+
+                  {nextVideo ? (
+                    <button
+                      onClick={() => setActiveNum(nextVideo.num)}
+                      className="flex flex-1 items-center justify-end gap-2 px-4 py-3 text-right transition hover:bg-[#faf6f1] active:bg-[#f5efe6] sm:px-5"
+                    >
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-[#a89078]">下一个</span>
+                        <span
+                          className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
+                          style={KAI}
+                        >
+                          {nextVideo.title}
+                        </span>
+                      </div>
+                      <ChevronRight size={18} className="shrink-0 text-[#a89078]" />
+                    </button>
+                  ) : (
+                    <div className="flex flex-1 cursor-not-allowed items-center justify-end gap-2 px-4 py-3 text-right opacity-40 sm:px-5">
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-[#a89078]">下一个</span>
+                        <span
+                          className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
+                          style={KAI}
+                        >
+                          已是最后一集
+                        </span>
+                      </div>
+                      <ChevronRight size={18} className="shrink-0 text-[#a89078]" />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ====== 选集面板（嵌套在播放器 z-index 之上） ====== */}
+      {showPicker && (
+        <div
+          className="animate-hanzi-fade-in fixed inset-0 z-[60] flex items-center justify-center bg-[#3d2b1f]/40 p-4 backdrop-blur-sm"
+          onClick={() => setShowPicker(false)}
+        >
+          <div
+            className="animate-hanzi-scale-in w-full max-w-2xl rounded-2xl border border-[#d4c4a8] bg-[#faf6f1] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-[#3d2b1f]" style={KAI}>
+                选集 · 共 {videos.length} 个
+              </h3>
+              <button
+                onClick={() => setShowPicker(false)}
+                title="关闭"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a] active:scale-95"
+              >
+                <X size={15} />
+              </button>
+            </div>
+            <div className="grid max-h-[60vh] grid-cols-6 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-9">
+              {videos.map((v) => {
+                const p = pickerProgress[String(v.num)];
+                const active = v.num === current?.num;
+                return (
+                  <button
+                    key={v.num}
+                    onClick={() => pickVideo(v.num)}
+                    className={`relative rounded-lg py-2 text-sm font-medium tabular-nums transition active:scale-95 ${
+                      active
+                        ? "bg-[#b93a3a] text-white shadow-md"
+                        : p?.done
+                          ? "bg-[#b93a3a]/10 text-[#b93a3a] hover:bg-[#b93a3a]/20"
+                          : "bg-white text-[#3d2b1f] hover:bg-[#f5efe6]"
+                    }`}
+                  >
+                    {v.num}
+                    {p?.done && !active && (
+                      <span className="absolute right-1 top-0.5 text-[9px] leading-none">✓</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
