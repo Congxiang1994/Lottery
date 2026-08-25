@@ -31,6 +31,21 @@ const fmt = (s: number) => {
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 };
 
+/* 楷体字体栈（macOS / Windows / Android 各自回退） */
+const KAI: React.CSSProperties = {
+  fontFamily: "'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', 'Noto Serif SC', serif",
+};
+
+/* 封面配色轮换（欢快的多彩渐变，按序号循环） */
+const PALETTES = [
+  "from-rose-500 to-orange-400",
+  "from-amber-400 to-yellow-300",
+  "from-teal-500 to-cyan-400",
+  "from-sky-500 to-blue-400",
+  "from-violet-500 to-fuchsia-400",
+  "from-lime-500 to-green-400",
+];
+
 function CtrlBtn({
   onClick,
   label,
@@ -241,8 +256,8 @@ export default function HanziPlayer() {
           <Clapperboard size={18} />
         </span>
         <div className="min-w-0">
-          <h1 className="truncate text-xl font-extrabold tracking-tight sm:text-2xl">
-            汉字是画出来的
+          <h1 className="truncate text-2xl font-extrabold tracking-tight sm:text-3xl" style={KAI}>
+            <span className="gradient-text">汉字是画出来的</span>
           </h1>
           <p className="text-xs text-white/45 sm:text-sm">
             {loading ? "加载中…" : `${videos.length} 节动画课`} · 点击卡片立即全屏播放
@@ -279,28 +294,41 @@ export default function HanziPlayer() {
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
-          {filtered.map((v) => (
-            <button
-              key={v.url}
-              onClick={() => openVideo(v)}
-              className="group flex flex-col overflow-hidden rounded-2xl border border-white/8 bg-white/[0.04] text-left transition hover:border-brand-red/50 hover:bg-white/[0.07] active:scale-[0.97]"
-            >
-              <div className="relative grid aspect-[4/3] place-items-center bg-gradient-to-br from-white/10 via-white/[0.04] to-white/[0.02]">
-                <span className="text-4xl font-black text-white/85">{v.title}</span>
-                <span className="absolute left-1.5 top-1.5 rounded-md bg-black/45 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white/75">
-                  {v.num ?? ""}
-                </span>
-                <span className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100">
-                  <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-black">
-                    <Play size={15} className="ml-0.5" />
+          {filtered.map((v, i) => {
+            /* 轻微随机旋转（-2°~2°，按序号稳定），让封面更像手写卡片 */
+            const tilt = ((v.num ?? i) % 5) - 2;
+            return (
+              <button
+                key={v.url}
+                onClick={() => openVideo(v)}
+                className="group flex flex-col overflow-hidden rounded-2xl border border-white/8 bg-white/[0.04] text-left transition hover:border-brand-red/50 hover:bg-white/[0.07] active:scale-[0.97]"
+              >
+                <div
+                  className={`relative grid aspect-[4/3] place-items-center bg-gradient-to-br ${
+                    PALETTES[(v.num ?? i) % PALETTES.length]
+                  }`}
+                >
+                  <span
+                    className="text-5xl font-black text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)] transition-transform duration-300 group-hover:scale-110"
+                    style={{ ...KAI, transform: `rotate(${tilt}deg)` }}
+                  >
+                    {v.title}
                   </span>
-                </span>
-              </div>
-              <div className="truncate px-2 py-1.5 text-[11px] text-white/55 group-hover:text-white/80">
-                {v.filename}
-              </div>
-            </button>
-          ))}
+                  <span className="absolute left-1.5 top-1.5 rounded-md bg-black/35 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white/85">
+                    {v.num ?? ""}
+                  </span>
+                  <span className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100">
+                    <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-black">
+                      <Play size={15} className="ml-0.5" />
+                    </span>
+                  </span>
+                </div>
+                <div className="truncate px-2 py-1.5 text-[11px] text-white/55 group-hover:text-white/80">
+                  {v.filename}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -321,7 +349,9 @@ export default function HanziPlayer() {
               <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-xs font-bold tabular-nums">
                 {current.num ?? ""}
               </span>
-              <span className="truncate text-sm font-semibold">{current.title}</span>
+              <span className="truncate text-base font-bold text-white" style={KAI}>
+                {current.title}
+              </span>
             </div>
             <button
               onClick={exit}
