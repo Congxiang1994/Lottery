@@ -75,3 +75,24 @@ body {
   background: linear-gradient(90deg, #f3ece2 25%, #faf6f1 37%, #f3ece2 63%);
   background-size: 400% 100%;
 }
+
+/* ---------- 汉字课：轻量动画 ---------- */
+@keyframes hanzi-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes hanzi-scale-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-hanzi-fade-in { animation: hanzi-fade-in 0.18s ease-out both; }
+.animate-hanzi-scale-in { animation: hanzi-scale-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* 隐藏横向滚动条（字母筛选单行滑动） */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

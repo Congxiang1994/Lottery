@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft, Loader2, Play, Search } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, Loader2, Play, Search, Shuffle, X } from "lucide-react";
+import { loadProgress, HanziProgressMap } from "./progress";
 
 interface VideoItem {
   id: number | null;
@@ -17,7 +18,7 @@ const KAI: React.CSSProperties = {
   fontFamily: "'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', 'Noto Serif SC', serif",
 };
 
-/* 拼音首字母表 */
+/* 拼音首字母表（按实际出现的字母） */
 const ALPHA = [
   "全部", "a", "b", "c", "d", "e", "f", "g", "h", "j", "k", "l", "m",
   "n", "q", "r", "s", "t", "w", "x", "y", "z",
@@ -28,11 +29,13 @@ const ALPHA = [
  * 点击卡片跳转到独立播放页 /hanzi/:num。
  */
 export default function HanziPlayer() {
+  const navigate = useNavigate();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [alpha, setAlpha] = useState("全部");
+  const [progress, setProgress] = useState<HanziProgressMap>(() => loadProgress());
 
   useEffect(() => {
     fetch("/api/hanzi/list")
@@ -40,6 +43,17 @@ export default function HanziPlayer() {
       .then((d) => setVideos(Array.isArray(d.videos) ? d.videos : []))
       .catch((e) => setError(e?.message || "加载失败"))
       .finally(() => setLoading(false));
+  }, []);
+
+  /* 从播放页返回时刷新观看进度（窗口重新聚焦 / 页面可见时） */
+  useEffect(() => {
+    const refresh = () => setProgress(loadProgress());
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -55,6 +69,25 @@ export default function HanziPlayer() {
     }
     return list;
   }, [videos, query, alpha]);
+
+  /* 搜索框回车：直达第一个匹配结果，简单高效 */
+  const goFirst = () => {
+    if (filtered.length && filtered[0].num != null) {
+      navigate(`/hanzi/${filtered[0].num}`);
+    }
+  };
+
+  /* 随机学一个 */
+  const goRandom = () => {
+    if (!filtered.length) return;
+    const v = filtered[Math.floor(Math.random() * filtered.length)];
+    navigate(`/hanzi/${v.num}`);
+  };
+
+  const clearFilters = () => {
+    setQuery("");
+    setAlpha("全部");
+  };
 
   return (
     <div className="min-h-screen" style={{ background: "#faf6f1" }}>
@@ -103,12 +136,21 @@ export default function HanziPlayer() {
           <p className="text-xs text-[#a89078] sm:text-sm">
             共收录 <span className="font-bold text-[#b93a3a]">{videos.length}</span> 个象形汉字 · 点击卡片即可观看
           </p>
+
+          <button
+            onClick={goRandom}
+            disabled={!filtered.length}
+            className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#b93a3a]/50 bg-white/80 px-5 py-2 text-sm font-medium text-[#b93a3a] shadow-sm transition hover:bg-[#b93a3a] hover:text-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Shuffle size={15} />
+            随机学一个
+          </button>
         </div>
       </div>
 
       {/* ====== 搜索 + 筛选 ====== */}
       <div className="mx-auto max-w-5xl px-4 pb-6">
-        <div className="relative mx-auto mb-5 max-w-lg">
+        <div className="relative mx-auto mb-4 max-w-lg">
           <Search
             size={16}
             className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a89078]"
@@ -116,21 +158,28 @@ export default function HanziPlayer() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="输入汉字 / 拼音 / 编号，如「月」「yue」「002」…"
-            className="w-full rounded-xl border border-[#d4c4a8] bg-paper-50 py-2.5 pl-10 pr-4 text-sm text-[#3d2b1f] outline-none transition placeholder:text-[#b8a890] focus:border-[#b93a3a]/60 focus:bg-white"
+            onKeyDown={(e) => e.key === "Enter" && goFirst()}
+            placeholder="输入汉字 / 拼音 / 编号，回车直达"
+            className="w-full rounded-xl border border-[#d4c4a8] bg-paper-50 py-2.5 pl-10 pr-10 text-sm text-[#3d2b1f] outline-none transition placeholder:text-[#b8a890] focus:border-[#b93a3a]/60 focus:bg-white"
           />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              title="清空搜索"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-[#a89078] transition hover:bg-[#f5efe6] hover:text-[#3d2b1f]"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
-        <div className="mb-3 text-center text-xs text-[#a89078]">
-          显示 <span className="font-bold text-[#3d2b1f]">{filtered.length}</span> / {videos.length}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-center gap-1.5">
+        {/* 字母筛选：单行横向滑动，不再换行 */}
+        <div className="no-scrollbar -mx-4 mb-3 flex items-center gap-1.5 overflow-x-auto px-4 pb-1">
           {ALPHA.map((a) => (
             <button
               key={a}
               onClick={() => setAlpha(a)}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+              className={`shrink-0 rounded-md px-2.5 py-1 text-xs font-medium transition ${
                 alpha === a
                   ? "bg-[#b93a3a] text-white shadow-sm"
                   : "bg-paper-50 text-[#8b7355] hover:bg-white hover:text-[#3d2b1f]"
@@ -139,6 +188,28 @@ export default function HanziPlayer() {
               {a}
             </button>
           ))}
+        </div>
+
+        <div className="mb-1 flex items-center justify-center gap-2 text-xs text-[#a89078]">
+          <span>
+            显示 <span className="font-bold text-[#3d2b1f]">{filtered.length}</span> / {videos.length}
+          </span>
+          {alpha !== "全部" && (
+            <button
+              onClick={() => setAlpha("全部")}
+              className="inline-flex items-center gap-0.5 rounded-full border border-[#b93a3a]/40 px-2 py-0.5 text-[10px] text-[#b93a3a] transition hover:bg-[#b93a3a]/10"
+            >
+              拼音 {alpha} <X size={10} />
+            </button>
+          )}
+          {(query || alpha !== "全部") && (
+            <button
+              onClick={clearFilters}
+              className="text-[#a89078] underline-offset-2 transition hover:text-[#b93a3a] hover:underline"
+            >
+              清除筛选
+            </button>
+          )}
         </div>
       </div>
 
@@ -153,36 +224,77 @@ export default function HanziPlayer() {
             视频列表加载失败：{error}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-[#d4c4a8] bg-paper-50 px-5 py-16 text-center text-sm text-[#8b7355]">
-            未找到「{query || alpha}」相关的汉字，换个关键词试试
+          <div className="rounded-2xl border border-[#d4c4a8] bg-paper-50 px-5 py-16 text-center">
+            <p className="text-sm text-[#8b7355]">
+              未找到「{query || (alpha !== "全部" ? `拼音 ${alpha}` : "")}」相关的汉字，换个关键词试试
+            </p>
+            <button
+              onClick={clearFilters}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[#b93a3a]/50 px-4 py-1.5 text-xs font-medium text-[#b93a3a] transition hover:bg-[#b93a3a] hover:text-white"
+            >
+              <X size={12} />
+              清除筛选
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
-            {filtered.map((v) => (
-              <Link
-                key={v.url}
-                to={`/hanzi/${v.num}`}
-                className="group relative flex flex-col items-center overflow-hidden rounded-xl border border-[#d4c4a8]/60 bg-paper-50 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg active:scale-[0.97]"
-              >
-                <span className="absolute right-2 top-2 text-[10px] font-bold tabular-nums text-[#c4a882]">
-                  {v.num ?? ""}
-                </span>
-                <span
-                  className="mb-1 text-4xl font-bold text-[#3d2b1f] transition-transform duration-300 group-hover:scale-110 sm:text-5xl"
-                  style={KAI}
+            {filtered.map((v) => {
+              const p = v.num != null ? progress[String(v.num)] : undefined;
+              const watchedPct =
+                p && p.dur > 0 && !p.done
+                  ? Math.max(0, Math.min(100, (p.pos / p.dur) * 100))
+                  : p?.done
+                    ? 100
+                    : 0;
+              return (
+                <Link
+                  key={v.url}
+                  to={`/hanzi/${v.num}`}
+                  className="group relative flex flex-col items-center overflow-hidden rounded-xl border border-[#d4c4a8]/60 bg-paper-50 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg active:scale-[0.97]"
                 >
-                  {v.title}
-                </span>
-                <span className="text-[11px] tracking-wider text-[#a89078]">
-                  {v.pinyin}
-                </span>
-                <span className="absolute inset-0 grid place-items-center bg-[#3d2b1f]/0 opacity-0 transition group-hover:bg-[#3d2b1f]/5 group-hover:opacity-100">
-                  <span className="grid h-8 w-8 place-items-center rounded-full bg-[#b93a3a] text-white shadow-md">
-                    <Play size={14} className="ml-0.5" />
+                  {/* 序号 + 已学徽章 */}
+                  <span className="absolute right-2 top-2 flex items-center gap-1">
+                    {p?.done && (
+                      <span className="rounded bg-[#b93a3a] px-1 py-px text-[9px] font-bold text-white">
+                        已学
+                      </span>
+                    )}
+                    <span className="text-[10px] font-bold tabular-nums text-[#c4a882]">
+                      {v.num ?? ""}
+                    </span>
                   </span>
-                </span>
-              </Link>
-            ))}
+
+                  <span
+                    className="mb-1 text-4xl font-bold text-[#3d2b1f] transition-transform duration-300 group-hover:scale-110 sm:text-5xl"
+                    style={KAI}
+                  >
+                    {v.title}
+                  </span>
+                  <span className="text-[11px] tracking-wider text-[#a89078]">
+                    {v.pinyin}
+                  </span>
+
+                  {/* 观看进度条 */}
+                  {watchedPct > 0 && watchedPct < 100 && (
+                    <span className="absolute inset-x-0 bottom-0 h-[3px] bg-[#d4c4a8]/40">
+                      <span
+                        className="block h-full bg-[#c98600] transition-[width] duration-300"
+                        style={{ width: `${watchedPct}%` }}
+                      />
+                    </span>
+                  )}
+                  {watchedPct === 100 && (
+                    <span className="absolute inset-x-0 bottom-0 h-[3px] bg-[#b93a3a]/70" />
+                  )}
+
+                  <span className="absolute inset-0 grid place-items-center bg-[#3d2b1f]/0 opacity-0 transition group-hover:bg-[#3d2b1f]/5 group-hover:opacity-100">
+                    <span className="grid h-8 w-8 place-items-center rounded-full bg-[#b93a3a] text-white shadow-md">
+                      <Play size={14} className="ml-0.5" />
+                    </span>
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

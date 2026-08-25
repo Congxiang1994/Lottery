@@ -3,7 +3,9 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  base: "./",
+  // 必须用绝对路径：相对 base 会让 /hanzi/1 等二级路由把 assets 解析成 /hanzi/assets/...
+  // 导致 JS 加载失败（nginx 回退成 HTML）→ 播放页空白。已踩坑（2026-08-25）
+  base: "/",
   server: {
     proxy: {
       "/api": {
