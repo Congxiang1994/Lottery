@@ -62,10 +62,10 @@ export default function Portal() {
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link
-            to="/lottery"
+            to="/hanzi"
             className="flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-5 py-3 text-sm font-semibold text-white shadow-glow transition hover:opacity-90"
           >
-            <Dices size={16} /> 进入彩票数据站 <ArrowRight size={15} />
+            <Clapperboard size={16} /> 欢迎进入《汉字是画出来的》 <ArrowRight size={15} />
           </Link>
           <a
             href="https://github.com/Congxiang1994/Lottery"
