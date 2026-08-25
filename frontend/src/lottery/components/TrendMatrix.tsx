@@ -58,11 +58,11 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    const RED = "#ff3b5c";
+    const RED = "#e23b52";
     const BLUE = "#3b82f6";
-    const GOLD = "#f5c451";
-    const CELL_BG = "rgba(255,255,255,0.03)";
-    const RED_BG = "rgba(255,59,92,0.05)";
+    const GOLD = "#c98600";
+    const CELL_BG = "rgba(61,43,31,0.03)";
+    const RED_BG = "rgba(226,59,82,0.05)";
     const BLUE_BG = "rgba(59,130,246,0.06)";
     const r = Math.min(10.5, COL_W * 0.4);
     const headFont = `${Math.max(9, Math.min(11, COL_W * 0.5))}px Inter, sans-serif`;
@@ -71,7 +71,7 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
     ctx.font = headFont;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.fillStyle = "rgba(107,87,63,0.9)";
     ctx.fillText("期号", ISSUE_W / 2, HEAD_H / 2);
     for (let n = 1; n <= redMax; n++) {
       const x = ISSUE_W + (n - 1) * COL_W + COL_W / 2;
@@ -94,7 +94,7 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
     ctx.fillStyle = BLUE_BG;
     ctx.fillRect(ISSUE_W + redMax * COL_W, HEAD_H, blueMax * COL_W, draws.length * ROW_H);
     // 行分隔线
-    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    ctx.strokeStyle = "rgba(61,43,31,0.06)";
     ctx.lineWidth = 1;
     for (let i = 0; i <= draws.length; i++) {
       const y = HEAD_H + i * ROW_H;
@@ -125,14 +125,14 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
         }
         // 斜连：±1 列（号码相邻，斜向走势）
         if (prev.has(colIdx - 1) && colIdx >= 1 && colIdx <= redMax) {
-          ctx.strokeStyle = "rgba(245,196,81,0.4)";
+          ctx.strokeStyle = "rgba(201,134,0,0.45)";
           ctx.beginPath();
           ctx.moveTo(colX(colIdx - 1), y0 + 8);
           ctx.lineTo(colX(colIdx), y1 - 8);
           ctx.stroke();
         }
         if (prev.has(colIdx + 1) && colIdx < redMax) {
-          ctx.strokeStyle = "rgba(245,196,81,0.4)";
+          ctx.strokeStyle = "rgba(201,134,0,0.45)";
           ctx.beginPath();
           ctx.moveTo(colX(colIdx + 1), y0 + 8);
           ctx.lineTo(colX(colIdx), y1 - 8);
@@ -147,7 +147,7 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
       const y = rowY(i);
       // 期号
       ctx.textAlign = "right";
-      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillStyle = "rgba(107,87,63,0.9)";
       ctx.font = `${Math.max(9, Math.min(11, COL_W * 0.5))}px Inter, monospace`;
       ctx.fillText(d.issue, ISSUE_W - 8, y);
       ctx.textAlign = "center";
@@ -156,7 +156,7 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
         const x = colX(colIdx);
         const g = ctx.createRadialGradient(x - 3, y - 3, 1.5, x, y, r);
         if (isBlue) { g.addColorStop(0, "#60a5fa"); g.addColorStop(1, BLUE); }
-        else { g.addColorStop(0, "#ff6b85"); g.addColorStop(1, RED); }
+        else { g.addColorStop(0, "#f48a9b"); g.addColorStop(1, RED); }
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = "#fff";
@@ -169,25 +169,25 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
     // ---------- 遗漏行 ----------
     ctx.fillStyle = CELL_BG;
     ctx.fillRect(0, HEAD_H + draws.length * ROW_H, width, OMIT_H);
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.strokeStyle = "rgba(61,43,31,0.08)";
     ctx.beginPath();
     ctx.moveTo(0, HEAD_H + draws.length * ROW_H);
     ctx.lineTo(width, HEAD_H + draws.length * ROW_H);
     ctx.stroke();
     const omitY = HEAD_H + draws.length * ROW_H + OMIT_H / 2;
     ctx.textAlign = "right";
-    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.fillStyle = "rgba(107,87,63,0.9)";
     ctx.font = `${Math.max(9, Math.min(11, COL_W * 0.5))}px Inter, sans-serif`;
     ctx.fillText("遗漏", ISSUE_W - 8, omitY);
     ctx.textAlign = "center";
     for (let n = 1; n <= redMax; n++) {
       const v = redOmit[n - 1] ?? 0;
-      ctx.fillStyle = v === 0 ? "rgba(255,59,92,0.85)" : "rgba(255,255,255,0.4)";
+      ctx.fillStyle = v === 0 ? "rgba(226,59,82,0.85)" : "rgba(156,135,105,0.9)";
       ctx.fillText(v === 0 ? "0" : String(v), colX(n - 1), omitY);
     }
     for (let n = 1; n <= blueMax; n++) {
       const v = blueOmit[n - 1] ?? 0;
-      ctx.fillStyle = v === 0 ? "rgba(59,130,246,0.85)" : "rgba(255,255,255,0.4)";
+      ctx.fillStyle = v === 0 ? "rgba(37,99,235,0.85)" : "rgba(156,135,105,0.9)";
       ctx.fillText(v === 0 ? "0" : String(v), colX(redMax + n - 1), omitY);
     }
   }, [draws, redMax, blueMax, redOmit, blueOmit, cw]);
@@ -195,14 +195,14 @@ export default function TrendMatrix({ draws, redMax, blueMax, redOmit, blueOmit,
   return (
     <div ref={wrapRef} className="w-full overflow-x-hidden">
       {title && (
-        <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px] text-white/45">
+        <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px] text-paper-700">
           {title}
           <span className="flex items-center gap-1"><span className="h-[2px] w-5 bg-brand-red/60" /> 直落（同号连开）</span>
           <span className="flex items-center gap-1"><span className="h-[2px] w-5 bg-brand-gold/60" /> 斜连（±1 邻号）</span>
-          <span className="text-white/30">· 底部为当前遗漏期数</span>
+          <span className="text-paper-500">· 底部为当前遗漏期数</span>
         </div>
       )}
-      <canvas ref={ref} className="block rounded-xl border border-white/5" />
+      <canvas ref={ref} className="block rounded-xl border border-paper-100" />
     </div>
   );
 }

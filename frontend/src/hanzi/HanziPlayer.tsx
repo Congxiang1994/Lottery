@@ -117,7 +117,7 @@ export default function HanziPlayer() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="输入汉字 / 拼音 / 编号，如「月」「yue」「002」…"
-            className="w-full rounded-xl border border-[#d4c4a8] bg-white/70 py-2.5 pl-10 pr-4 text-sm text-[#3d2b1f] outline-none transition placeholder:text-[#b8a890] focus:border-[#b93a3a]/60 focus:bg-white"
+            className="w-full rounded-xl border border-[#d4c4a8] bg-paper-50 py-2.5 pl-10 pr-4 text-sm text-[#3d2b1f] outline-none transition placeholder:text-[#b8a890] focus:border-[#b93a3a]/60 focus:bg-white"
           />
         </div>
 
@@ -133,7 +133,7 @@ export default function HanziPlayer() {
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
                 alpha === a
                   ? "bg-[#b93a3a] text-white shadow-sm"
-                  : "bg-white/60 text-[#8b7355] hover:bg-white hover:text-[#3d2b1f]"
+                  : "bg-paper-50 text-[#8b7355] hover:bg-white hover:text-[#3d2b1f]"
               }`}
             >
               {a}
@@ -149,11 +149,11 @@ export default function HanziPlayer() {
             <Loader2 size={28} className="animate-spin" />
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-[#d4c4a8] bg-white/50 px-5 py-16 text-center text-sm text-[#8b7355]">
+          <div className="rounded-2xl border border-[#d4c4a8] bg-paper-50 px-5 py-16 text-center text-sm text-[#8b7355]">
             视频列表加载失败：{error}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-[#d4c4a8] bg-white/50 px-5 py-16 text-center text-sm text-[#8b7355]">
+          <div className="rounded-2xl border border-[#d4c4a8] bg-paper-50 px-5 py-16 text-center text-sm text-[#8b7355]">
             未找到「{query || alpha}」相关的汉字，换个关键词试试
           </div>
         ) : (
@@ -162,7 +162,7 @@ export default function HanziPlayer() {
               <Link
                 key={v.url}
                 to={`/hanzi/${v.num}`}
-                className="group relative flex flex-col items-center overflow-hidden rounded-xl border border-[#d4c4a8]/60 bg-white/80 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg active:scale-[0.97]"
+                className="group relative flex flex-col items-center overflow-hidden rounded-xl border border-[#d4c4a8]/60 bg-paper-50 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg active:scale-[0.97]"
               >
                 <span className="absolute right-2 top-2 text-[10px] font-bold tabular-nums text-[#c4a882]">
                   {v.num ?? ""}

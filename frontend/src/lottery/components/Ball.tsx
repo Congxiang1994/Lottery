@@ -21,8 +21,8 @@ export default function Ball({ n, kind = "red", size = 44, delay = 0 }: BallProp
         margin: 4,
         animationDelay: `${delay}ms`,
         boxShadow: isRed
-          ? "0 6px 18px -4px rgba(255,59,92,0.55)"
-          : "0 6px 18px -4px rgba(59,130,246,0.55)",
+          ? "0 6px 18px -4px rgba(226,59,82,0.35)"
+          : "0 6px 18px -4px rgba(37,99,235,0.35)",
       }}
     >
       {n}

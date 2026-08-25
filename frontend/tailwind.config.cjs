@@ -20,18 +20,31 @@ module.exports = {
           600: "#1b1f2b",
           500: "#272c3a",
         },
+        /* 米白柔和系（全站主题） */
+        paper: {
+          50: "#fdfbf7",
+          100: "#faf6f1",
+          200: "#f3ece2",
+          300: "#e8ddcc",
+          400: "#d4c4a8",
+          500: "#b8a890",
+          600: "#9c8769",
+          700: "#8b7355",
+          800: "#6b573f",
+          900: "#3d2b1f",
+        },
         brand: {
-          red: "#ff3b5c",
-          red2: "#ff7a45",
+          red: "#e23b52",
+          red2: "#f27a5e",
           blue: "#3b82f6",
-          blue2: "#22d3ee",
-          gold: "#f5c451",
+          blue2: "#0e7490",
+          gold: "#c98600",
         },
       },
       boxShadow: {
-        glow: "0 0 40px -8px rgba(255,59,92,0.45)",
-        glowblue: "0 0 40px -8px rgba(59,130,246,0.45)",
-        card: "0 12px 40px -12px rgba(0,0,0,0.6)",
+        glow: "0 0 40px -8px rgba(226,59,82,0.28)",
+        glowblue: "0 0 40px -8px rgba(59,130,246,0.28)",
+        card: "0 8px 30px -12px rgba(61,43,31,0.18)",
       },
       keyframes: {
         floaty: {

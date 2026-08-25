@@ -8,7 +8,7 @@ interface TabsProps {
 
 export default function LotteryTabs({ lotteries, value, onChange }: TabsProps) {
   return (
-    <div className="inline-flex rounded-xl border border-white/10 bg-ink-700/60 p-1">
+    <div className="inline-flex rounded-xl border border-paper-200 bg-paper-200 p-1">
       {lotteries.map((l) => {
         const active = l.key === value;
         const isRed = l.key === "ssq";
@@ -21,7 +21,7 @@ export default function LotteryTabs({ lotteries, value, onChange }: TabsProps) {
                 ? isRed
                   ? "bg-gradient-to-br from-brand-red to-brand-red2 text-white shadow-glow"
                   : "bg-gradient-to-br from-brand-blue to-brand-blue2 text-white shadow-glowblue"
-                : "text-white/55 hover:text-white"
+                : "text-paper-700 hover:text-paper-900"
             }`}
           >
             {l.name}

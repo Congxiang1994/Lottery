@@ -36,7 +36,7 @@ export default function Home() {
     <div className="pt-8">
       {/* Hero */}
       <section className="text-center">
-        <div className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-white/60">
+        <div className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-paper-200 bg-paper-100 px-4 py-1.5 text-xs text-paper-700">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-red" />
           彩票数据可视化与智能推荐平台
         </div>
@@ -45,7 +45,7 @@ export default function Home() {
           <span className={key === "ssq" ? "gradient-text" : "gradient-text-blue"}>可视化</span>
           与智能推荐
         </h1>
-        <p className="mx-auto mt-3 max-w-xl text-sm text-white/55">
+        <p className="mx-auto mt-3 max-w-xl text-sm text-paper-700">
           双色球 / 大乐透历史开奖全量统计、走势追踪与多策略推荐，一站看透号码规律。
         </p>
         <div className="mt-6 flex justify-center">
@@ -61,15 +61,15 @@ export default function Home() {
             <div className="flex flex-col gap-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-widest text-white/40">最新开奖</div>
+                  <div className="text-xs uppercase tracking-widest text-paper-600">最新开奖</div>
                   <div className="mt-1 text-2xl font-bold">
                     {meta?.name}
-                    <span className="ml-2 text-base font-normal text-white/45">
+                    <span className="ml-2 text-base font-normal text-paper-700">
                       第 {summary.latest.issue} 期 · {summary.latest.date}
                     </span>
                   </div>
                 </div>
-                <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/60">
+                <span className="rounded-full bg-paper-200 px-3 py-1 text-xs text-paper-700">
                   {summary.org}
                 </span>
               </div>
@@ -77,7 +77,7 @@ export default function Home() {
                 {summary.latest.red.map((n, i) => (
                   <Ball key={i} n={n} kind="red" size={48} delay={i * 70} />
                 ))}
-                <span className="mx-2 text-2xl text-white/20">+</span>
+                <span className="mx-2 text-2xl text-paper-400">+</span>
                 {summary.latest.blue.map((n, i) => (
                   <Ball key={i} n={n} kind="blue" size={48} delay={400 + i * 70} />
                 ))}
@@ -106,14 +106,14 @@ export default function Home() {
               <span className="flex items-center gap-1.5 text-base font-bold text-brand-gold">
                 <Sparkles size={16} /> 全算法共识推荐
               </span>
-              <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] text-white/45">
+              <span className="rounded-full bg-paper-100 px-2 py-0.5 text-[10px] text-paper-700">
                 {combined
                   ? `融合 ${combined.count} 个算法 · ${combined.run_date} 跑批`
                   : "等待每日跑批数据…"}
               </span>
               <button
                 onClick={() => nav("/algorithms")}
-                className="ml-auto flex items-center gap-1 text-[11px] text-white/45 transition hover:text-white"
+                className="ml-auto flex items-center gap-1 text-[11px] text-paper-700 transition hover:text-paper-900"
               >
                 <Layers size={12} /> 查看算法广场 <ArrowRight size={12} />
               </button>
@@ -124,13 +124,13 @@ export default function Home() {
                   {combined.red.map((n, i) => (
                     <Ball key={`r${i}`} n={n} kind="red" size={40} delay={i * 40} />
                   ))}
-                  <span className="mx-1.5 text-xl text-white/20">+</span>
+                  <span className="mx-1.5 text-xl text-paper-400">+</span>
                   {combined.blue.map((n, i) => (
                     <Ball key={`b${i}`} n={n} kind="blue" size={40} delay={200 + i * 40} />
                   ))}
                 </>
               ) : (
-                <span className="text-xs text-white/35">暂无数据 — 每日 0:00 定时跑批后自动出现</span>
+                <span className="text-xs text-paper-600">暂无数据 — 每日 0:00 定时跑批后自动出现</span>
               )}
             </div>
           </div>
@@ -172,7 +172,7 @@ export default function Home() {
         <div className="glass rounded-3xl p-6 shadow-card">
           <div className="mb-4 flex items-center gap-2 text-base font-bold">
             <Flame size={18} className="text-brand-red" /> 冷热榜单
-            <span className="text-xs font-normal text-white/40">· 近 {stats?.hot_cold.window ?? 50} 期</span>
+            <span className="text-xs font-normal text-paper-600">· 近 {stats?.hot_cold.window ?? 50} 期</span>
           </div>
           {stats ? (
             <div className="grid gap-6 sm:grid-cols-2">
@@ -205,7 +205,7 @@ function StatCard({
   value: string;
   accent?: "red" | "blue";
 }) {
-  const c = accent === "blue" ? "text-brand-blue2" : accent === "red" ? "text-brand-red" : "text-white/70";
+  const c = accent === "blue" ? "text-brand-blue2" : accent === "red" ? "text-brand-red" : "text-paper-800";
   return (
     <div className="glass card-hover rounded-2xl p-4">
       <div className={`mb-2 flex items-center gap-1.5 text-xs ${c}`}>{icon}{label}</div>
@@ -227,7 +227,7 @@ function ColdHotRow({
 }) {
   return (
     <div>
-      <div className="mb-2 text-sm font-semibold text-white/60">{title}</div>
+      <div className="mb-2 text-sm font-semibold text-paper-700">{title}</div>
       <div className="flex flex-wrap gap-2">
         {items.map((it, i) => (
           <div
@@ -237,7 +237,7 @@ function ColdHotRow({
             }`}
           >
             <span className={hot ? "text-brand-red" : "text-brand-blue2"}>No.{it.number}</span>
-            <span className="text-white/40">×{it.count}</span>
+            <span className="text-paper-600">×{it.count}</span>
           </div>
         ))}
       </div>

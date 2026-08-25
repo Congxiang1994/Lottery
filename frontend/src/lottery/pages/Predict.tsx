@@ -45,7 +45,7 @@ export default function Predict() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">智能推荐</h1>
-          <p className="mt-1 text-sm text-white/50">
+          <p className="mt-1 text-sm text-paper-700">
             {combined ? `每日 ${combined.run_date} 跑批 · 第 ${combined.issue_base} 期` : "加载中"}
           </p>
         </div>
@@ -60,7 +60,7 @@ export default function Predict() {
               <span className="flex items-center gap-1.5 text-base font-bold text-brand-gold">
                 <Sparkles size={16} /> 全算法共识推荐
               </span>
-              <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] text-white/45">
+              <span className="rounded-full bg-paper-100 px-2 py-0.5 text-[10px] text-paper-700">
                 {combined ? `融合 ${combined.count} 个算法 · 等权平均（${combined.run_date}）` : "暂无跑批数据 · 请到算法广场运行全部算法"}
               </span>
             </div>
@@ -68,10 +68,10 @@ export default function Predict() {
               {combined ? (
                 <>
                   {combined.red.map((n, i) => (<Ball key={i} n={n} kind="red" size={42} delay={i * 50} />))}
-                  <span className="mx-1.5 text-xl text-white/20">+</span>
+                  <span className="mx-1.5 text-xl text-paper-400">+</span>
                   {combined.blue.map((n, i) => (<Ball key={i} n={n} kind="blue" size={42} delay={250 + i * 50} />))}
                 </>
-              ) : (<span className="text-xs text-white/35">暂无数据</span>)}
+              ) : (<span className="text-xs text-paper-600">暂无数据</span>)}
             </div>
           </div>
         </div>
@@ -81,28 +81,28 @@ export default function Predict() {
       <Reveal className="mt-5">
         <div className="glass rounded-3xl p-6 shadow-card">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="flex items-center gap-2 text-base font-bold text-white/90">
+            <h2 className="flex items-center gap-2 text-base font-bold text-paper-900">
               <Trophy size={16} className="text-brand-gold" /> 回测 Top10 推荐
             </h2>
             {top10.length > 0 ? (
-              <span className="text-[11px] text-white/45">
+              <span className="text-[11px] text-paper-700">
                 基于最近 5 期留一预测回测排行榜（lift = 实际命中 / 随机期望）
               </span>
             ) : (
-              <span className="text-[11px] text-white/35">回测数据未生成 · 请到算法广场运行全部算法（含回测）</span>
+              <span className="text-[11px] text-paper-600">回测数据未生成 · 请到算法广场运行全部算法（含回测）</span>
             )}
           </div>
 
           {top10.length > 0 ? (
             <div className="mt-4 space-y-2">
               {top10.map((t, i) => (
-                <div key={t.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/8 bg-white/3 px-3 py-2 transition hover:border-white/15">
+                <div key={t.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-paper-100 bg-paper-50 px-3 py-2 transition hover:border-paper-300">
                   <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sm font-bold ${
-                    i === 0 ? "bg-brand-gold/20 text-brand-gold" : i < 3 ? "bg-white/10 text-white/80" : "bg-white/5 text-white/50"
+                    i === 0 ? "bg-brand-gold/20 text-brand-gold" : i < 3 ? "bg-paper-200 text-paper-900" : "bg-paper-100 text-paper-700"
                   }`}>{i + 1}</span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-white/85">{t.name}</div>
-                    <div className="text-[10px] text-white/40">
+                    <div className="truncate text-sm font-semibold text-paper-900">{t.name}</div>
+                    <div className="text-[10px] text-paper-600">
                       综合分 {t.score.toFixed(3)} · 红球 lift {t.red_lift.toFixed(2)} · 蓝球 lift {t.blue_lift.toFixed(2)}
                     </div>
                   </div>
@@ -110,19 +110,19 @@ export default function Predict() {
                     {(t.red ?? []).map((n, j) => (
                       <Ball key={`r${j}`} n={n} kind="red" size={26} delay={j * 20} />
                     ))}
-                    <span className="mx-0.5 text-xs text-white/20">+</span>
+                    <span className="mx-0.5 text-xs text-paper-400">+</span>
                     {(t.blue ?? []).map((n, j) => (
                       <Ball key={`b${j}`} n={n} kind="blue" size={26} delay={80 + j * 20} />
                     ))}
                   </div>
                 </div>
               ))}
-              <p className="pt-1 text-[10px] text-white/30">
+              <p className="pt-1 text-[10px] text-paper-500">
                 注：回测 lift 在小样本上噪声较大，长期回归 1.0；本榜单仅作历史表现参考，不构成预测依据
               </p>
             </div>
           ) : (
-            <div className="mt-4 rounded-xl border border-dashed border-white/10 p-4 text-center text-xs text-white/40">
+            <div className="mt-4 rounded-xl border border-dashed border-paper-200 p-4 text-center text-xs text-paper-600">
               回测数据未生成。到「算法广场」点击「运行全部」即可生成（含预测 + 回测，
               双色球约 4 分钟，大乐透约 12 分钟），完成后刷新本页自动展示 Top10。
             </div>
@@ -133,11 +133,11 @@ export default function Predict() {
       <Reveal className="mt-6">
         <div className="glass rounded-3xl p-6 shadow-card">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="flex items-center gap-2 text-base font-bold text-white/90">
+            <h2 className="flex items-center gap-2 text-base font-bold text-paper-900">
               <Calendar size={16} className="text-brand-blue2" /> 每日定时跑批结果
             </h2>
             {saved && (
-              <span className="text-[11px] text-white/45">
+              <span className="text-[11px] text-paper-700">
                 {saved.run_date} · 第 <b>{saved.issue_base}</b> 期 · {saved.count} 个算法
               </span>
             )}
@@ -147,31 +147,31 @@ export default function Predict() {
               {saved.results.map((a) => {
                 const open = openId === a.id;
                 return (
-                  <div key={a.id} className="rounded-xl border border-white/8 bg-white/3 p-3">
+                  <div key={a.id} className="rounded-xl border border-paper-100 bg-paper-50 p-3">
                     <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <div className="truncate text-sm font-semibold text-white/85">{a.name}</div>
-                          <span className="shrink-0 text-[10px] text-white/35">{a.elapsed_ms}ms</span>
+                          <div className="truncate text-sm font-semibold text-paper-900">{a.name}</div>
+                          <span className="shrink-0 text-[10px] text-paper-600">{a.elapsed_ms}ms</span>
                         </div>
-                        <div className="text-[10px] text-white/40">{CAT_NAMES[a.category] ?? a.category}</div>
+                        <div className="text-[10px] text-paper-600">{CAT_NAMES[a.category] ?? a.category}</div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           {a.red.map((n, i) => (<Ball key={i} n={n} kind="red" size={22} delay={i * 20} />))}
-                          <span className="mx-0.5 text-xs text-white/20">+</span>
+                          <span className="mx-0.5 text-xs text-paper-400">+</span>
                           {a.blue.map((n, i) => (<Ball key={i} n={n} kind="blue" size={22} delay={80 + i * 20} />))}
                         </div>
                       </div>
                       <button onClick={() => setOpenId(open ? null : a.id)}
-                        className="shrink-0 rounded-lg border border-white/10 bg-white/5 p-1.5 text-white/55 hover:bg-white/10 hover:text-white">
+                        className="shrink-0 rounded-lg border border-paper-200 bg-paper-100 p-1.5 text-paper-700 hover:bg-paper-200 hover:text-paper-900">
                         {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </button>
                     </div>
                     {open && (
-                      <div className="mt-2 max-h-40 space-y-0.5 overflow-y-auto rounded-lg border border-white/8 bg-black/20 p-2 text-[10px]">
+                      <div className="mt-2 max-h-40 space-y-0.5 overflow-y-auto rounded-lg border border-paper-100 bg-paper-100 p-2 text-[10px]">
                         {Object.entries(a.detail ?? {}).filter(([k]) => k !== "error").map(([dk, v]) => (
                           <div key={dk} className="flex gap-2">
-                            <span className="w-28 shrink-0 truncate text-white/40">{dk}</span>
-                            <span className="break-all text-white/75">
+                            <span className="w-28 shrink-0 truncate text-paper-600">{dk}</span>
+                            <span className="break-all text-paper-800">
                               {typeof v === "object" ? JSON.stringify(v) : String(v)}
                             </span>
                           </div>
@@ -194,8 +194,8 @@ export default function Predict() {
 
       {saved && (
         <Reveal className="mt-5">
-          <div className="flex items-start gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100/90">
-            <ShieldAlert size={18} className="mt-0.5 shrink-0 text-amber-300" />
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-600/25 bg-amber-50 p-4 text-sm text-amber-800">
+            <ShieldAlert size={18} className="mt-0.5 shrink-0 text-amber-600" />
             <p className="leading-relaxed">{DISCLAIMER}</p>
           </div>
         </Reveal>

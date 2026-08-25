@@ -99,7 +99,7 @@ export default function HanziPlayPage() {
         <div className="mb-6">
           <Link
             to="/hanzi"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#c4a882]/40 bg-white/50 px-3 py-1.5 text-sm text-[#8b7355] transition hover:border-[#a67c52] hover:text-[#5c4033]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#c4a882]/40 bg-paper-50 px-3 py-1.5 text-sm text-[#8b7355] transition hover:border-[#a67c52] hover:text-[#5c4033]"
           >
             <ArrowLeft size={15} />
             返回列表
@@ -111,11 +111,11 @@ export default function HanziPlayPage() {
             <Loader2 size={28} className="animate-spin" />
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-[#d4c4a8] bg-white/50 px-5 py-16 text-center text-sm text-[#8b7355]">
+          <div className="rounded-2xl border border-[#d4c4a8] bg-paper-50 px-5 py-16 text-center text-sm text-[#8b7355]">
             视频列表加载失败：{error}
           </div>
         ) : !current ? (
-          <div className="rounded-2xl border border-[#d4c4a8] bg-white/50 px-5 py-16 text-center text-sm text-[#8b7355]">
+          <div className="rounded-2xl border border-[#d4c4a8] bg-paper-50 px-5 py-16 text-center text-sm text-[#8b7355]">
             未找到编号「{num}」的汉字，可能已被移除
           </div>
         ) : (

@@ -50,14 +50,14 @@ export default function Portal() {
     <div className="pt-12 sm:pt-16">
       {/* Hero */}
       <section className="relative text-center">
-        <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-white/60">
+        <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-paper-200 bg-paper-100 px-4 py-1.5 text-xs text-paper-700">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-red" />
           Product Matrix · 产品矩阵
         </div>
         <h1 className="text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-6xl">
           欢迎来到 <span className="gradient-text">Lottery</span>
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-sm text-white/55 sm:text-base">
+        <p className="mx-auto mt-4 max-w-xl text-sm text-paper-700 sm:text-base">
           一站式数据工具与智能应用集合。我们持续打磨每一款产品，把复杂留给我们，把简单交给你。
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -71,7 +71,7 @@ export default function Portal() {
             href="https://github.com/Congxiang1994/Lottery"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded-xl border border-white/12 px-5 py-3 text-sm font-medium text-white/70 transition hover:border-white/25 hover:text-white"
+            className="flex items-center gap-2 rounded-xl border border-paper-200 px-5 py-3 text-sm font-medium text-paper-800 transition hover:border-paper-300 hover:text-paper-900"
           >
             <Github size={16} /> GitHub
           </a>
@@ -82,8 +82,8 @@ export default function Portal() {
       <section className="mt-16 sm:mt-20">
         <div className="mb-7 flex items-center gap-3">
           <h2 className="text-xl font-bold">全部产品</h2>
-          <span className="h-px flex-1 bg-white/10" />
-          <span className="text-xs text-white/40">{liveCount} 款在线</span>
+          <span className="h-px flex-1 bg-paper-200" />
+          <span className="text-xs text-paper-600">{liveCount} 款在线</span>
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -93,7 +93,7 @@ export default function Portal() {
         </div>
       </section>
 
-      <p className="mt-14 text-center text-xs text-white/30">
+      <p className="mt-14 text-center text-xs text-paper-500">
         更多产品正在路上 · 关注 GitHub 获取最新动态
       </p>
     </div>
@@ -111,8 +111,8 @@ function AppCard({
     <div
       className={`group relative h-full overflow-hidden rounded-3xl border p-6 transition ${
         live
-          ? "glass card-hover border-white/8"
-          : "border-white/6 bg-white/[0.02]"
+          ? "glass card-hover border-paper-100"
+          : "border-paper-100 bg-paper-50"
       }`}
     >
       <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-brand-red/15 blur-3xl opacity-0 transition group-hover:opacity-100" />
@@ -123,7 +123,7 @@ function AppCard({
           </span>
           <span
             className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${
-              live ? "bg-emerald-400/10 text-emerald-300" : "bg-white/8 text-white/40"
+              live ? "bg-emerald-50 text-emerald-700" : "bg-paper-100 text-paper-600"
             }`}
           >
             {live ? "在线" : "即将推出"}
@@ -131,13 +131,13 @@ function AppCard({
         </div>
 
         <h3 className="mt-5 text-lg font-bold">{app.title}</h3>
-        <p className="mt-2 flex-1 text-sm leading-relaxed text-white/50">{app.desc}</p>
+        <p className="mt-2 flex-1 text-sm leading-relaxed text-paper-700">{app.desc}</p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {app.tags.map((t) => (
             <span
               key={t}
-              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] text-white/55"
+              className="rounded-full border border-paper-200 bg-paper-100 px-2.5 py-0.5 text-[10px] text-paper-700"
             >
               {t}
             </span>

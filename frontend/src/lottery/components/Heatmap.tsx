@@ -14,7 +14,7 @@ export default function Heatmap({ items, kind = "red", title }: HeatmapProps) {
   const min = Math.min(...items.map((i) => i.count), 0);
   return (
     <div>
-      {title && <div className="mb-3 text-sm font-semibold text-white/70">{title}</div>}
+      {title && <div className="mb-3 text-sm font-semibold text-paper-800">{title}</div>}
       <div className="grid grid-cols-6 gap-2 sm:grid-cols-11">
         {items.map((it) => {
           const t = max > min ? (it.count - min) / (max - min) : 0.4;
@@ -31,7 +31,7 @@ export default function Heatmap({ items, kind = "red", title }: HeatmapProps) {
               >
                 {it.number}
               </div>
-              <div className="mt-0.5 text-center text-[10px] text-white/40">{it.count}</div>
+              <div className="mt-0.5 text-center text-[10px] text-paper-600">{it.count}</div>
             </div>
           );
         })}

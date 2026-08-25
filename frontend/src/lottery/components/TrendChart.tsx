@@ -28,7 +28,7 @@ export default function TrendChart({ draws, redMax, blueMax }: Props) {
     if (!active || !payload?.length) return null;
     const p = payload[0].payload;
     return (
-      <div className="rounded-lg border border-white/10 bg-ink-800 px-3 py-2 text-xs text-white/80 shadow-card">
+      <div className="rounded-lg border border-paper-200 bg-white px-3 py-2 text-xs text-paper-900 shadow-card">
         <div>第 {draws[p.x]?.issue} 期</div>
         <div>
           {payload[0].name === "红球" ? "红" : "蓝"}球号码：<b>{p.y}</b>
@@ -41,12 +41,12 @@ export default function TrendChart({ draws, redMax, blueMax }: Props) {
     <div className="h-[340px] w-full">
       <ResponsiveContainer>
         <ScatterChart margin={{ top: 10, right: 16, bottom: 10, left: -10 }}>
-          <CartesianGrid stroke="rgba(255,255,255,0.06)" />
+          <CartesianGrid stroke="rgba(61,43,31,0.08)" />
           <XAxis
             type="number"
             dataKey="x"
             domain={[0, Math.max(draws.length - 1, 1)]}
-            tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
+            tick={{ fill: "#9c8769", fontSize: 11 }}
             tickFormatter={(v) => draws[v]?.issue ?? ""}
             interval={Math.floor(draws.length / 6)}
             reversed
@@ -54,7 +54,7 @@ export default function TrendChart({ draws, redMax, blueMax }: Props) {
           <YAxis
             type="number"
             domain={[1, Math.max(redMax, blueMax)]}
-            tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
+            tick={{ fill: "#9c8769", fontSize: 11 }}
             width={32}
           />
           <ZAxis range={[54, 54]} />

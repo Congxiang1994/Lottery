@@ -24,7 +24,7 @@ function useNavLinks() {
 export default function Nav() {
   const links = useNavLinks();
   return (
-    <header className="sticky top-0 z-30 border-b border-white/5 bg-ink-900/70 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 border-b border-paper-100 bg-paper-100/75 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
         <Link to="/" className="flex items-center gap-2">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 text-lg shadow-glow">
@@ -44,8 +44,8 @@ export default function Nav() {
               className={({ isActive }) =>
                 `flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
                   isActive
-                    ? "bg-white/10 text-white"
-                    : "text-white/55 hover:bg-white/5 hover:text-white"
+                    ? "bg-paper-200 text-paper-900"
+                    : "text-paper-700 hover:bg-paper-100 hover:text-paper-900"
                 }`
               }
             >
@@ -59,7 +59,7 @@ export default function Nav() {
             target="_blank"
             rel="noopener noreferrer"
             title="⭐ 给项目点个 Star，支持开源！"
-            className="group ml-1 flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-white/75 transition hover:border-brand-red/50 hover:bg-brand-red/10 hover:text-white"
+            className="group ml-1 flex items-center gap-1.5 rounded-lg border border-paper-200 px-3 py-2 text-sm font-semibold text-paper-800 transition hover:border-brand-red/50 hover:bg-brand-red/10 hover:text-paper-900"
           >
             <Github size={15} className="transition group-hover:scale-110" />
             <span className="hidden sm:inline">Star</span>
