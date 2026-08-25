@@ -1,14 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Play,
-  Search,
-  X,
-} from "lucide-react";
+import { ArrowLeft, Loader2, Play, Search } from "lucide-react";
 
 interface VideoItem {
   id: number | null;
@@ -31,16 +23,16 @@ const ALPHA = [
   "n", "q", "r", "s", "t", "w", "x", "y", "z",
 ];
 
+/**
+ * 汉字列表页 /hanzi（水墨中国风）
+ * 点击卡片跳转到独立播放页 /hanzi/:num。
+ */
 export default function HanziPlayer() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [alpha, setAlpha] = useState("全部");
-  const [current, setCurrent] = useState<VideoItem | null>(null);
-
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const playerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/hanzi/list")
@@ -63,91 +55,6 @@ export default function HanziPlayer() {
     }
     return list;
   }, [videos, query, alpha]);
-
-  /* ---------- 播放控制 ---------- */
-
-  const openVideo = (v: VideoItem) => {
-    if (current && current.url === v.url) {
-      const vd = videoRef.current;
-      if (vd) {
-        vd.currentTime = 0;
-        vd.play().catch(() => {});
-      }
-      return;
-    }
-    setCurrent(v);
-  };
-
-  const goPrev = () => {
-    if (!current || videos.length === 0) return;
-    const i = videos.findIndex((x) => x.url === current.url);
-    openVideo(i > 0 ? videos[i - 1] : videos[videos.length - 1]);
-  };
-
-  const goNext = () => {
-    if (!current || videos.length === 0) return;
-    const i = videos.findIndex((x) => x.url === current.url);
-    openVideo(i >= 0 && i < videos.length - 1 ? videos[i + 1] : videos[0]);
-  };
-
-  const closePlayer = () => {
-    const v = videoRef.current;
-    if (v) v.pause();
-    setCurrent(null);
-  };
-
-  /* 切换视频时自动加载播放并滚动到播放器 */
-  useEffect(() => {
-    if (!current) return;
-    const v = videoRef.current;
-    if (!v) return;
-    v.load();
-    v.play().catch(() => {});
-    // 滚动到播放器区域
-    playerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [current]);
-
-  /* 预取下一集 */
-  useEffect(() => {
-    if (!current || videos.length === 0) return;
-    const i = videos.findIndex((x) => x.url === current.url);
-    const next = i >= 0 && i < videos.length - 1 ? videos[i + 1] : videos[0];
-    const link = document.createElement("link");
-    link.rel = "preload";
-    link.as = "video";
-    link.href = next.url;
-    document.head.appendChild(link);
-    return () => {
-      document.head.removeChild(link);
-    };
-  }, [current, videos]);
-
-  /* 键盘快捷键 */
-  useEffect(() => {
-    if (!current) return;
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        goPrev();
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        goNext();
-      } else if (e.key === "Escape") {
-        closePlayer();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, videos]);
-
-  /* 相邻视频 */
-  const currentIndex = current ? videos.findIndex((x) => x.url === current.url) : -1;
-  const prevVideo = currentIndex > 0 ? videos[currentIndex - 1] : null;
-  const nextVideo =
-    currentIndex >= 0 && currentIndex < videos.length - 1 ? videos[currentIndex + 1] : null;
 
   return (
     <div className="min-h-screen" style={{ background: "#faf6f1" }}>
@@ -235,106 +142,6 @@ export default function HanziPlayer() {
         </div>
       </div>
 
-      {/* ====== 播放器（页面内嵌，非全屏） ====== */}
-      {current && (
-        <div
-          ref={playerRef}
-          className="mx-auto mb-8 max-w-3xl px-4"
-        >
-          <div className="overflow-hidden rounded-2xl border border-[#d4c4a8] bg-white shadow-md">
-            {/* 顶部信息栏 */}
-            <div className="flex items-center justify-between px-4 py-3 sm:px-5">
-              <div className="flex items-center gap-3">
-                <span
-                  className="text-3xl font-bold text-[#3d2b1f] sm:text-4xl"
-                  style={KAI}
-                >
-                  {current.title}
-                </span>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-[#8b7355]">
-                    {current.pinyin}
-                  </span>
-                  <span className="text-[11px] text-[#a89078]">
-                    第 {String(current.num).padStart(3, "0")} 个 · 共 {videos.length} 个
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={closePlayer}
-                title="关闭"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a] active:scale-95"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* 视频（原生 controls） */}
-            <div className="relative bg-black">
-              <video
-                ref={videoRef}
-                src={current.url}
-                className="w-full"
-                controls
-                playsInline
-                webkit-playsinline="true"
-                preload="auto"
-              />
-            </div>
-
-            {/* 底部导航 */}
-            <div className="flex items-stretch border-t border-[#d4c4a8]/40">
-              {/* 上一个 */}
-              <button
-                onClick={goPrev}
-                disabled={!prevVideo}
-                className={`flex flex-1 items-center gap-2 px-4 py-3 text-left transition sm:px-5 ${
-                  prevVideo
-                    ? "hover:bg-[#faf6f1] active:bg-[#f5efe6]"
-                    : "cursor-not-allowed opacity-40"
-                }`}
-              >
-                <ChevronLeft size={18} className="shrink-0 text-[#a89078]" />
-                <div className="min-w-0">
-                  <span className="block text-[10px] text-[#a89078]">上一个</span>
-                  <span
-                    className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
-                    style={KAI}
-                  >
-                    {prevVideo ? prevVideo.title : "—"}
-                  </span>
-                </div>
-              </button>
-
-              {/* 分隔线 */}
-              <div className="w-px bg-[#d4c4a8]/40" />
-
-              {/* 下一个 */}
-              <button
-                onClick={goNext}
-                disabled={!nextVideo}
-                className={`flex flex-1 items-center justify-end gap-2 px-4 py-3 text-right transition sm:px-5 ${
-                  nextVideo
-                    ? "hover:bg-[#faf6f1] active:bg-[#f5efe6]"
-                    : "cursor-not-allowed opacity-40"
-                }`}
-              >
-                <div className="min-w-0">
-                  <span className="block text-[10px] text-[#a89078]">下一个</span>
-                  <span
-                    className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
-                    style={KAI}
-                  >
-                    {nextVideo ? nextVideo.title : "—"}
-                  </span>
-                </div>
-                <ChevronRight size={18} className="shrink-0 text-[#a89078]" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ====== 卡片列表 ====== */}
       <div className="mx-auto max-w-5xl px-4 pb-20">
         {loading ? (
@@ -352,14 +159,10 @@ export default function HanziPlayer() {
         ) : (
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
             {filtered.map((v) => (
-              <button
+              <Link
                 key={v.url}
-                onClick={() => openVideo(v)}
-                className={`group relative flex flex-col items-center overflow-hidden rounded-xl border py-4 text-center transition active:scale-[0.97] ${
-                  current && current.url === v.url
-                    ? "border-[#b93a3a] bg-white shadow-lg ring-1 ring-[#b93a3a]/30"
-                    : "border-[#d4c4a8]/60 bg-white/80 hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg"
-                }`}
+                to={`/hanzi/${v.num}`}
+                className="group relative flex flex-col items-center overflow-hidden rounded-xl border border-[#d4c4a8]/60 bg-white/80 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg active:scale-[0.97]"
               >
                 <span className="absolute right-2 top-2 text-[10px] font-bold tabular-nums text-[#c4a882]">
                   {v.num ?? ""}
@@ -373,14 +176,12 @@ export default function HanziPlayer() {
                 <span className="text-[11px] tracking-wider text-[#a89078]">
                   {v.pinyin}
                 </span>
-                {!current || current.url !== v.url ? (
-                  <span className="absolute inset-0 grid place-items-center bg-[#3d2b1f]/0 opacity-0 transition group-hover:bg-[#3d2b1f]/5 group-hover:opacity-100">
-                    <span className="grid h-8 w-8 place-items-center rounded-full bg-[#b93a3a] text-white shadow-md">
-                      <Play size={14} className="ml-0.5" />
-                    </span>
+                <span className="absolute inset-0 grid place-items-center bg-[#3d2b1f]/0 opacity-0 transition group-hover:bg-[#3d2b1f]/5 group-hover:opacity-100">
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-[#b93a3a] text-white shadow-md">
+                    <Play size={14} className="ml-0.5" />
                   </span>
-                ) : null}
-              </button>
+                </span>
+              </Link>
             ))}
           </div>
         )}
