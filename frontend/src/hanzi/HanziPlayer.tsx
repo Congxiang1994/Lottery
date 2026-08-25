@@ -36,14 +36,14 @@ const KAI: React.CSSProperties = {
   fontFamily: "'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', 'Noto Serif SC', serif",
 };
 
-/* 封面配色轮换（欢快的多彩渐变，按序号循环） */
+/* 封面配色轮换（低饱和度马卡龙渐变 + 同色系深色汉字，按序号循环） */
 const PALETTES = [
-  "from-rose-500 to-orange-400",
-  "from-amber-400 to-yellow-300",
-  "from-teal-500 to-cyan-400",
-  "from-sky-500 to-blue-400",
-  "from-violet-500 to-fuchsia-400",
-  "from-lime-500 to-green-400",
+  { bg: "from-rose-200 to-orange-100", text: "text-rose-800" },
+  { bg: "from-amber-200 to-yellow-100", text: "text-amber-800" },
+  { bg: "from-teal-200 to-cyan-100", text: "text-teal-800" },
+  { bg: "from-sky-200 to-blue-100", text: "text-sky-800" },
+  { bg: "from-violet-200 to-fuchsia-100", text: "text-violet-800" },
+  { bg: "from-lime-200 to-green-100", text: "text-lime-900" },
 ];
 
 function CtrlBtn({
@@ -305,16 +305,18 @@ export default function HanziPlayer() {
               >
                 <div
                   className={`relative grid aspect-[4/3] place-items-center bg-gradient-to-br ${
-                    PALETTES[(v.num ?? i) % PALETTES.length]
+                    PALETTES[(v.num ?? i) % PALETTES.length].bg
                   }`}
                 >
                   <span
-                    className="text-5xl font-black text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)] transition-transform duration-300 group-hover:scale-110"
+                    className={`text-6xl font-black transition-transform duration-300 group-hover:scale-110 ${
+                      PALETTES[(v.num ?? i) % PALETTES.length].text
+                    }`}
                     style={{ ...KAI, transform: `rotate(${tilt}deg)` }}
                   >
                     {v.title}
                   </span>
-                  <span className="absolute left-1.5 top-1.5 rounded-md bg-black/35 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white/85">
+                  <span className="absolute left-1.5 top-1.5 rounded-md bg-black/25 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white/90">
                     {v.num ?? ""}
                   </span>
                   <span className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100">
