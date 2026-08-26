@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -45,7 +44,6 @@ const ALPHA = [
  * 点击卡片弹出悬浮播放器，四周高斯模糊背景。
  */
 export default function HanziPlayer() {
-  const navigate = useNavigate();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -61,6 +59,9 @@ export default function HanziPlayer() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastSaveRef = useRef(0);
   const resumedNumRef = useRef<number | null>(null);
+  /* 弹框历史栈：打开时 pushState，浏览器返回键只关弹框不离开页面 */
+  const modalPushedRef = useRef(false);
+  const activeNumRef = useRef<number | null>(null);
 
   /* 加载视频列表：当天缓存优先，跨天刷新，每天最多请求一次后端 */
   useEffect(() => {
@@ -206,13 +207,52 @@ export default function HanziPlayer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [prevVideo, nextVideo, showPicker, activeNum]);
 
+  /* 打开播放器时压入一条历史记录 */
+  const openModal = (num: number | null) => {
+    if (num == null) return;
+    setActiveNum(num);
+    if (!modalPushedRef.current) {
+      modalPushedRef.current = true;
+      window.history.pushState({ hanziModal: true }, "");
+    }
+  };
+
   const closeModal = () => {
     const v = videoRef.current;
     if (v && current) saveProgress(current.num, v.currentTime, v.duration || 0);
     setActiveNum(null);
     setShowPicker(false);
     resumedNumRef.current = null;
+    activeNumRef.current = null;
+    /* 弹框是压栈打开的，用 back 弹出，保持浏览器历史干净 */
+    if (modalPushedRef.current) {
+      modalPushedRef.current = false;
+      window.history.back();
+    }
   };
+
+  /* 浏览器返回键 / iOS 侧滑返回：弹框开着时仅关闭弹框，不离开页面 */
+  useEffect(() => {
+    activeNumRef.current = activeNum;
+  }, [activeNum]);
+
+  useEffect(() => {
+    const onPop = () => {
+      if (!modalPushedRef.current) return;
+      modalPushedRef.current = false;
+      const num = activeNumRef.current;
+      const v = videoRef.current;
+      if (v && num != null) {
+        const cur = videos.find((x) => x.num === num);
+        if (cur) saveProgress(cur.num, v.currentTime, v.duration || 0);
+      }
+      setActiveNum(null);
+      setShowPicker(false);
+      resumedNumRef.current = null;
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [videos]);
 
   const toggleAutoplay = () => {
     const next = !autoplay;
@@ -229,14 +269,12 @@ export default function HanziPlayer() {
 
   /* 搜索框回车 / 随机 */
   const goFirst = () => {
-    if (filtered.length && filtered[0].num != null) {
-      setActiveNum(filtered[0].num);
-    }
+    if (filtered.length) openModal(filtered[0].num);
   };
   const goRandom = () => {
     if (!filtered.length) return;
     const v = filtered[Math.floor(Math.random() * filtered.length)];
-    setActiveNum(v.num);
+    openModal(v.num);
   };
 
   const clearFilters = () => {
@@ -391,7 +429,7 @@ export default function HanziPlayer() {
               return (
                 <button
                   key={v.url}
-                  onClick={() => v.num != null && setActiveNum(v.num)}
+                  onClick={() => openModal(v.num)}
                   className={`group relative flex flex-col items-center overflow-hidden rounded-xl border bg-paper-50 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg active:scale-[0.97] ${
                     isActive
                       ? "border-[#b93a3a] ring-2 ring-[#b93a3a]/50"
