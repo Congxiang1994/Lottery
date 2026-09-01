@@ -13,7 +13,7 @@ from app.lottery.algorithms import (
     run_batch,
     run_one,
 )
-from app.lottery.config import LOTTERIES, VERIFY_PASSWORD
+from app.lottery.config import LOTTERIES
 from app.lottery.services import scraper, stats as stats_svc, predictor
 from app.lottery.services import results_store
 
@@ -258,7 +258,7 @@ def saved_algorithms_by_date(lottery: str, run_date: str):
 def verify_password(payload: dict):
     """校验「运行全部算法」操作密码（后端校验 + 每秒 1 次全局流控）。"""
     password = str(payload.get("password", ""))
-    ok, msg, status = results_store.verify_password(password, VERIFY_PASSWORD)
+    ok, msg, status = results_store.verify_password(password)
     if status == 429:
         raise HTTPException(status_code=429, detail=msg)
     if not ok:
@@ -275,7 +275,7 @@ def run_all_algorithms_all(payload: dict):
     """
     from app.lottery.services import runner
     from app.lottery.services.results_store import check_password
-    if not check_password(str(payload.get("password", "")), VERIFY_PASSWORD):
+    if not check_password(str(payload.get("password", ""))):
         raise HTTPException(status_code=401, detail="密码错误，无法触发运行")
     ok, msg = runner.start_all()
     if not ok:
@@ -300,7 +300,7 @@ def run_all_algorithms(lottery: str, payload: dict):
     _get(lottery)
     from app.lottery.services import runner
     from app.lottery.services.results_store import check_password
-    if not check_password(str(payload.get("password", "")), VERIFY_PASSWORD):
+    if not check_password(str(payload.get("password", ""))):
         raise HTTPException(status_code=401, detail="密码错误，无法触发运行")
     ok, msg = runner.start(lottery)
     if not ok:

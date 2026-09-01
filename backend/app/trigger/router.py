@@ -15,7 +15,6 @@ from app.trigger import scheduler, store
 from app.trigger.config import (
     COOKIE_NAME,
     SESSION_TTL_SECONDS,
-    VERIFY_PASSWORD,
     sign_session,
     verify_session,
 )
@@ -51,7 +50,7 @@ def auth(payload: dict, response: Response):
     from app.lottery.services import results_store
 
     password = str(payload.get("password", ""))
-    ok, msg, status = results_store.verify_password(password, VERIFY_PASSWORD)
+    ok, msg, status = results_store.verify_password(password)
     if status == 429:
         raise HTTPException(status_code=429, detail=msg)
     if not ok:

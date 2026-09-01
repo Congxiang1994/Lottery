@@ -1,15 +1,14 @@
 """应用配置与彩种元数据。"""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
-# 「运行全部算法」操作密码（可通过环境变量覆盖）
-VERIFY_PASSWORD = os.environ.get("LOTTERY_RUN_PASSWORD", "1qaz!QAZ1")
+# 「运行全部算法」操作密码：不再硬编码于源码，统一由数据库（/data/lottery/auth.db）哈希存储，
+# 校验逻辑见 app.common.password。可通过环境变量 LOTTERY_RUN_PASSWORD 在首次部署时引导写入。
 # 密码校验流控：同一秒内全局仅允许 1 次
 VERIFY_RATE_LIMIT_PER_SECOND = 1
 

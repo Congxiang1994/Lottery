@@ -9,7 +9,7 @@
 
 - 06:30 触发 → 窗口占用 6:30–11:30 → 11:30 休息结束后开始的是**全新窗口**，下午+晚上满量。
 - 工具不理解"窗口"语义，只负责到点发请求；时间随时可改。
-- 请求本身近乎零消耗（`max_tokens=1`、一句话 prompt）。
+- 请求本身近乎零消耗（自然短句 + 少量 token，模拟真实 Agent 调用，降低被风控封号概率）。
 
 ## 2. 已确认的决策
 
@@ -18,7 +18,7 @@
 | API 协议 | OpenAI 兼容（`POST {base_url}/chat/completions`，`Authorization: Bearer <key>`） |
 | api-key 存储 | 服务器 sqlite 明文（文件权限保护）；界面只显示 `sk-****` + 尾 4 位；永不回传全文；更新即整体覆盖 |
 | 会话 | 密码校验通过后签发 httpOnly cookie，TTL 12h，期内免重复输密码 |
-| 密码 | 与彩票「运行全部」相同：`1qaz!QAZ1`（后端 `VERIFY_PASSWORD` 同源） |
+| 密码 | 与彩票「运行全部」同一把，**数据库哈希存储**（见 `app/common/password.py`，落库于 `/data/lottery/auth.db`）；源码不含明文密码，首次部署由环境变量 `LOTTERY_RUN_PASSWORD` 引导写入 |
 | 任务数量 | 不限，用户自行配置（UI 预填建议 06:30 / 13:30 两条） |
 | 调度方式 | FastAPI 进程内 asyncio 循环，每分钟对表；**不用 systemd timer**（任务需随时增删改） |
 | 防双发 | gunicorn 2 workers → `flock` 非阻塞文件锁选 leader，仅持锁 worker 跑调度；leader 挂锁自动释放 |

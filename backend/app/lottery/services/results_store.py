@@ -400,20 +400,26 @@ init()
 # ------------------------------------------------------------ 安全锁 / 流控
 
 
-def check_password(password: str, expected: str) -> bool:
+def check_password(password: str) -> bool:
     """纯密码校验（无流控），供 /run-all 等计算入口在端到端二次校验时使用。
 
-    流控由 /verify-password 接口单独承担（verify_password），这里不重复限速。
+    密码来自数据库（哈希比对），不接收明文期望值参数。流控由
+    /verify-password 接口单独承担（verify_password），这里不重复限速。
     """
-    return password == expected
+    from app.common import password as _password
+
+    return _password.verify(password)
 
 
-def verify_password(password: str, expected: str) -> tuple[bool, str, int]:
+def verify_password(password: str) -> tuple[bool, str, int]:
     """校验密码 + 每秒 1 次全局流控（sqlite BEGIN IMMEDIATE 串行化）。
 
-    返回 (ok, message, http_status)。
+    密码来自数据库（哈希比对）。返回 (ok, message, http_status)。
     """
     import time as _time
+
+    from app.common import password as _password
+
     now = _time.time()
     with _conn() as con:
         con.execute("BEGIN IMMEDIATE")
@@ -426,7 +432,7 @@ def verify_password(password: str, expected: str) -> tuple[bool, str, int]:
                 "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=? WHERE id=1",
                 (now, 0))
             return False, "校验过于频繁，同一秒内仅允许 1 次，请稍候再试", 429
-        ok = (password == expected)
+        ok = _password.verify(password)
         con.execute(
             "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=? WHERE id=1",
             (now, 1 if ok else 0))

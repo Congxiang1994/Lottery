@@ -12,8 +12,8 @@ from pathlib import Path
 DB_DIR = Path(os.environ.get("LOTTERY_DB_DIR", "/data/lottery"))
 DB_PATH = DB_DIR / "trigger.db"
 
-# 操作密码：与彩票「运行全部」同一把（同源 LOTTERY_RUN_PASSWORD）
-VERIFY_PASSWORD = os.environ.get("LOTTERY_RUN_PASSWORD", "1qaz!QAZ1")
+# 操作密码：与彩票「运行全部」同一把，统一由数据库（/data/lottery/auth.db）哈希存储。
+# 校验走 results_store.verify_password → app.common.password。源码不再含明文密码。
 
 # 会话 cookie：httpOnly，密码校验通过后签发，12 小时有效
 COOKIE_NAME = "trigger_session"

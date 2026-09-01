@@ -15,10 +15,13 @@ from app.hanzi import router as hanzi_router
 from app.stats import router as stats_router
 from app.trigger import router as trigger_router
 from app.trigger import scheduler
+from app.common import password as password_store
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 操作密码库兜底初始化（库未配置且环境变量已设时自动引导写入；以库为准）
+    password_store.ensure_configured()
     # 触发器调度循环（flock 选 leader，多 worker 仅一个运行；gunicorn 优雅重启安全）
     scheduler.start()
     yield
