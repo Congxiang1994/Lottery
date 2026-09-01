@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,8 +13,19 @@ from fastapi.responses import FileResponse
 from app.lottery import router as lottery_router
 from app.hanzi import router as hanzi_router
 from app.stats import router as stats_router
+from app.trigger import router as trigger_router
+from app.trigger import scheduler
 
-app = FastAPI(title="Lottery · 彩票数据服务", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 触发器调度循环（flock 选 leader，多 worker 仅一个运行；gunicorn 优雅重启安全）
+    scheduler.start()
+    yield
+    await scheduler.stop()
+
+
+app = FastAPI(title="Lottery · 彩票数据服务", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,6 +37,7 @@ app.add_middleware(
 app.include_router(lottery_router.router)
 app.include_router(hanzi_router.router)
 app.include_router(stats_router.router)
+app.include_router(trigger_router.router)
 
 # 前端构建产物（若存在则托管，便于 Nginx 之前本地直跑）
 DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

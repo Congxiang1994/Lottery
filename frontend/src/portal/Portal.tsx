@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Dices, ArrowRight, Github, Sparkles, Clapperboard, type LucideIcon } from "lucide-react";
+import { Dices, ArrowRight, Github, Sparkles, Clapperboard, Zap, type LucideIcon } from "lucide-react";
 
 /**
  * 产品矩阵 —— 新增产品只需在此数组追加一项即可。
@@ -30,6 +30,15 @@ const APPS: {
     icon: Clapperboard,
     tags: ["视频点播", "儿童教育"],
     href: "/hanzi",
+    status: "live",
+  },
+  {
+    id: "trigger",
+    title: "API 用量触发器",
+    desc: "私有定时任务：到点自动向大模型 API 发送最小请求，按作息点亮 5 小时用量窗口，密码保护。",
+    icon: Zap,
+    tags: ["定时任务", "私有"],
+    href: "/trigger",
     status: "live",
   },
   {

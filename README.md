@@ -40,6 +40,28 @@
 
 📖 实现逻辑与技术结构见 **[README_hanzi.md](./README_hanzi.md)**
 
+### 🖍 汉字是画出来的（`/hanzi`）· 在线产品
+
+《汉字是画出来的》**108 节动画课点播页**：按汉字名模糊检索、手机竖屏友好的卡片列表，
+点击卡片即全屏播放，播放器支持 播放/暂停、快进/后退 5s、上一集/下一集、进度条拖动，
+控制条自动隐藏。视频由 Nginx 直接文件服务（支持 Range 拖动）。
+
+📖 实现逻辑与技术结构见 **[README_hanzi.md](./README_hanzi.md)**
+
+### ⚡ API 用量触发器（`/trigger`）· 在线产品（私有）
+
+**密码保护的私有定时任务**：到点由服务器向大模型 API（OpenAI 兼容格式）发送一次最小请求
+（`max_tokens=1`，近乎零消耗），按「**触发时刻 = 窗口重置时刻 − 5 小时**」对表，
+点亮 5 小时用量窗口——如 06:30 触发 → 11:30 重置，午休后即享全新满额窗口。
+
+- **密码门**：与彩票「运行全部」同一操作密码，校验通过签发 httpOnly cookie（12h 免重输）
+- **任务配置**：多个任务增删改/启停/手动立即触发；错过不补发（页面可手动补窗口），失败自动重试 2 次
+- **执行历史**：每次触发记录状态 / HTTP 码 / 耗时 / 重试 / 错误详情，保留 90 天
+- **api-key 安全**：仅存服务器 SQLite，界面只显示尾 4 位，任何接口/日志不回显
+- **调度**：FastAPI 进程内 asyncio 每分钟对表，flock 文件锁防多 worker 双发，重启自动恢复
+
+📖 实现逻辑与技术结构见 **[README_trigger.md](./README_trigger.md)**
+
 ### 🛠 工具（`tools/`）· 无前端页面
 
 | 工具 | 说明 | 文档 |
@@ -62,6 +84,8 @@
                                                        │  │    └─ 统计/玄学/数据服务    │
                                                        │  ├─ hanzi 域   (/api/hanzi)   │
                                                        │  │    └─ 视频列表（扫描目录）  │
+                                                       │  ├─ trigger 域 (/api/trigger) │
+                                                       │  │    └─ API 用量触发器      │
                                                        │  └─ SQLite: /data/lottery/    │
                                                        └─────────────────────────────┘
                                                        /hanzi/*.mp4  →  Nginx alias
@@ -94,7 +118,8 @@
 │   │   ├── main.py          # 入口，include_router 注册各功能域路由
 │   │   ├── common/          # 公共基础设施（db.get_conn 等跨域复用工具）
 │   │   ├── lottery/         # 彩票数据服务（/api/v1，自包含功能域）
-│   │   └── hanzi/           # 汉字课视频列表（/api/hanzi，自包含功能域）
+│   │   ├── hanzi/           # 汉字课视频列表（/api/hanzi，自包含功能域）
+│   │   └── trigger/         # API 用量触发器（/api/trigger，密码保护定时任务）
 │   ├── scripts/             # 爬取 / 定时跑批脚本
 │   └── requirements.txt
 ├── frontend/                # React 前端（单 SPA，与后端功能域一一对应）
@@ -102,6 +127,7 @@
 │   ├── src/portal/          # 聚合门户（产品矩阵首页）
 │   ├── src/lottery/         # 彩票站（api/types/context/components/pages）
 │   ├── src/hanzi/           # 汉字课点播页（HanziPlayer.tsx）
+│   ├── src/trigger/         # API 用量触发器（api.ts + Trigger.tsx）
 │   └── dist/                # 生产构建产物（Nginx 托管）
 ├── tools/                   # 工具类脚本（无前端页面）
 │   └── xiaoe-downloader/    # 小鹅通视频课程下载器
@@ -122,6 +148,7 @@ README 分两层：**根 README 讲「全站」**，**分册讲「各模块实�
 | [README.md](./README.md) | 全站定位、功能与工具列表、整体技术框架、部署与扩展规范（本页） |
 | [README_lottery.md](./README_lottery.md) | 彩票模块：算法引擎设计、数据流、定时跑批、防并发设计、API 全表 |
 | [README_hanzi.md](./README_hanzi.md) | 汉字课点播模块：列表接口、Nginx 视频静态服务、伪全屏播放器设计、安全要点 |
+| [README_trigger.md](./README_trigger.md) | API 用量触发器：需求定稿、密码会话、调度与防双发设计、API 全表、验收清单 |
 | [tools/xiaoe-downloader/README.md](./tools/xiaoe-downloader/README.md) | 小鹅通下载器：接口链路、踩坑记录、使用步骤 |
 
 ---

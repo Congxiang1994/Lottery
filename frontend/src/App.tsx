@@ -8,6 +8,7 @@ import History from "./lottery/pages/History";
 import Predict from "./lottery/pages/Predict";
 import Algorithms from "./lottery/pages/Algorithms";
 import HanziPlayer from "./hanzi/HanziPlayer";
+import Trigger from "./trigger/Trigger";
 import { api } from "./lottery/api";
 import { LotteryInfo } from "./lottery/types";
 import { LotteryCtx } from "./lottery/context";
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="/predict" element={<Predict />} />
             <Route path="/algorithms" element={<Algorithms />} />
             <Route path="/hanzi" element={<HanziPlayer />} />
+            <Route path="/trigger" element={<Trigger />} />
             {/* 兼容旧链接：/ 原为彩票首页，现统一指向聚合门户 */}
             <Route path="*" element={<Portal />} />
           </Routes>
