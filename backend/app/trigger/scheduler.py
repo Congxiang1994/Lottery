@@ -18,8 +18,11 @@ import httpx
 
 from app.trigger import store
 from app.trigger.config import (
+    EXTRA_HEADERS,
     HTTP_TIMEOUT_SECONDS,
     LEADER_LOCK_PATH,
+    PROBE_MAX_TOKENS,
+    PROBE_MESSAGE,
     RETRY_INTERVAL_SECONDS,
     RETRY_TIMES,
 )
@@ -59,41 +62,63 @@ def _release_leader() -> None:
     _is_leader = False
 
 
-async def fire_task(task: dict[str, Any], *, manual: bool = False) -> bool:
-    """触发一次任务：POST {base_url}/chat/completions，max_tokens=1。
+async def _do_request(task: dict[str, Any]) -> tuple[bool, int | None, str]:
+    """发一次最小请求（OpenAI 兼容）。
 
-    自动触发失败按 RETRY_TIMES 重试（间隔 RETRY_INTERVAL_SECONDS）；
-    手动触发只试 1 次（页面即时反馈）。2xx 即算成功（窗口点亮）。
+    请求体用自然短句 + 正常 token 数（PROBE_MESSAGE / PROBE_MAX_TOKENS），
+    配合真实浏览器 UA，让调用看起来像真实 Agent 对话而非机械探测/心跳，
+    降低被 API 方风控误判或封号的概率。返回 (ok, http_code, error)，不写历史。
     """
-    start = time.monotonic()
-    attempts = 0
     last_code: int | None = None
     last_error = ""
     ok = False
+    headers = {"Authorization": f"Bearer {task['api_key']}"}
+    headers.update(EXTRA_HEADERS)
+    try:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+            resp = await client.post(
+                f"{task['base_url']}/chat/completions",
+                headers=headers,
+                json={
+                    "model": task["model"],
+                    "messages": [{"role": "user", "content": PROBE_MESSAGE}],
+                    "max_tokens": PROBE_MAX_TOKENS,
+                },
+            )
+        last_code = resp.status_code
+        if 200 <= resp.status_code < 300:
+            ok = True
+        else:
+            last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+    except Exception as exc:  # 网络/超时/DNS 等
+        last_error = f"{type(exc).__name__}: {exc}"
+    return ok, last_code, last_error
 
-    # 手动触发只试 1 次（页面即时反馈）；自动触发失败按 RETRY_TIMES 重试
+
+async def probe_connection(task: dict[str, Any]) -> tuple[bool, str]:
+    """测试连接专用：发一次请求，返回 (ok, error)。不写执行历史。"""
+    ok, _code, err = await _do_request(task)
+    return ok, err
+
+
+async def fire_task(task: dict[str, Any], *, manual: bool = False) -> bool:
+    """触发一次任务：POST {base_url}/chat/completions。
+
+    自动触发失败按 RETRY_TIMES 重试（间隔 RETRY_INTERVAL_SECONDS）；
+    手动触发只试 1 次（页面即时反馈）。2xx 即算成功（窗口点亮）。
+    无论成败都写入执行历史。
+    """
+    start = time.monotonic()
     total_tries = 1 if manual else (RETRY_TIMES + 1)
+    ok = False
+    last_code: int | None = None
+    last_error = ""
+    attempts = 0
     for attempt in range(total_tries):
         attempts = attempt + 1
-        try:
-            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
-                resp = await client.post(
-                    f"{task['base_url']}/chat/completions",
-                    headers={"Authorization": f"Bearer {task['api_key']}"},
-                    json={
-                        "model": task["model"],
-                        "messages": [{"role": "user", "content": "ping"}],
-                        "max_tokens": 1,
-                    },
-                )
-            last_code = resp.status_code
-            if 200 <= resp.status_code < 300:
-                ok = True
-                last_error = ""
-                break
-            last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
-        except Exception as exc:  # 网络/超时/DNS 等
-            last_error = f"{type(exc).__name__}: {exc}"
+        ok, last_code, last_error = await _do_request(task)
+        if ok:
+            break
         if attempt < total_tries - 1:
             await asyncio.sleep(RETRY_INTERVAL_SECONDS)
 

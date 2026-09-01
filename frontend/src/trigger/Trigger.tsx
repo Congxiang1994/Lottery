@@ -11,6 +11,7 @@ import {
   Pencil,
   Play,
   Plus,
+  PlugZap,
   Power,
   RefreshCw,
   Trash2,
@@ -65,7 +66,7 @@ function PasswordGate({ onPass }: { onPass: () => void }) {
           </div>
         </div>
         <p className="mt-4 text-xs leading-relaxed text-paper-700">
-          到点由服务器向大模型 API 发送一次最小请求（max_tokens=1），
+          到点由服务器向大模型 API 发送一次最小请求（自然短句 + 正常 token 数，模拟真实 Agent 调用），
           按「触发时刻 = 窗口重置时刻 − 5 小时」对表，如 06:30 触发 → 11:30 重置。
         </p>
         <input
@@ -138,6 +139,8 @@ function TaskModal({
   const [form, setForm] = useState(emptyForm);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
     if (editing) {
@@ -153,9 +156,28 @@ function TaskModal({
       setForm(emptyForm);
     }
     setErr(null);
+    setTestResult(null);
   }, [editing]);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const testConnection = () => {
+    if (!form.base_url.trim()) {
+      setTestResult({ ok: false, msg: "请先填写 API Base URL" });
+      return;
+    }
+    if (!form.api_key.trim()) {
+      setTestResult({ ok: false, msg: "请先填写 api-key" });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    triggerApi
+      .testConnection(form.base_url, form.api_key, form.model)
+      .then((r) => setTestResult({ ok: true, msg: r.message }))
+      .catch((e) => setTestResult({ ok: false, msg: e.message }))
+      .finally(() => setTesting(false));
+  };
 
   const save = () => {
     setSaving(true);
@@ -204,14 +226,16 @@ function TaskModal({
           </div>
           <div>
             <label className="text-xs font-medium text-paper-700">API Base URL *</label>
-            <input className={`mt-1 ${field}`} value={form.base_url} onChange={(e) => set("base_url", e.target.value)} placeholder="https://api.example.com/v1" />
-            <p className="mt-1 text-[10px] text-paper-500">实际请求 {form.base_url || "{base_url}"}/chat/completions</p>
+            <input className={`mt-1 ${field}`} value={form.base_url} onChange={(e) => set("base_url", e.target.value)} placeholder="https://ark.cn-beijing.volces.com/api/coding/v3" />
+            <p className="mt-1 text-[10px] leading-relaxed text-paper-500">
+              样例：https://ark.cn-beijing.volces.com/api/coding/v3（须以 https:// 开头，勿带末尾斜杠）· 实际请求 {form.base_url || "{base_url}"}/chat/completions
+            </p>
           </div>
           <div>
             <label className="text-xs font-medium text-paper-700">
               api-key {editing && <span className="text-paper-500">（留空保留原值）</span>}
             </label>
-            <input className={`mt-1 ${field}`} type="password" value={form.api_key} onChange={(e) => set("api_key", e.target.value)} placeholder={editing ? editing.api_key_masked : "sk-…"} />
+            <input className={`mt-1 ${field}`} type="password" value={form.api_key} onChange={(e) => set("api_key", e.target.value)} placeholder={editing ? editing.api_key_masked : "ark-…"} />
           </div>
           <div>
             <label className="text-xs font-medium text-paper-700">备注</label>
@@ -221,13 +245,37 @@ function TaskModal({
         {err && (
           <div className="mt-3 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">{err}</div>
         )}
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} disabled={saving} className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40">
-            取消
+        {testResult && (
+          <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${testResult.ok ? "border-emerald-600/25 bg-emerald-50 text-emerald-700" : "border-rose-600/25 bg-rose-50 text-rose-700"}`}>
+            {testResult.ok ? <CheckCircle2 size={14} className="mt-0.5 shrink-0" /> : <XCircle size={14} className="mt-0.5 shrink-0" />}
+            <span className="break-all leading-relaxed">{testResult.msg}</span>
+          </div>
+        )}
+        <div className="mt-5 flex items-center justify-between gap-2">
+          <button
+            onClick={testConnection}
+            disabled={testing || saving}
+            className="flex items-center gap-1.5 rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
+            title="用当前 Base URL 与 api-key 发一次最小请求验证连通"
+          >
+            {testing ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> 测试中…
+              </>
+            ) : (
+              <>
+                <PlugZap size={14} /> 测试连接
+              </>
+            )}
           </button>
-          <button onClick={save} disabled={saving} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40">
-            {saving ? <><Loader2 size={14} className="animate-spin" /> 保存中…</> : "保存"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} disabled={saving || testing} className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40">
+              取消
+            </button>
+            <button onClick={save} disabled={saving || testing} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40">
+              {saving ? <><Loader2 size={14} className="animate-spin" /> 保存中…</> : "保存"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

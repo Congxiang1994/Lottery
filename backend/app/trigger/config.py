@@ -50,6 +50,22 @@ RETRY_TIMES = 2          # 失败自动重试次数（不含首次）
 RETRY_INTERVAL_SECONDS = 60
 HISTORY_KEEP_DAYS = 90
 
+# 探测/触发请求：模拟真实 Agent 客户端调用，降低被风控误判/封号概率
+# - UA 用真实浏览器，而非 python-httpx 默认 UA
+# - 请求体是自然短句 + 正常 token 数，避免「ping + max_tokens=1」这种明显探测特征
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+)
+EXTRA_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "application/json, text/plain, */*",
+    "Content-Type": "application/json",
+}
+# 自然短句，让每次调用都像真实 Agent 对话而非机械心跳
+PROBE_MESSAGE = "请回复 ok 确认连接正常"
+PROBE_MAX_TOKENS = 16
+
 # leader 选举锁文件（防 gunicorn 多 worker 双发）
 LEADER_LOCK_PATH = DB_DIR / "trigger_scheduler.lock"
 

@@ -90,6 +90,7 @@ def _validate(data: dict) -> None:
         raise HTTPException(status_code=422, detail="触发时刻格式应为 HH:MM")
     if not base_url.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="Base URL 必须以 http(s):// 开头")
+    normalize_base_url(base_url)   # SSRF + 格式校验，非法直接 422（与 /test 同一套规则）
     if not api_key:
         raise HTTPException(status_code=422, detail="api-key 不能为空")
 
@@ -193,3 +194,60 @@ def status(trigger_session: str | None = Cookie(default=None)):
         "next_fire": next_fire,
         "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+
+
+# ------------------------------------------------------------ 测试连接
+
+
+def normalize_base_url(raw: str) -> str:
+    """校验并归一化 API Base URL。
+
+    - 必须 https:// 或 http:// 开头（表单建议 https://）
+    - 去末尾斜杠
+    - host 必须含域名且非纯 IP / 回环 / 私网 / 保留段（防 SSRF 打到内网/本机）
+    返回归一化后的 URL；不合法抛 HTTPException(422)。
+    """
+    import ipaddress
+    from urllib.parse import urlparse
+
+    s = str(raw or "").strip().rstrip("/")
+    if not s:
+        raise HTTPException(status_code=422, detail="API Base URL 不能为空")
+    if not s.startswith(("https://", "http://")):
+        raise HTTPException(status_code=422, detail="API Base URL 必须以 https:// 或 http:// 开头")
+    p = urlparse(s)
+    if not p.hostname:
+        raise HTTPException(status_code=422, detail="API Base URL 缺少域名")
+
+    host = p.hostname.strip("[]")
+    # 域名中必须是点分（避免只填一个单词/局域网主机名），且含点
+    if "." not in host:
+        raise HTTPException(status_code=422, detail="API Base URL 域名不完整，请使用完整域名（如 ark.cn-beijing.volces.com）")
+    # IP / 回环 / 私网 / 链路本地 / 保留段 → 拒绝（防 SSRF）
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise HTTPException(status_code=422, detail="API Base URL 不能指向本机/内网/私网地址")
+    except ValueError:
+        pass  # 是域名，走正常 DNS 解析
+    return s
+
+
+@router.post("/test")
+async def test_connection(payload: dict, trigger_session: str | None = Cookie(default=None)):
+    """用输入的 Base URL + api-key 发一次最小请求验证连通（OpenAI 兼容）。
+
+    走独立的 probe_connection，不写执行历史（测试连接不该污染历史记录）。
+    """
+    _require_session(trigger_session)
+    base_url = normalize_base_url(str(payload.get("base_url", "")))
+    api_key = str(payload.get("api_key", "")).strip()
+    model = str(payload.get("model", "")).strip()
+    if not api_key:
+        raise HTTPException(status_code=422, detail="api-key 不能为空")
+
+    task = {"id": None, "name": "连接测试", "base_url": base_url, "api_key": api_key, "model": model or "default"}
+    ok, err = await scheduler.probe_connection(task)
+    if not ok:
+        raise HTTPException(status_code=502, detail=f"连接失败：{err}" if err else "连接失败，请检查 Base URL / api-key / 网络")
+    return {"ok": True, "message": "连接成功，模型可正常响应"}

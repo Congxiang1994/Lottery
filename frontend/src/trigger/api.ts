@@ -100,6 +100,13 @@ export const triggerApi = {
   fireNow: (id: number) =>
     request<{ ok: boolean }>(`/tasks/${id}/fire`, { method: "POST" }),
 
+  testConnection: (baseUrl: string, apiKey: string, model: string) =>
+    request<{ ok: boolean; message: string }>("/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model }),
+    }),
+
   history: (limit = 100) => request<HistoryRow[]>(`/history?limit=${limit}`),
 
   status: () => request<TriggerStatus>("/status"),
