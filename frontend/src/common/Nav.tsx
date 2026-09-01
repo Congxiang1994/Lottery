@@ -1,5 +1,6 @@
 import { NavLink, Link, useLocation } from "react-router-dom";
-import { Dices, LayoutDashboard, History, Sparkles, Layers, Github } from "lucide-react";
+import { Dices, LayoutDashboard, History, Sparkles, Layers, Github, Eye } from "lucide-react";
+import { useVisitCount } from "./useVisitCount";
 
 const GITHUB_URL = "https://github.com/Congxiang1994/Lottery";
 
@@ -23,6 +24,7 @@ function useNavLinks() {
 
 export default function Nav() {
   const links = useNavLinks();
+  const visits = useVisitCount();
   return (
     <header className="sticky top-0 z-30 border-b border-paper-100 bg-paper-100/75 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
@@ -33,6 +35,15 @@ export default function Nav() {
           <span className="text-lg font-extrabold tracking-tight">
             Lottery
           </span>
+          {visits != null && (
+            <span
+              title={`本站累计被访问 ${visits.toLocaleString()} 次`}
+              className="ml-1 hidden items-center gap-1 rounded-full border border-paper-200 bg-white/60 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-paper-700 sm:inline-flex"
+            >
+              <Eye size={11} className="text-brand-red" />
+              {visits.toLocaleString()}
+            </span>
+          )}
         </Link>
 
         <nav className="flex items-center gap-1">

@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 
 from app.lottery import router as lottery_router
 from app.hanzi import router as hanzi_router
+from app.stats import router as stats_router
 
 app = FastAPI(title="Lottery · 彩票数据服务", version="1.0.0")
 
@@ -23,6 +24,7 @@ app.add_middleware(
 
 app.include_router(lottery_router.router)
 app.include_router(hanzi_router.router)
+app.include_router(stats_router.router)
 
 # 前端构建产物（若存在则托管，便于 Nginx 之前本地直跑）
 DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
