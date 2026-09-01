@@ -227,13 +227,13 @@ function TaskModal({
           <div>
             <label className="text-xs font-medium text-paper-700">API Base URL *</label>
             <input className={`mt-1 ${field}`} value={form.base_url} onChange={(e) => set("base_url", e.target.value)} placeholder="https://ark.cn-beijing.volces.com/api/coding/v3" />
-            <p className="mt-1 text-[10px] leading-relaxed text-paper-500">
+            <p className="mt-1 text-[11px] leading-relaxed text-paper-700">
               样例：https://ark.cn-beijing.volces.com/api/coding/v3（须以 https:// 开头，勿带末尾斜杠）· 实际请求 {form.base_url || "{base_url}"}/chat/completions
             </p>
           </div>
           <div>
             <label className="text-xs font-medium text-paper-700">
-              api-key {editing && <span className="text-paper-500">（留空保留原值）</span>}
+              api-key {editing && <span className="text-paper-600">（留空保留原值）</span>}
             </label>
             <input className={`mt-1 ${field}`} type="password" value={form.api_key} onChange={(e) => set("api_key", e.target.value)} placeholder={editing ? editing.api_key_masked : "ark-…"} />
           </div>
