@@ -174,7 +174,10 @@ async def _loop() -> None:
             else:
                 aligned = False   # leader 掉线后重新接管时要重跑 missed 检查
         except Exception:
-            pass  # 单轮异常不终止循环
+            # 单轮异常不终止循环；打出日志便于 journalctl 排查（不含敏感数据）
+            import logging
+
+            logging.getLogger("uvicorn.error").exception("trigger 调度单轮异常")
         await asyncio.sleep(_seconds_to_next_minute())
 
 

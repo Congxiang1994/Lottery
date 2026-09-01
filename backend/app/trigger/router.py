@@ -102,7 +102,7 @@ def list_tasks(trigger_session: str | None = Cookie(default=None)):
     today = now.strftime("%Y-%m-%d")
     now_hhmm = now.strftime("%H:%M")
     for t in tasks:
-        t["fired_today"] = has_record_today(t["id"], today, statuses=("success", "failing"))
+        t["fired_today"] = has_record_today(t["id"], today, statuses=("success",))
         # 下次触发：今天还没到点 → 今天该时刻；已过 → 明天
         if t["time"] > now_hhmm:
             t["next_fire"] = f"{today} {t['time']}"
@@ -177,7 +177,7 @@ def status(trigger_session: str | None = Cookie(default=None)):
     tasks = store.list_tasks()
     enabled = [t for t in tasks if t["enabled"]]
     today = datetime.now().strftime("%Y-%m-%d")
-    fired = [t for t in enabled if has_record_today(t["id"], today, statuses=("success", "failing"))]
+    fired = [t for t in enabled if has_record_today(t["id"], today, statuses=("success",))]
     next_fire = None
     now_hhmm = datetime.now().strftime("%H:%M")
     candidates = sorted(t["time"] for t in enabled if t["time"] > now_hhmm)

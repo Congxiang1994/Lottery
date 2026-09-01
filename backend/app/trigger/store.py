@@ -192,8 +192,8 @@ def has_record_today(
 ) -> bool:
     """当日判重：该任务今天是否已存在指定状态的记录。
 
-    - statuses=("success",)：触发幂等（调度器/重启防重复派发）
-    - statuses=("success", "missed", "failing")：missed 判重（避免反复刷屏）
+    - statuses=("success",)：触发幂等（调度器/重启防重复派发、页面「今日已触发」）
+    - statuses=("success", "missed")：missed 判重（避免反复刷屏）
     """
     placeholders = ",".join("?" for _ in statuses)
     with get_conn(DB_PATH) as con:
