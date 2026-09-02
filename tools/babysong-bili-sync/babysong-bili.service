@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Super Simple Songs Bilibili video links (recover taken-down / find latest)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/lottery
+# 纯标准库实现，无需额外依赖；脚本相对路径定位 catalog.json
+ExecStart=/usr/bin/python3 /opt/lottery/tools/babysong-bili-sync/gather.py

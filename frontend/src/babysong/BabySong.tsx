@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Music,
   Search,
@@ -17,6 +17,7 @@ interface Song {
   channel: string;
   youtube_url: string;
   cover: string;
+  bilibili_bvid?: string; // 哔哩哔哩视频 BV 号（抓取所得，可能为空）
   seq: number; // 全局序号（1..N），按目录顺序，搜索/分页不改变
 }
 
@@ -28,7 +29,7 @@ const HISTORY_KEY = "babysong_history_v1";
 const HISTORY_MAX = 30;
 
 type FilterMode = "all" | "played" | "unplayed" | "fav" | "recent";
-type SortMode = "seq" | "seq_desc" | "unplayed";
+type PlatformMode = "all" | "bili" | "yt";
 
 function loadPlayed(): Set<string> {
   try {
@@ -116,11 +117,10 @@ function pageWindow(page: number, pageCount: number, spread = 3): number[] {
 
 /**
  * Super Simple Songs 儿歌列表页 /babysong
- * 卡片网格：序号 + 封面 + 歌名，点击整卡跳转 YouTube 播放（不下载、不点读、不内嵌播放器）。
+ * 卡片网格：序号 + 封面 + 歌名；鼠标悬停卡片显示「B站 / YouTube」双按钮，用户自选平台播放。
  * 播放状态存 localStorage（单机可用，无登录），已播放卡片打钩角标 + 进度统计。
- * 收藏(♥)与播放状态独立，单独筛选；列表分页 + 筛选 + 跳页 + 继续上次位置。
- * 进度可导出/导入 JSON，便于换设备/清缓存后恢复（仍无登录、纯前端）。
- * 最近播放按时间倒序；提供「重置」一键清空全部本地进度。
+ * 收藏(♥)与播放状态独立，可单独筛选；支持状态筛选 + 平台筛选（B站可看 / 仅YouTube）+ 分页 + 跳页 + 继续上次位置。
+ * 哔哩哔哩链接由后台定时任务每日刷新（搬运视频可能被下架，刷新以找回最新可用链接）。
  */
 export default function BabySong() {
   const [songs, setSongs] = useState<Song[]>([]);
@@ -129,7 +129,7 @@ export default function BabySong() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState<FilterMode>("all");
-  const [sort, setSort] = useState<SortMode>("seq");
+  const [platform, setPlatform] = useState<PlatformMode>("all");
   const [played, setPlayed] = useState<Set<string>>(loadPlayed);
   const [fav, setFav] = useState<Set<string>>(loadFav);
   const [history, setHistory] = useState<string[]>(loadHistory);
@@ -137,7 +137,6 @@ export default function BabySong() {
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const [jumpVal, setJumpVal] = useState("");
   const [toast, setToast] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/babysong/list")
@@ -170,24 +169,21 @@ export default function BabySong() {
       list = list.filter((s) => order.has(s.id));
       list = [...list].sort((a, b) => (order.get(a.id)! - order.get(b.id)!));
     }
-    if (sort === "seq_desc") list = [...list].reverse();
-    else if (sort === "unplayed") {
-      list = [...list].sort(
-        (a, b) => (played.has(a.id) ? 1 : 0) - (played.has(b.id) ? 1 : 0)
-      );
-    }
+    // 平台筛选：bili=仅 B 站可看；yt=仅只有 YouTube（无 B 站链接）
+    if (platform === "bili") list = list.filter((s) => !!s.bilibili_bvid);
+    else if (platform === "yt") list = list.filter((s) => !s.bilibili_bvid);
     return list;
-  }, [matched, filter, played, fav, history, sort]);
+  }, [matched, filter, played, fav, history, platform]);
 
   const playedCount = played.size;
   const favCount = fav.size;
 
   const playedPct = songs.length ? Math.round((playedCount / songs.length) * 100) : 0;
 
-  // 搜索词 / 筛选 / 排序变化时回到第一页
+  // 搜索词 / 状态筛选 / 平台筛选变化时回到第一页
   useEffect(() => {
     setPage(1);
-  }, [query, filter, sort]);
+  }, [query, filter, platform]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
@@ -230,75 +226,36 @@ export default function BabySong() {
     });
   };
 
-  // 导出/导入进度（收藏+播放+上次位置），便于换设备/清缓存后恢复
-  const exportState = () => {
-    const data = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      played: Array.from(played),
-      fav: Array.from(fav),
-      history: history,
-      last: lastSeq,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `babysong-progress-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setToast("已导出进度文件");
+  // 打开 YouTube（标记已播放）
+  const openYoutube = (s: Song) => {
+    markPlayed(s);
+    window.open(s.youtube_url, "_blank", "noopener,noreferrer");
   };
 
-  const importState = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(String(reader.result));
-        const p = new Set(played);
-        (Array.isArray(data.played) ? data.played : []).forEach((x: string) => p.add(x));
-        const f = new Set(fav);
-        (Array.isArray(data.fav) ? data.fav : []).forEach((x: string) => f.add(x));
-        const h = Array.isArray(data.history) ? data.history.slice(0, HISTORY_MAX) : [];
-        setPlayed(p);
-        savePlayed(p);
-        setFav(f);
-        saveFav(f);
-        setHistory(h);
-        saveHistory(h);
-        if (typeof data.last === "number" && (!lastSeq || data.last > lastSeq)) {
-          setLastSeq(data.last);
-          saveLast(data.last);
-        }
-        setToast(`已导入：播放 ${p.size} 首 / 收藏 ${f.size} 首 / 最近 ${h.length} 首`);
-      } catch {
-        setToast("导入失败：文件格式不正确");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  };
-
-  const resetAll = () => {
-    if (!window.confirm("确定清空全部进度（已播放 / 收藏 / 最近 / 上次位置）？此操作不可恢复。")) {
+  // 打开哔哩哔哩：移动端优先尝试拉起 B 站 App（bilibili:// 深链），失败/超时回退网页版
+  const openBilibili = (s: Song) => {
+    const bvid = s.bilibili_bvid;
+    if (!bvid) return;
+    markPlayed(s);
+    const web = `https://www.bilibili.com/video/${bvid}`;
+    const app = `bilibili://video/${bvid}`;
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(
+      navigator.userAgent
+    );
+    if (!isMobile) {
+      window.open(web, "_blank", "noopener,noreferrer");
       return;
     }
-    const empty = new Set<string>();
-    setPlayed(empty);
-    savePlayed(empty);
-    setFav(empty);
-    saveFav(empty);
-    setHistory([]);
-    saveHistory([]);
-    setLastSeq(null);
-    try {
-      localStorage.removeItem(LAST_KEY);
-    } catch {
-      /* ignore */
-    }
-    setToast("已清空全部进度");
+    // 移动端：先尝试拉起 App，1.2s 内未离开页面（即未拉起 App）则回退网页版
+    const t0 = Date.now();
+    const fallback = setTimeout(() => {
+      if (Date.now() - t0 < 1500) window.open(web, "_blank", "noopener,noreferrer");
+    }, 1200);
+    const onHide = () => {
+      if (document.hidden) clearTimeout(fallback);
+    };
+    document.addEventListener("visibilitychange", onHide, { once: true });
+    window.location.href = app;
   };
 
   // toast 自动消失
@@ -386,6 +343,10 @@ export default function BabySong() {
             <span className="font-bold text-paper-700">{playedPct}%</span>
           </div>
         </div>
+
+        <p className="mt-2 text-[11px] text-paper-500">
+          不能翻墙？把鼠标移到卡片上，选 <span className="font-semibold text-[#FB7299]">B站</span> 即可在哔哩哔哩播放
+        </p>
       </section>
 
       {/* 搜索 + 筛选 */}
@@ -412,7 +373,7 @@ export default function BabySong() {
           )}
         </div>
 
-        {/* 筛选 tabs + 排序 */}
+        {/* 状态筛选 + 平台筛选 */}
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
           <FilterTab active={filter === "all"} onClick={() => setFilter("all")}>
             全部 {songs.length}
@@ -429,46 +390,18 @@ export default function BabySong() {
           <FilterTab active={filter === "recent"} onClick={() => setFilter("recent")}>
             最近 {history.length}
           </FilterTab>
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortMode)}
-            title="排序方式"
-            className="ml-1 h-8 rounded-full border border-paper-200 bg-paper-50 px-3 text-paper-700 outline-none transition focus:border-brand-red/50"
-          >
-            <option value="seq">序号 ↑</option>
-            <option value="seq_desc">序号 ↓</option>
-            <option value="unplayed">未播放优先</option>
-          </select>
 
           <span className="mx-1 h-4 w-px bg-paper-200" />
-          <button
-            onClick={exportState}
-            title="导出进度（收藏+播放+上次位置）为 JSON"
-            className="h-8 rounded-full border border-paper-200 bg-paper-50 px-3 font-medium text-paper-700 transition hover:bg-white"
-          >
-            导出
-          </button>
-          <button
-            onClick={() => fileRef.current?.click()}
-            title="从 JSON 文件恢复进度"
-            className="h-8 rounded-full border border-paper-200 bg-paper-50 px-3 font-medium text-paper-700 transition hover:bg-white"
-          >
-            导入
-          </button>
-          <button
-            onClick={resetAll}
-            title="清空全部本地进度"
-            className="h-8 rounded-full border border-paper-200 bg-paper-50 px-3 font-medium text-paper-500 transition hover:border-red-300 hover:text-red-500"
-          >
-            重置
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={importState}
-          />
+          <span className="text-paper-400">平台</span>
+          <FilterTab active={platform === "all"} onClick={() => setPlatform("all")}>
+            全部
+          </FilterTab>
+          <FilterTab active={platform === "bili"} onClick={() => setPlatform("bili")}>
+            B站可看
+          </FilterTab>
+          <FilterTab active={platform === "yt"} onClick={() => setPlatform("yt")}>
+            仅YouTube
+          </FilterTab>
         </div>
 
         {!loading && (
@@ -536,15 +469,17 @@ export default function BabySong() {
               const isFav = fav.has(s.id);
               const isLast = highlightSeq === s.seq;
               return (
-                <a
+                <div
                   key={s.id}
                   data-seq={s.seq}
-                  href={s.youtube_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={`#${s.seq} ${s.title} · 在 YouTube 播放`}
-                  onClick={() => markPlayed(s)}
-                  className={`group block ${isPlayed ? "opacity-90" : ""}`}
+                  role="link"
+                  tabIndex={0}
+                  title={`#${s.seq} ${s.title} · 点击在 YouTube 播放，悬停可选 B 站`}
+                  onClick={() => openYoutube(s)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") openYoutube(s);
+                  }}
+                  className={`group block cursor-pointer ${isPlayed ? "opacity-90" : ""}`}
                 >
                   <div
                     className={`glass card-hover overflow-hidden rounded-2xl transition ${
@@ -596,12 +531,37 @@ export default function BabySong() {
                           className={isFav ? "fill-current" : ""}
                         />
                       </button>
-                      {/* hover 播放遮罩 */}
-                      <span className="absolute inset-0 grid place-items-center bg-paper-900/0 opacity-0 transition group-hover:bg-paper-900/30 group-hover:opacity-100">
-                        <span className="grid h-11 w-11 place-items-center rounded-full bg-brand-red text-white shadow-glow">
-                          <Youtube size={20} />
-                        </span>
-                      </span>
+                      {/* hover 双平台播放按钮：B 站 / YouTube（移动端常驻显示） */}
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-paper-900/0 opacity-100 transition group-hover:bg-paper-900/40 md:bg-paper-900/0 md:opacity-0 md:group-hover:opacity-100">
+                        {s.bilibili_bvid && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openBilibili(s);
+                            }}
+                            title="在哔哩哔哩播放"
+                            aria-label="在哔哩哔哩播放"
+                            className="pointer-events-auto flex items-center gap-1 rounded-full bg-[#FB7299] px-3 py-2 text-xs font-semibold text-white shadow-lg transition hover:scale-105"
+                          >
+                            <BiliIcon size={15} /> B站
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openYoutube(s);
+                          }}
+                          title="在 YouTube 播放"
+                          aria-label="在 YouTube 播放"
+                          className="pointer-events-auto flex items-center gap-1 rounded-full bg-brand-red px-3 py-2 text-xs font-semibold text-white shadow-lg transition hover:scale-105"
+                        >
+                          <Youtube size={15} /> YouTube
+                        </button>
+                      </div>
                     </div>
                     <div className="p-3">
                       <div className="flex items-start gap-1.5">
@@ -621,7 +581,7 @@ export default function BabySong() {
                       </div>
                     </div>
                   </div>
-                </a>
+                </div>
               );
             })}
           </div>
@@ -738,5 +698,20 @@ function PagerBtn({
     >
       {children}
     </button>
+  );
+}
+
+/** 哔哩哔哩品牌图标（simple-icons 路径），用于卡片悬停的「B站」按钮 */
+function BiliIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M18.223 3.086a1.25 1.25 0 0 1 0 1.768L17.08 5.996h1.17A3.75 3.75 0 0 1 22 9.747v7.5a3.75 3.75 0 0 1-3.75 3.75H5.75A3.75 3.75 0 0 1 2 17.247v-7.5a3.75 3.75 0 0 1 3.751-3.751h1.166L5.775 4.854a1.25 1.25 0 1 1 1.767-1.768l2.652 2.652c.079.079.145.165.198.257h3.213c.053-.092.12-.18.199-.258l2.651-2.651a1.25 1.25 0 0 1 1.768 0zM18.25 8.497H5.75a1.25 1.25 0 0 0-1.247 1.157l-.003.094v7.5c0 .659.51 1.199 1.157 1.246l.093.004h12.5a1.25 1.25 0 0 0 1.247-1.157l.003-.093v-7.5c0-.69-.56-1.25-1.25-1.25zm-9.5 3.948a1 1 0 0 1 1 1v1.498a1 1 0 1 1-2 0v-1.498a1 1 0 0 1 1-1zm5.5 0a1 1 0 0 1 1 1v1.498a1 1 0 1 1-2 0v-1.498a1 1 0 0 1 1-1z" />
+    </svg>
   );
 }

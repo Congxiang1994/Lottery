@@ -94,12 +94,8 @@ YouTube 直链，点击卡片即跳转到 YouTube 播放。**不下载视频、�
 
 顶部 Hero 区有整体**完成度进度条**（已播放 X / 518 + 百分比）。
 
-### 导入 / 导出 / 重置
-
-- **导出**：将 `{ version, exportedAt, played, fav, history, last }` 序列化为 JSON 由浏览器下载，
-  便于换设备/清缓存后恢复
-- **导入**：`FileReader` 读取 JSON，按 `∪` 合并（不丢本地已有记录），`last` 取较大值
-- **重置**：二次 `window.confirm` 后清空 `played / fav / history / last` 全部本地进度
+> 注：按需求已移除「排序下拉 / 导出 / 导入 / 重置」四个控件；进度仍存 localStorage（已播放 / 收藏 / 最近 / 上次位置），
+> 清缓存即清空，符合「纯前端、无登录」的设计。
 
 ## 封面目录注意事项 ⚠️（真实踩坑）
 

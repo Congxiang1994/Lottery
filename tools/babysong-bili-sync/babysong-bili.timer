@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily 00:00 refresh of Super Simple Songs Bilibili links
+
+[Timer]
+# 每天夜里 12 点（00:00）执行一次
+OnCalendar=*-*-* 00:00:00
+Persistent=true
+Unit=babysong-bili.service
+
+[Install]
+WantedBy=timers.target
