@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Music, Search, Youtube, Shuffle, X, ExternalLink, Check } from "lucide-react";
+import {
+  Music,
+  Search,
+  Youtube,
+  Shuffle,
+  X,
+  ExternalLink,
+  Check,
+  RotateCcw,
+} from "lucide-react";
 
 interface Song {
   id: string;
@@ -12,6 +21,9 @@ interface Song {
 
 const PAGE_SIZE = 48;
 const PLAYED_KEY = "babysong_played_v1";
+const LAST_KEY = "babysong_last_v1";
+
+type FilterMode = "all" | "played" | "unplayed";
 
 function loadPlayed(): Set<string> {
   try {
@@ -32,6 +44,24 @@ function savePlayed(set: Set<string>) {
   }
 }
 
+function loadLast(): number | null {
+  try {
+    const raw = localStorage.getItem(LAST_KEY);
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLast(seq: number) {
+  try {
+    localStorage.setItem(LAST_KEY, String(seq));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 计算窗口化页码（当前页前后各 spread 页，封顶/封底） */
 function pageWindow(page: number, pageCount: number, spread = 3): number[] {
   const start = Math.max(1, page - spread);
@@ -45,7 +75,7 @@ function pageWindow(page: number, pageCount: number, spread = 3): number[] {
  * Super Simple Songs 儿歌列表页 /babysong
  * 卡片网格：序号 + 封面 + 歌名，点击整卡跳转 YouTube 播放（不下载、不点读、不内嵌播放器）。
  * 播放状态存 localStorage（单机可用，无登录），已播放卡片打钩角标 + 进度统计。
- * 列表分页，避免一页滚到底。
+ * 列表分页 + 筛选 + 跳页 + 继续上次位置。
  */
 export default function BabySong() {
   const [songs, setSongs] = useState<Song[]>([]);
@@ -53,7 +83,11 @@ export default function BabySong() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<FilterMode>("all");
   const [played, setPlayed] = useState<Set<string>>(loadPlayed);
+  const [lastSeq, setLastSeq] = useState<number | null>(loadLast);
+  const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
+  const [jumpVal, setJumpVal] = useState("");
 
   useEffect(() => {
     fetch("/api/babysong/list")
@@ -68,7 +102,7 @@ export default function BabySong() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(() => {
+  const matched = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return songs;
     return songs.filter(
@@ -76,29 +110,46 @@ export default function BabySong() {
     );
   }, [songs, query]);
 
-  // 搜索词变化时回到第一页
+  const filtered = useMemo(() => {
+    if (filter === "played") return matched.filter((s) => played.has(s.id));
+    if (filter === "unplayed") return matched.filter((s) => !played.has(s.id));
+    return matched;
+  }, [matched, filter, played]);
+
+  const playedCount = played.size;
+
+  // 搜索词 / 筛选变化时回到第一页
   useEffect(() => {
     setPage(1);
-  }, [query]);
+  }, [query, filter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const pageItems = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const markPlayed = (id: string) => {
+  // 高亮「上次位置」卡片：渲染后滚动到可视区
+  useEffect(() => {
+    if (!highlightSeq) return;
+    const el = document.querySelector(`[data-seq="${highlightSeq}"]`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightSeq, safePage]);
+
+  const markPlayed = (s: Song) => {
     setPlayed((prev) => {
-      if (prev.has(id)) return prev;
+      if (prev.has(s.id)) return prev;
       const next = new Set(prev);
-      next.add(id);
+      next.add(s.id);
       savePlayed(next);
       return next;
     });
+    setLastSeq(s.seq);
+    saveLast(s.seq);
   };
 
   const openRandom = () => {
     if (!filtered.length) return;
     const s = filtered[Math.floor(Math.random() * filtered.length)];
-    markPlayed(s.id);
+    markPlayed(s);
     window.open(s.youtube_url, "_blank", "noopener,noreferrer");
   };
 
@@ -106,6 +157,22 @@ export default function BabySong() {
     const target = Math.max(1, Math.min(pageCount, p));
     setPage(target);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const doJump = () => {
+    const n = parseInt(jumpVal, 10);
+    if (Number.isFinite(n)) goPage(n);
+    setJumpVal("");
+  };
+
+  const continueLast = () => {
+    if (!lastSeq) return;
+    const target = songs.find((s) => s.seq === lastSeq);
+    if (!target) return;
+    setQuery("");
+    setFilter("all");
+    setHighlightSeq(lastSeq);
+    goPage(Math.floor((lastSeq - 1) / PAGE_SIZE) + 1);
   };
 
   return (
@@ -123,7 +190,7 @@ export default function BabySong() {
           共收录 <span className="font-bold text-brand-red2">{songs.length}</span> 首经典英文儿歌，
           带官方封面与 YouTube 直链，点开即看。
         </p>
-        <div className="mt-6 flex justify-center">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <button
             onClick={openRandom}
             disabled={!filtered.length}
@@ -131,10 +198,18 @@ export default function BabySong() {
           >
             <Shuffle size={16} /> 随机来一首
           </button>
+          {lastSeq && (
+            <button
+              onClick={continueLast}
+              className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
+            >
+              <RotateCcw size={15} /> 回到上次 # {lastSeq}
+            </button>
+          )}
         </div>
       </section>
 
-      {/* 搜索 */}
+      {/* 搜索 + 筛选 */}
       <div className="mx-auto mt-8 max-w-lg px-1">
         <div className="relative">
           <Search
@@ -157,6 +232,23 @@ export default function BabySong() {
             </button>
           )}
         </div>
+
+        {/* 筛选 tabs */}
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs">
+          <FilterTab active={filter === "all"} onClick={() => setFilter("all")}>
+            全部 {songs.length}
+          </FilterTab>
+          <FilterTab active={filter === "played"} onClick={() => setFilter("played")}>
+            已播放 {playedCount}
+          </FilterTab>
+          <FilterTab
+            active={filter === "unplayed"}
+            onClick={() => setFilter("unplayed")}
+          >
+            未播放 {songs.length - playedCount}
+          </FilterTab>
+        </div>
+
         {!loading && (
           <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-paper-600">
             <span>
@@ -164,7 +256,7 @@ export default function BabySong() {
             </span>
             <span className="text-paper-300">·</span>
             <span>
-              已播放 <span className="font-bold text-emerald-600">{played.size}</span> 首
+              已播放 <span className="font-bold text-emerald-600">{playedCount}</span> 首
             </span>
             {pageCount > 1 && (
               <>
@@ -199,34 +291,45 @@ export default function BabySong() {
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl border border-paper-200 bg-paper-50 px-5 py-16 text-center">
             <p className="text-sm text-paper-700">
-              未找到「{query}」相关的儿歌，换个关键词试试
+              {filter === "played"
+                ? "还没有播放过的儿歌，点开任意一首即可记录～"
+                : filter === "unplayed"
+                ? "全部都播放过啦，真棒 🎉"
+                : `未找到「${query}」相关的儿歌，换个关键词试试`}
             </p>
             <button
-              onClick={() => setQuery("")}
+              onClick={() => {
+                setQuery("");
+                setFilter("all");
+              }}
               className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-brand-red/50 px-4 py-1.5 text-xs font-medium text-brand-red transition hover:bg-brand-red/10"
             >
-              <X size={12} /> 清除搜索
+              <X size={12} /> 清除筛选
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {pageItems.map((s) => {
               const isPlayed = played.has(s.id);
+              const isLast = highlightSeq === s.seq;
               return (
                 <a
                   key={s.id}
+                  data-seq={s.seq}
                   href={s.youtube_url}
                   target="_blank"
                   rel="noopener noreferrer"
                   title={`#${s.seq} ${s.title} · 在 YouTube 播放`}
-                  onClick={() => markPlayed(s.id)}
-                  className={`group block ${
-                    isPlayed ? "opacity-90" : ""
-                  }`}
+                  onClick={() => markPlayed(s)}
+                  className={`group block ${isPlayed ? "opacity-90" : ""}`}
                 >
                   <div
                     className={`glass card-hover overflow-hidden rounded-2xl transition ${
-                      isPlayed ? "ring-2 ring-emerald-400/60" : ""
+                      isLast
+                        ? "ring-2 ring-amber-400"
+                        : isPlayed
+                        ? "ring-2 ring-emerald-400/60"
+                        : ""
                     }`}
                   >
                     <div className="relative aspect-square overflow-hidden bg-paper-100">
@@ -244,6 +347,12 @@ export default function BabySong() {
                       {isPlayed && (
                         <span className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-emerald-500 text-white shadow">
                           <Check size={14} strokeWidth={3} />
+                        </span>
+                      )}
+                      {/* 上次位置标记（右上，未播放时） */}
+                      {isLast && !isPlayed && (
+                        <span className="absolute right-2 top-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 shadow">
+                          上次
                         </span>
                       )}
                       {/* hover 播放遮罩 */}
@@ -278,7 +387,7 @@ export default function BabySong() {
         )}
       </div>
 
-      {/* 分页 */}
+      {/* 分页 + 跳页 */}
       {!loading && !error && pageCount > 1 && (
         <nav className="mt-10 flex flex-wrap items-center justify-center gap-1.5">
           <PagerBtn
@@ -308,9 +417,47 @@ export default function BabySong() {
           >
             ›
           </PagerBtn>
+
+          <span className="mx-1 h-5 w-px bg-paper-200" />
+          <input
+            value={jumpVal}
+            onChange={(e) => setJumpVal(e.target.value.replace(/[^0-9]/g, ""))}
+            onKeyDown={(e) => e.key === "Enter" && doJump()}
+            placeholder="页"
+            className="h-9 w-14 rounded-lg border border-paper-200 bg-paper-50 px-2 text-center text-sm text-paper-800 outline-none focus:border-brand-red/50"
+          />
+          <button
+            onClick={doJump}
+            className="h-9 rounded-lg border border-paper-200 bg-paper-50 px-3 text-sm font-semibold text-paper-700 transition hover:border-brand-red/50 hover:bg-white"
+          >
+            跳转
+          </button>
         </nav>
       )}
     </div>
+  );
+}
+
+function FilterTab({
+  children,
+  active,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full px-3 py-1.5 font-medium transition ${
+        active
+          ? "bg-brand-red text-white shadow-glow"
+          : "border border-paper-200 bg-paper-50 text-paper-700 hover:bg-white"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -339,9 +486,7 @@ function PagerBtn({
         active
           ? "border-brand-red bg-brand-red text-white shadow-glow"
           : "border-paper-200 bg-paper-50 text-paper-700 hover:border-brand-red/50 hover:bg-white"
-      } ${className} ${
-        disabled ? "pointer-events-none opacity-35" : ""
-      }`}
+      } ${className} ${disabled ? "pointer-events-none opacity-35" : ""}`}
     >
       {children}
     </button>
