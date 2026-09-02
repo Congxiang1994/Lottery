@@ -24,6 +24,7 @@ const PLAYED_KEY = "babysong_played_v1";
 const LAST_KEY = "babysong_last_v1";
 
 type FilterMode = "all" | "played" | "unplayed";
+type SortMode = "seq" | "seq_desc" | "unplayed";
 
 function loadPlayed(): Set<string> {
   try {
@@ -84,6 +85,7 @@ export default function BabySong() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState<FilterMode>("all");
+  const [sort, setSort] = useState<SortMode>("seq");
   const [played, setPlayed] = useState<Set<string>>(loadPlayed);
   const [lastSeq, setLastSeq] = useState<number | null>(loadLast);
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
@@ -111,17 +113,26 @@ export default function BabySong() {
   }, [songs, query]);
 
   const filtered = useMemo(() => {
-    if (filter === "played") return matched.filter((s) => played.has(s.id));
-    if (filter === "unplayed") return matched.filter((s) => !played.has(s.id));
-    return matched;
-  }, [matched, filter, played]);
+    let list = matched;
+    if (filter === "played") list = list.filter((s) => played.has(s.id));
+    else if (filter === "unplayed") list = list.filter((s) => !played.has(s.id));
+    if (sort === "seq_desc") list = [...list].reverse();
+    else if (sort === "unplayed") {
+      list = [...list].sort(
+        (a, b) => (played.has(a.id) ? 1 : 0) - (played.has(b.id) ? 1 : 0)
+      );
+    }
+    return list;
+  }, [matched, filter, played, sort]);
+
+  const playedPct = songs.length ? Math.round((playedCount / songs.length) * 100) : 0;
 
   const playedCount = played.size;
 
-  // 搜索词 / 筛选变化时回到第一页
+  // 搜索词 / 筛选 / 排序变化时回到第一页
   useEffect(() => {
     setPage(1);
-  }, [query, filter]);
+  }, [query, filter, sort]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
@@ -207,6 +218,23 @@ export default function BabySong() {
             </button>
           )}
         </div>
+
+        {/* 整体完成度进度条 */}
+        <div className="mx-auto mt-5 w-full max-w-md px-1">
+          <div className="h-2 overflow-hidden rounded-full bg-paper-200">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-brand-red to-brand-red2 transition-all duration-500"
+              style={{ width: `${playedPct}%` }}
+            />
+          </div>
+          <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] text-paper-500">
+            <span>
+              已播放 <span className="font-bold text-emerald-600">{playedCount}</span> / {songs.length}
+            </span>
+            <span className="text-paper-300">·</span>
+            <span className="font-bold text-paper-700">{playedPct}%</span>
+          </div>
+        </div>
       </section>
 
       {/* 搜索 + 筛选 */}
@@ -233,30 +261,33 @@ export default function BabySong() {
           )}
         </div>
 
-        {/* 筛选 tabs */}
-        <div className="mt-3 flex items-center justify-center gap-2 text-xs">
+        {/* 筛选 tabs + 排序 */}
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
           <FilterTab active={filter === "all"} onClick={() => setFilter("all")}>
             全部 {songs.length}
           </FilterTab>
           <FilterTab active={filter === "played"} onClick={() => setFilter("played")}>
             已播放 {playedCount}
           </FilterTab>
-          <FilterTab
-            active={filter === "unplayed"}
-            onClick={() => setFilter("unplayed")}
-          >
+          <FilterTab active={filter === "unplayed"} onClick={() => setFilter("unplayed")}>
             未播放 {songs.length - playedCount}
           </FilterTab>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortMode)}
+            title="排序方式"
+            className="ml-1 h-8 rounded-full border border-paper-200 bg-paper-50 px-3 text-paper-700 outline-none transition focus:border-brand-red/50"
+          >
+            <option value="seq">序号 ↑</option>
+            <option value="seq_desc">序号 ↓</option>
+            <option value="unplayed">未播放优先</option>
+          </select>
         </div>
 
         {!loading && (
           <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-paper-600">
             <span>
               显示 <span className="font-bold text-paper-800">{filtered.length}</span> / {songs.length}
-            </span>
-            <span className="text-paper-300">·</span>
-            <span>
-              已播放 <span className="font-bold text-emerald-600">{playedCount}</span> 首
             </span>
             {pageCount > 1 && (
               <>
