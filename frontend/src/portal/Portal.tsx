@@ -15,21 +15,21 @@ const APPS: {
   status: "live" | "soon";
 }[] = [
   {
-    id: "lottery",
-    title: "彩票数据站",
-    desc: "双色球 / 大乐透历史开奖全量统计、走势追踪与多策略智能推荐，一站看透号码规律。",
-    icon: Dices,
-    tags: ["数据可视化", "AI 推荐"],
-    href: "/lottery",
-    status: "live",
-  },
-  {
     id: "hanzi",
     title: "汉字是画出来的",
     desc: "108 节汉字动画课视频点播：按名称模糊检索，点击即全屏播放，支持快进/后退 5 秒与上/下一集切换。",
     icon: Clapperboard,
     tags: ["视频点播", "儿童教育"],
     href: "/hanzi",
+    status: "live",
+  },
+  {
+    id: "babysong",
+    title: "Super Simple Songs 儿歌",
+    desc: "518 首经典英文儿歌：官方封面 + YouTube 直链，点击即跳转播放，让孩子轻松磨耳朵。",
+    icon: Music,
+    tags: ["儿歌", "YouTube"],
+    href: "/babysong",
     status: "live",
   },
   {
@@ -42,12 +42,12 @@ const APPS: {
     status: "live",
   },
   {
-    id: "babysong",
-    title: "Super Simple Songs 儿歌",
-    desc: "518 首经典英文儿歌：官方封面 + YouTube 直链，点击即跳转播放，让孩子轻松磨耳朵。",
-    icon: Music,
-    tags: ["儿歌", "YouTube"],
-    href: "/babysong",
+    id: "lottery",
+    title: "彩票数据站",
+    desc: "双色球 / 大乐透历史开奖全量统计、走势追踪与多策略智能推荐，一站看透号码规律。",
+    icon: Dices,
+    tags: ["数据可视化", "AI 推荐"],
+    href: "/lottery",
     status: "live",
   },
   {
