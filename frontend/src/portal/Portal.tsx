@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Dices, ArrowRight, Github, Sparkles, Clapperboard, Zap, type LucideIcon } from "lucide-react";
+import { Dices, ArrowRight, Github, Sparkles, Clapperboard, Zap, Music, type LucideIcon } from "lucide-react";
 
 /**
  * 产品矩阵 —— 新增产品只需在此数组追加一项即可。
@@ -39,6 +39,15 @@ const APPS: {
     icon: Zap,
     tags: ["定时任务", "私有"],
     href: "/trigger",
+    status: "live",
+  },
+  {
+    id: "babysong",
+    title: "Super Simple Songs 儿歌",
+    desc: "518 首经典英文儿歌：官方封面 + YouTube 直链，点击即跳转播放，让孩子轻松磨耳朵。",
+    icon: Music,
+    tags: ["儿歌", "YouTube"],
+    href: "/babysong",
     status: "live",
   },
   {

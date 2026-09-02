@@ -14,6 +14,7 @@ from app.lottery import router as lottery_router
 from app.hanzi import router as hanzi_router
 from app.stats import router as stats_router
 from app.trigger import router as trigger_router
+from app.babysong import router as babysong_router
 from app.trigger import scheduler
 from app.common import password as password_store
 
@@ -41,6 +42,7 @@ app.include_router(lottery_router.router)
 app.include_router(hanzi_router.router)
 app.include_router(stats_router.router)
 app.include_router(trigger_router.router)
+app.include_router(babysong_router.router)
 
 # 前端构建产物（若存在则托管，便于 Nginx 之前本地直跑）
 DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
