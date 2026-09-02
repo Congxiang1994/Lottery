@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Check,
   RotateCcw,
+  Heart,
 } from "lucide-react";
 
 interface Song {
@@ -21,9 +22,10 @@ interface Song {
 
 const PAGE_SIZE = 48;
 const PLAYED_KEY = "babysong_played_v1";
+const FAV_KEY = "babysong_fav_v1";
 const LAST_KEY = "babysong_last_v1";
 
-type FilterMode = "all" | "played" | "unplayed";
+type FilterMode = "all" | "played" | "unplayed" | "fav";
 type SortMode = "seq" | "seq_desc" | "unplayed";
 
 function loadPlayed(): Set<string> {
@@ -63,6 +65,25 @@ function saveLast(seq: number) {
   }
 }
 
+function loadFav(): Set<string> {
+  try {
+    const raw = localStorage.getItem(FAV_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveFav(set: Set<string>) {
+  try {
+    localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(set)));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 计算窗口化页码（当前页前后各 spread 页，封顶/封底） */
 function pageWindow(page: number, pageCount: number, spread = 3): number[] {
   const start = Math.max(1, page - spread);
@@ -76,7 +97,7 @@ function pageWindow(page: number, pageCount: number, spread = 3): number[] {
  * Super Simple Songs 儿歌列表页 /babysong
  * 卡片网格：序号 + 封面 + 歌名，点击整卡跳转 YouTube 播放（不下载、不点读、不内嵌播放器）。
  * 播放状态存 localStorage（单机可用，无登录），已播放卡片打钩角标 + 进度统计。
- * 列表分页 + 筛选 + 跳页 + 继续上次位置。
+ * 收藏(♥)与播放状态独立，单独筛选；列表分页 + 筛选 + 跳页 + 继续上次位置。
  */
 export default function BabySong() {
   const [songs, setSongs] = useState<Song[]>([]);
@@ -87,6 +108,7 @@ export default function BabySong() {
   const [filter, setFilter] = useState<FilterMode>("all");
   const [sort, setSort] = useState<SortMode>("seq");
   const [played, setPlayed] = useState<Set<string>>(loadPlayed);
+  const [fav, setFav] = useState<Set<string>>(loadFav);
   const [lastSeq, setLastSeq] = useState<number | null>(loadLast);
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const [jumpVal, setJumpVal] = useState("");
@@ -116,6 +138,7 @@ export default function BabySong() {
     let list = matched;
     if (filter === "played") list = list.filter((s) => played.has(s.id));
     else if (filter === "unplayed") list = list.filter((s) => !played.has(s.id));
+    else if (filter === "fav") list = list.filter((s) => fav.has(s.id));
     if (sort === "seq_desc") list = [...list].reverse();
     else if (sort === "unplayed") {
       list = [...list].sort(
@@ -123,11 +146,12 @@ export default function BabySong() {
       );
     }
     return list;
-  }, [matched, filter, played, sort]);
+  }, [matched, filter, played, fav, sort]);
 
   const playedPct = songs.length ? Math.round((playedCount / songs.length) * 100) : 0;
 
   const playedCount = played.size;
+  const favCount = fav.size;
 
   // 搜索词 / 筛选 / 排序变化时回到第一页
   useEffect(() => {
@@ -155,6 +179,19 @@ export default function BabySong() {
     });
     setLastSeq(s.seq);
     saveLast(s.seq);
+  };
+
+  const toggleFav = (s: Song, e: React.MouseEvent) => {
+    // 阻止冒泡，避免触发整卡跳转 YouTube
+    e.preventDefault();
+    e.stopPropagation();
+    setFav((prev) => {
+      const next = new Set(prev);
+      if (next.has(s.id)) next.delete(s.id);
+      else next.add(s.id);
+      saveFav(next);
+      return next;
+    });
   };
 
   const openRandom = () => {
@@ -272,6 +309,9 @@ export default function BabySong() {
           <FilterTab active={filter === "unplayed"} onClick={() => setFilter("unplayed")}>
             未播放 {songs.length - playedCount}
           </FilterTab>
+          <FilterTab active={filter === "fav"} onClick={() => setFilter("fav")}>
+            收藏 {favCount}
+          </FilterTab>
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortMode)}
@@ -326,6 +366,8 @@ export default function BabySong() {
                 ? "还没有播放过的儿歌，点开任意一首即可记录～"
                 : filter === "unplayed"
                 ? "全部都播放过啦，真棒 🎉"
+                : filter === "fav"
+                ? "还没有收藏的儿歌，点卡片右下角的 ♥ 即可收藏～"
                 : `未找到「${query}」相关的儿歌，换个关键词试试`}
             </p>
             <button
@@ -342,6 +384,7 @@ export default function BabySong() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {pageItems.map((s) => {
               const isPlayed = played.has(s.id);
+              const isFav = fav.has(s.id);
               const isLast = highlightSeq === s.seq;
               return (
                 <a
@@ -386,6 +429,24 @@ export default function BabySong() {
                           上次
                         </span>
                       )}
+                      {/* 收藏按钮（右下，点♥切换，不触发跳转） */}
+                      <button
+                        type="button"
+                        onClick={(e) => toggleFav(s, e)}
+                        title={isFav ? "取消收藏" : "收藏"}
+                        aria-label={isFav ? "取消收藏" : "收藏"}
+                        className={`absolute bottom-2 right-2 grid h-7 w-7 place-items-center rounded-full shadow transition ${
+                          isFav
+                            ? "bg-brand-red text-white"
+                            : "bg-paper-900/55 text-white hover:bg-paper-900/75"
+                        }`}
+                      >
+                        <Heart
+                          size={15}
+                          strokeWidth={2.2}
+                          className={isFav ? "fill-current" : ""}
+                        />
+                      </button>
                       {/* hover 播放遮罩 */}
                       <span className="absolute inset-0 grid place-items-center bg-paper-900/0 opacity-0 transition group-hover:bg-paper-900/30 group-hover:opacity-100">
                         <span className="grid h-11 w-11 place-items-center rounded-full bg-brand-red text-white shadow-glow">
