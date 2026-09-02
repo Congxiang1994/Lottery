@@ -179,10 +179,10 @@ export default function BabySong() {
     return list;
   }, [matched, filter, played, fav, history, sort]);
 
-  const playedPct = songs.length ? Math.round((playedCount / songs.length) * 100) : 0;
-
   const playedCount = played.size;
   const favCount = fav.size;
+
+  const playedPct = songs.length ? Math.round((playedCount / songs.length) * 100) : 0;
 
   // 搜索词 / 筛选 / 排序变化时回到第一页
   useEffect(() => {
