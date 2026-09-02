@@ -23,15 +23,6 @@
 
 ## 功能与工具列表
 
-### 🎲 Lottery 彩票数据站（`/lottery`）· 在线产品
-
-支持 **双色球 (SSQ)** 与 **大乐透 (DLT)**，提供历史开奖可视化、号码频率 / 冷热 / 遗漏分析、走势图，
-以及由 **89 个推荐算法（12 大分类）**驱动的算法广场、智能推荐与滚动回测。
-
-> ⚠️ **理性购彩声明**：彩票开奖完全随机，任何历史统计与「预测」均不具备科学依据，本平台所有推荐仅供娱乐参考。请量力而行、理性投注，切勿沉迷。未满 18 周岁禁止购彩。
-
-📖 实现逻辑与技术结构见 **[README_lottery.md](./README_lottery.md)**
-
 ### 🖍 汉字是画出来的（`/hanzi`）· 在线产品
 
 《汉字是画出来的》**108 节动画课点播页**：按汉字名模糊检索、手机竖屏友好的卡片列表，
@@ -40,13 +31,14 @@
 
 📖 实现逻辑与技术结构见 **[README_hanzi.md](./README_hanzi.md)**
 
-### 🖍 汉字是画出来的（`/hanzi`）· 在线产品
+### 🎵 Super Simple Songs 儿歌（`/babysong`）· 在线产品
 
-《汉字是画出来的》**108 节动画课点播页**：按汉字名模糊检索、手机竖屏友好的卡片列表，
-点击卡片即全屏播放，播放器支持 播放/暂停、快进/后退 5s、上一集/下一集、进度条拖动，
-控制条自动隐藏。视频由 Nginx 直接文件服务（支持 Range 拖动）。
+**518 首经典英文儿歌列表**：带官方封面与 YouTube 直链，卡片网格展示（序号 + 封面 + 歌名），
+点击即跳转到 YouTube 播放。**不下载视频、不内嵌播放器、不接点读**，封面本地托管（国内不被墙）。
+前端内置播放进度管理（localStorage，无登录）：已播放打钩 + 完成度进度条、收藏♥、筛选/排序/分页、
+「回到上次」、最近播放、进度导出/导入与一键重置。
 
-📖 实现逻辑与技术结构见 **[README_hanzi.md](./README_hanzi.md)**
+📖 实现逻辑与技术结构见 **[README_babysong.md](./README_babysong.md)**
 
 ### ⚡ API 用量触发器（`/trigger`）· 在线产品（私有）
 
@@ -61,6 +53,15 @@
 - **调度**：FastAPI 进程内 asyncio 每分钟对表，flock 文件锁防多 worker 双发，重启自动恢复
 
 📖 实现逻辑与技术结构见 **[README_trigger.md](./README_trigger.md)**
+
+### 🎲 Lottery 彩票数据站（`/lottery`）· 在线产品
+
+支持 **双色球 (SSQ)** 与 **大乐透 (DLT)**，提供历史开奖可视化、号码频率 / 冷热 / 遗漏分析、走势图，
+以及由 **89 个推荐算法（12 大分类）**驱动的算法广场、智能推荐与滚动回测。
+
+> ⚠️ **理性购彩声明**：彩票开奖完全随机，任何历史统计与「预测」均不具备科学依据，本平台所有推荐仅供娱乐参考。请量力而行、理性投注，切勿沉迷。未满 18 周岁禁止购彩。
+
+📖 实现逻辑与技术结构见 **[README_lottery.md](./README_lottery.md)**
 
 ### 🛠 工具（`tools/`）· 无前端页面
 
@@ -79,17 +80,20 @@
                                                                      │ /api  →  127.0.0.1:8000
                                                        ┌─────────────┴──────────────┐
                                                        │  FastAPI (gunicorn 2 worker) │
-                                                       │  ├─ lottery 域  (/api/v1)     │
-                                                       │  │    ├─ 算法引擎（89 算法）   │
-                                                       │  │    └─ 统计/玄学/数据服务    │
-                                                       │  ├─ hanzi 域   (/api/hanzi)   │
-                                                       │  │    └─ 视频列表（扫描目录）  │
-                                                       │  ├─ trigger 域 (/api/trigger) │
-                                                       │  │    └─ API 用量触发器      │
-                                                       │  └─ SQLite: /data/lottery/    │
-                                                       └─────────────────────────────┘
+│  ├─ lottery 域  (/api/v1)     │
+│  │    ├─ 算法引擎（89 算法）   │
+│  │    └─ 统计/玄学/数据服务    │
+│  ├─ hanzi 域   (/api/hanzi)   │
+│  │    └─ 视频列表（扫描目录）  │
+│  ├─ babysong 域 (/api/babysong)│
+│  │    └─ 儿歌列表（读 catalog）│
+│  ├─ trigger 域 (/api/trigger) │
+│  │    └─ API 用量触发器      │
+│  └─ SQLite: /data/lottery/    │
+└─────────────────────────────┘
                                                        /hanzi/*.mp4  →  Nginx alias
                                                        /data/hanzi/（视频静态服务，Range）
+                                                       /song-covers/* → Nginx 静态（儿歌封面，随 dist 同源）
 ```
 
 - **前端**：React 18 + Vite + TailwindCSS + Recharts，暗色高端风、响应式、入场动效。单 SPA，首屏聚合门户，各功能一个路由模块（`src/<domain>/`）。
@@ -119,6 +123,7 @@
 │   │   ├── common/          # 公共基础设施（db.get_conn 等跨域复用工具）
 │   │   ├── lottery/         # 彩票数据服务（/api/v1，自包含功能域）
 │   │   ├── hanzi/           # 汉字课视频列表（/api/hanzi，自包含功能域）
+│   │   ├── babysong/        # 儿歌列表（/api/babysong，自包含功能域，读 catalog.json）
 │   │   └── trigger/         # API 用量触发器（/api/trigger，密码保护定时任务）
 │   ├── scripts/             # 爬取 / 定时跑批脚本
 │   └── requirements.txt
@@ -127,7 +132,9 @@
 │   ├── src/portal/          # 聚合门户（产品矩阵首页）
 │   ├── src/lottery/         # 彩票站（api/types/context/components/pages）
 │   ├── src/hanzi/           # 汉字课点播页（HanziPlayer.tsx）
+│   ├── src/babysong/        # 儿歌列表页（BabySong.tsx）
 │   ├── src/trigger/         # API 用量触发器（api.ts + Trigger.tsx）
+│   └── public/song-covers/  # 儿歌封面（518 张 jpg，随构建产物 dist/song-covers/ 由 Nginx 静态服务）
 │   └── dist/                # 生产构建产物（Nginx 托管）
 ├── tools/                   # 工具类脚本（无前端页面）
 │   └── xiaoe-downloader/    # 小鹅通视频课程下载器
@@ -148,6 +155,7 @@ README 分两层：**根 README 讲「全站」**，**分册讲「各模块实�
 | [README.md](./README.md) | 全站定位、功能与工具列表、整体技术框架、部署与扩展规范（本页） |
 | [README_lottery.md](./README_lottery.md) | 彩票模块：算法引擎设计、数据流、定时跑批、防并发设计、API 全表 |
 | [README_hanzi.md](./README_hanzi.md) | 汉字课点播模块：列表接口、Nginx 视频静态服务、伪全屏播放器设计、安全要点 |
+| [README_babysong.md](./README_babysong.md) | 儿歌列表模块：518 首元数据、封面本地托管、前端进度管理（localStorage）、静态资源避坑 |
 | [README_trigger.md](./README_trigger.md) | API 用量触发器：需求定稿、密码会话、调度与防双发设计、API 全表、验收清单 |
 | [tools/xiaoe-downloader/README.md](./tools/xiaoe-downloader/README.md) | 小鹅通下载器：接口链路、踩坑记录、使用步骤 |
 
