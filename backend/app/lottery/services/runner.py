@@ -15,11 +15,9 @@ import time
 
 from app.lottery.algorithms import REGISTRY, engine_context, safe_run
 from app.lottery.algorithms.base import CATEGORIES, scores_to_picks
-from app.lottery.config import LOTTERIES
+from app.lottery.config import ALGORITHM_COST_SECONDS, LOTTERIES
 from app.lottery.services import results_store, scraper
 
-# cost -> 预估耗时（秒），用于进度条 ETA 的加权估算
-COST_SECONDS = {1: 0.15, 2: 0.6, 3: 2.0, 4: 4.5}
 ALL_LOTTERIES = ["ssq", "dlt"]
 _RUNNING: dict[str, threading.Thread] = {}
 _LOCK = threading.Lock()
@@ -48,7 +46,7 @@ def _pool(lottery: str) -> list:
 def start(lottery: str) -> tuple[bool, str]:
     """启动单彩种全量运行（仅当未在运行）。"""
     pool = _pool(lottery)
-    total_weight = float(sum(COST_SECONDS.get(m.cost, 1.0) for m in pool))
+    total_weight = float(sum(ALGORITHM_COST_SECONDS.get(m.cost, 1.0) for m in pool))
     if not results_store.progress_start(lottery, len(pool), total_weight):
         return False, "该彩种已有运行任务进行中，请等待完成"
     th = threading.Thread(target=_work, args=(lottery,), daemon=True)
@@ -67,7 +65,7 @@ def start_all() -> tuple[bool, str]:
         return False, "已有全量运行任务进行中（数据库锁），请等待完成"
     for k in ALL_LOTTERIES:
         pool = _pool(k)
-        total_weight = float(sum(COST_SECONDS.get(m.cost, 1.0) for m in pool))
+        total_weight = float(sum(ALGORITHM_COST_SECONDS.get(m.cost, 1.0) for m in pool))
         if not results_store.progress_start(k, len(pool), total_weight):
             results_store.global_lock_end()
             return False, f"{LOTTERIES[k]['name']} 已有任务进行中，请等待完成"
@@ -99,7 +97,7 @@ def _work(lottery: str) -> None:
         meta = LOTTERIES[lottery]
         ctx = engine_context(lottery, data["draws"], meta)
         pool = [m for m in REGISTRY.values() if m.category != "ensemble"]
-        total_w = float(sum(COST_SECONDS.get(m.cost, 1.0) for m in pool))
+        total_w = float(sum(ALGORITHM_COST_SECONDS.get(m.cost, 1.0) for m in pool))
         t0 = time.time()
 
         # ---------- 阶段 1：全量预测 ----------
@@ -110,7 +108,7 @@ def _work(lottery: str) -> None:
             out = safe_run(m, ctx)
             ms = (time.perf_counter() - t1) * 1000
             results.append(_packet(m, ctx, out, ms))
-            done_w += COST_SECONDS.get(m.cost, 1.0)
+            done_w += ALGORITHM_COST_SECONDS.get(m.cost, 1.0)
             elapsed = time.time() - t0
             remain = total_w - done_w
             eta = elapsed / max(done_w, 1e-6) * remain if remain > 0 else 0.0

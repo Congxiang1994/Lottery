@@ -12,6 +12,9 @@ DATA_DIR.mkdir(exist_ok=True)
 # 密码校验流控：同一秒内全局仅允许 1 次
 VERIFY_RATE_LIMIT_PER_SECOND = 1
 
+# cost -> 预估耗时（秒），用于进度条 ETA 的加权估算
+ALGORITHM_COST_SECONDS: dict[int, float] = {1: 0.15, 2: 0.6, 3: 2.0, 4: 4.5}
+
 # 彩种元数据：红球(前区) / 蓝球(后区) 数量与范围
 LOTTERIES: dict[str, dict] = {
     "ssq": {
