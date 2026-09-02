@@ -24,8 +24,10 @@ const PAGE_SIZE = 48;
 const PLAYED_KEY = "babysong_played_v1";
 const FAV_KEY = "babysong_fav_v1";
 const LAST_KEY = "babysong_last_v1";
+const HISTORY_KEY = "babysong_history_v1";
+const HISTORY_MAX = 30;
 
-type FilterMode = "all" | "played" | "unplayed" | "fav";
+type FilterMode = "all" | "played" | "unplayed" | "fav" | "recent";
 type SortMode = "seq" | "seq_desc" | "unplayed";
 
 function loadPlayed(): Set<string> {
@@ -84,6 +86,25 @@ function saveFav(set: Set<string>) {
   }
 }
 
+function loadHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.slice(0, HISTORY_MAX) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(list: string[]) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX)));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 计算窗口化页码（当前页前后各 spread 页，封顶/封底） */
 function pageWindow(page: number, pageCount: number, spread = 3): number[] {
   const start = Math.max(1, page - spread);
@@ -99,6 +120,7 @@ function pageWindow(page: number, pageCount: number, spread = 3): number[] {
  * 播放状态存 localStorage（单机可用，无登录），已播放卡片打钩角标 + 进度统计。
  * 收藏(♥)与播放状态独立，单独筛选；列表分页 + 筛选 + 跳页 + 继续上次位置。
  * 进度可导出/导入 JSON，便于换设备/清缓存后恢复（仍无登录、纯前端）。
+ * 最近播放按时间倒序；提供「重置」一键清空全部本地进度。
  */
 export default function BabySong() {
   const [songs, setSongs] = useState<Song[]>([]);
@@ -110,6 +132,7 @@ export default function BabySong() {
   const [sort, setSort] = useState<SortMode>("seq");
   const [played, setPlayed] = useState<Set<string>>(loadPlayed);
   const [fav, setFav] = useState<Set<string>>(loadFav);
+  const [history, setHistory] = useState<string[]>(loadHistory);
   const [lastSeq, setLastSeq] = useState<number | null>(loadLast);
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const [jumpVal, setJumpVal] = useState("");
@@ -142,6 +165,11 @@ export default function BabySong() {
     if (filter === "played") list = list.filter((s) => played.has(s.id));
     else if (filter === "unplayed") list = list.filter((s) => !played.has(s.id));
     else if (filter === "fav") list = list.filter((s) => fav.has(s.id));
+    else if (filter === "recent") {
+      const order = new Map(history.map((id, i) => [id, i]));
+      list = list.filter((s) => order.has(s.id));
+      list = [...list].sort((a, b) => (order.get(a.id)! - order.get(b.id)!));
+    }
     if (sort === "seq_desc") list = [...list].reverse();
     else if (sort === "unplayed") {
       list = [...list].sort(
@@ -149,7 +177,7 @@ export default function BabySong() {
       );
     }
     return list;
-  }, [matched, filter, played, fav, sort]);
+  }, [matched, filter, played, fav, history, sort]);
 
   const playedPct = songs.length ? Math.round((playedCount / songs.length) * 100) : 0;
 
@@ -182,6 +210,11 @@ export default function BabySong() {
     });
     setLastSeq(s.seq);
     saveLast(s.seq);
+    setHistory((prev) => {
+      const next = [s.id, ...prev.filter((x) => x !== s.id)].slice(0, HISTORY_MAX);
+      saveHistory(next);
+      return next;
+    });
   };
 
   const toggleFav = (s: Song, e: React.MouseEvent) => {
@@ -204,6 +237,7 @@ export default function BabySong() {
       exportedAt: new Date().toISOString(),
       played: Array.from(played),
       fav: Array.from(fav),
+      history: history,
       last: lastSeq,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -227,21 +261,44 @@ export default function BabySong() {
         (Array.isArray(data.played) ? data.played : []).forEach((x: string) => p.add(x));
         const f = new Set(fav);
         (Array.isArray(data.fav) ? data.fav : []).forEach((x: string) => f.add(x));
+        const h = Array.isArray(data.history) ? data.history.slice(0, HISTORY_MAX) : [];
         setPlayed(p);
         savePlayed(p);
         setFav(f);
         saveFav(f);
+        setHistory(h);
+        saveHistory(h);
         if (typeof data.last === "number" && (!lastSeq || data.last > lastSeq)) {
           setLastSeq(data.last);
           saveLast(data.last);
         }
-        setToast(`已导入：播放 ${p.size} 首 / 收藏 ${f.size} 首`);
+        setToast(`已导入：播放 ${p.size} 首 / 收藏 ${f.size} 首 / 最近 ${h.length} 首`);
       } catch {
         setToast("导入失败：文件格式不正确");
       }
     };
     reader.readAsText(file);
     e.target.value = "";
+  };
+
+  const resetAll = () => {
+    if (!window.confirm("确定清空全部进度（已播放 / 收藏 / 最近 / 上次位置）？此操作不可恢复。")) {
+      return;
+    }
+    const empty = new Set<string>();
+    setPlayed(empty);
+    savePlayed(empty);
+    setFav(empty);
+    saveFav(empty);
+    setHistory([]);
+    saveHistory([]);
+    setLastSeq(null);
+    try {
+      localStorage.removeItem(LAST_KEY);
+    } catch {
+      /* ignore */
+    }
+    setToast("已清空全部进度");
   };
 
   // toast 自动消失
@@ -369,6 +426,9 @@ export default function BabySong() {
           <FilterTab active={filter === "fav"} onClick={() => setFilter("fav")}>
             收藏 {favCount}
           </FilterTab>
+          <FilterTab active={filter === "recent"} onClick={() => setFilter("recent")}>
+            最近 {history.length}
+          </FilterTab>
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortMode)}
@@ -394,6 +454,13 @@ export default function BabySong() {
             className="h-8 rounded-full border border-paper-200 bg-paper-50 px-3 font-medium text-paper-700 transition hover:bg-white"
           >
             导入
+          </button>
+          <button
+            onClick={resetAll}
+            title="清空全部本地进度"
+            className="h-8 rounded-full border border-paper-200 bg-paper-50 px-3 font-medium text-paper-500 transition hover:border-red-300 hover:text-red-500"
+          >
+            重置
           </button>
           <input
             ref={fileRef}
@@ -448,6 +515,8 @@ export default function BabySong() {
                 ? "全部都播放过啦，真棒 🎉"
                 : filter === "fav"
                 ? "还没有收藏的儿歌，点卡片右下角的 ♥ 即可收藏～"
+                : filter === "recent"
+                ? "还没有播放记录，点开任意一首即可记录～"
                 : `未找到「${query}」相关的儿歌，换个关键词试试`}
             </p>
             <button
