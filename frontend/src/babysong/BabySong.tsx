@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Music,
   Search,
@@ -98,6 +98,7 @@ function pageWindow(page: number, pageCount: number, spread = 3): number[] {
  * 卡片网格：序号 + 封面 + 歌名，点击整卡跳转 YouTube 播放（不下载、不点读、不内嵌播放器）。
  * 播放状态存 localStorage（单机可用，无登录），已播放卡片打钩角标 + 进度统计。
  * 收藏(♥)与播放状态独立，单独筛选；列表分页 + 筛选 + 跳页 + 继续上次位置。
+ * 进度可导出/导入 JSON，便于换设备/清缓存后恢复（仍无登录、纯前端）。
  */
 export default function BabySong() {
   const [songs, setSongs] = useState<Song[]>([]);
@@ -112,6 +113,8 @@ export default function BabySong() {
   const [lastSeq, setLastSeq] = useState<number | null>(loadLast);
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const [jumpVal, setJumpVal] = useState("");
+  const [toast, setToast] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/babysong/list")
@@ -193,6 +196,60 @@ export default function BabySong() {
       return next;
     });
   };
+
+  // 导出/导入进度（收藏+播放+上次位置），便于换设备/清缓存后恢复
+  const exportState = () => {
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      played: Array.from(played),
+      fav: Array.from(fav),
+      last: lastSeq,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `babysong-progress-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setToast("已导出进度文件");
+  };
+
+  const importState = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result));
+        const p = new Set(played);
+        (Array.isArray(data.played) ? data.played : []).forEach((x: string) => p.add(x));
+        const f = new Set(fav);
+        (Array.isArray(data.fav) ? data.fav : []).forEach((x: string) => f.add(x));
+        setPlayed(p);
+        savePlayed(p);
+        setFav(f);
+        saveFav(f);
+        if (typeof data.last === "number" && (!lastSeq || data.last > lastSeq)) {
+          setLastSeq(data.last);
+          saveLast(data.last);
+        }
+        setToast(`已导入：播放 ${p.size} 首 / 收藏 ${f.size} 首`);
+      } catch {
+        setToast("导入失败：文件格式不正确");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  // toast 自动消失
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const openRandom = () => {
     if (!filtered.length) return;
@@ -322,6 +379,29 @@ export default function BabySong() {
             <option value="seq_desc">序号 ↓</option>
             <option value="unplayed">未播放优先</option>
           </select>
+
+          <span className="mx-1 h-4 w-px bg-paper-200" />
+          <button
+            onClick={exportState}
+            title="导出进度（收藏+播放+上次位置）为 JSON"
+            className="h-8 rounded-full border border-paper-200 bg-paper-50 px-3 font-medium text-paper-700 transition hover:bg-white"
+          >
+            导出
+          </button>
+          <button
+            onClick={() => fileRef.current?.click()}
+            title="从 JSON 文件恢复进度"
+            className="h-8 rounded-full border border-paper-200 bg-paper-50 px-3 font-medium text-paper-700 transition hover:bg-white"
+          >
+            导入
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={importState}
+          />
         </div>
 
         {!loading && (
@@ -525,6 +605,13 @@ export default function BabySong() {
             跳转
           </button>
         </nav>
+      )}
+
+      {/* 操作提示 toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-paper-900/90 px-4 py-2 text-xs font-medium text-white shadow-lg">
+          {toast}
+        </div>
       )}
     </div>
   );
