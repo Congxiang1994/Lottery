@@ -169,9 +169,9 @@ export default function BabySong() {
       list = list.filter((s) => order.has(s.id));
       list = [...list].sort((a, b) => (order.get(a.id)! - order.get(b.id)!));
     }
-    // 平台筛选：bili=仅 B 站可看；yt=仅只有 YouTube（无 B 站链接）
+    // 平台筛选：bili=有 B 站链接可看；yt=有 YouTube 链接可看（每首都有，故等价于全部）
     if (platform === "bili") list = list.filter((s) => !!s.bilibili_bvid);
-    else if (platform === "yt") list = list.filter((s) => !s.bilibili_bvid);
+    else if (platform === "yt") list = list.filter((s) => !!s.youtube_url);
     return list;
   }, [matched, filter, played, fav, history, platform]);
 
@@ -373,7 +373,7 @@ export default function BabySong() {
           )}
         </div>
 
-        {/* 状态筛选 + 平台筛选 */}
+        {/* 状态筛选 */}
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
           <FilterTab active={filter === "all"} onClick={() => setFilter("all")}>
             全部 {songs.length}
@@ -390,8 +390,10 @@ export default function BabySong() {
           <FilterTab active={filter === "recent"} onClick={() => setFilter("recent")}>
             最近 {history.length}
           </FilterTab>
+        </div>
 
-          <span className="mx-1 h-4 w-px bg-paper-200" />
+        {/* 平台筛选（独立一行） */}
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-xs">
           <span className="text-paper-400">平台</span>
           <FilterTab active={platform === "all"} onClick={() => setPlatform("all")}>
             全部
@@ -400,7 +402,7 @@ export default function BabySong() {
             B站可看
           </FilterTab>
           <FilterTab active={platform === "yt"} onClick={() => setPlatform("yt")}>
-            仅YouTube
+            Youtube可看
           </FilterTab>
         </div>
 
