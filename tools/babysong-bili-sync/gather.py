@@ -4,7 +4,15 @@
 - 默认（无参数）：增量模式。已有 BV 号的先校验是否仍在线（被下架则重新搜索），
   没有 BV 号的（含被下架后清空）重新搜索。这样搬运视频被删后能自动找回最新可用链接。
 - --no-verify：跳过「已有 BV 号是否在线」校验（仅用于本地快速补齐，速度更快）。
+- --recheck：对所有未下载本地的歌用严格包含匹配重新检索并覆盖，清理误匹配。
 - --seed-map PATH：从 {id: bvid|"NONE"} 的 JSON 预填 BV 号（仅填补空缺，不覆盖已有）。
+
+跳过规则：/data/song/{id}.mp4 已存在的歌不再检索/校验 B 站链接
+（有本地视频时 B 站按钮不展示，链接失效也无所谓，省时间防风控）。
+
+匹配策略（2026-09-03 收紧）：歌名规范化（小写、去所有非字母数字字符）后必须**完整
+包含**在 B 站视频标题的规范化结果里，大小写不敏感、忽略标点/空格差异；
+找不到完全包含的就置空（该歌仅保留 YouTube 入口），绝不宽松匹配。
 
 设计为可在无第三方依赖的环境下运行（仅用标准库），便于部署到服务器用定时任务驱动。
 B 站搜索接口强制 WBI 签名，本脚本自带签名实现。
@@ -27,6 +35,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CATALOG = os.path.normpath(
     os.path.join(HERE, "..", "..", "backend", "app", "babysong", "data", "catalog.json")
 )
+# 本地视频目录：已有 {id}.mp4 的歌跳过 B 站检索/校验
+SONG_DIR = os.environ.get("SONG_DIR", "/data/song")
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -46,11 +56,7 @@ def get_mixin_key(s: str) -> str:
     return reduce(lambda x, i: x + s[i], MIXIN_KEY_ENC_TAB, "")[:32]
 
 
-STOP = {
-    "the", "a", "an", "song", "songs", "super", "simple", "and", "of", "to",
-    "is", "in", "on", "my", "me", "you", "your", "we", "i", "it", "this",
-    "that", "for", "with",
-}
+STOP = set()  # 已改用「完整包含」匹配，停用词表不再需要（保留空集合兼容旧引用）
 
 
 class Bili:
@@ -127,55 +133,87 @@ def strip_tags(s: str) -> str:
     return re.sub("<[^>]+>", "", s or "")
 
 
-def norm_words(title: str):
-    """按非字母数字切词并去停用词，得到规范化词表（用于整词匹配）。"""
-    return [w for w in re.split(r"[^a-z0-9]+", (title or "").lower()) if w and w not in STOP]
+def norm_text(s: str) -> str:
+    """规范化：小写 + 去掉所有非字母数字字符（空格/标点/符号全忽略）。
+
+    例："One Little Finger (Part 2)" -> "onelittlefingerpart2"
+    用于「歌名必须完整包含在视频标题里」的严格包含匹配，大小写不敏感。
+    """
+    return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+def has_local_video(song_id: str) -> bool:
+    return os.path.isfile(os.path.join(SONG_DIR, f"{song_id}.mp4"))
 
 
 def pick_best(title: str, results) -> str | None:
     """在搜索结果里挑最匹配的一首。
 
-    匹配策略（严格，避免「名字都对不上」的误匹配）：
-    - 仅做**整词**重叠（用集合交集，杜绝 substring 误命中，如 apple ⊂ pineapple）；
-    - 标题里实词至少命中 `need` 个才接受，need = min(实词数, max(2, 实词数/2 向上取整))；
-      即至少 2 个实词、或覆盖过半实词，二者取小；
-    - 标题词不够时（如单字歌名）退化为命中 1 个即可；
-    - 「Super Simple / SSS」字样只作极小加权（0.1），绝不单独救回一个名字不沾边的视频。
+    匹配策略（2026-09-03 收紧为**完全包含 + 词边界**）：
+    - 歌名规范化（小写、去标点/空格）后必须完整出现在视频标题规范化结果里；
+      大小写无所谓，空格/标点差异忽略（标题常带 "【SSS】" "儿歌" 等前后缀，允许）。
+    - 词边界保护：歌名必须对齐原标题「字母数字块」的边界——即歌名由标题里的
+      一个或多个**完整块**组成，杜绝 "apple" 命中 "pineapple"、"finger" 黏住
+      "fingerling" 这类黏连误匹配。
+    - 多个满足时取「标题最短」的（前后缀噪音最少，最可能是搬运原视频）；
+      再平手取搜索顺序靠前的。
+    - 找不到满足条件的返回 None（宁缺毋滥，该歌仅保留 YouTube 入口）。
     """
-    base = norm_words(title)
-    if not base:
+    needle = norm_text(title)
+    if not needle:
         return None
-    base_set = set(base)
     best = None
-    best_score = -1.0
-    best_matched = 0
+    best_len = None
     for it in results:
         if it.get("type") != "video":
             continue
         bvid = it.get("bvid")
         if not bvid or it.get("live_status"):
             continue
-        t = strip_tags(it.get("title", ""))
-        tw = set(norm_words(t))
-        aw = set(norm_words(it.get("author") or ""))
-        # 整词重叠：优先看标题，标题词不够再看作者名
-        matched = base_set & tw or base_set & aw
-        ov = len(matched)
-        if ov == 0:
+        raw = strip_tags(it.get("title", ""))
+        if not boundary_match(raw, needle):
             continue
-        score = float(ov)
-        if "super" in tw and "simple" in tw:
-            score += 0.1
-        if score > best_score:
-            best_score = score
+        t = norm_text(raw)
+        # 标题越短噪音越少；等长取先出现的（搜索相关性排序靠前）
+        if best_len is None or len(t) < best_len:
             best = bvid
-            best_matched = ov
-    need = min(len(base), max(2, (len(base) + 1) // 2))
-    return best if best_matched >= need else None
+            best_len = len(t)
+    return best
+
+
+def boundary_match(raw_title: str, needle: str) -> bool:
+    """needle（规范化歌名，无分隔符）是否由 raw_title 的一个或多个完整字母数字块拼接而成。
+
+    做法：把标题切成块后，用「块连接序列」的可选拼接位置做 DP/集合匹配——
+    维护「已匹配到 needle 第 i 位时的块边界集合」，逐块消费：
+    - 从某边界开始把当前块接到已匹配串后面（跨块拼接）；
+    - 或当前块正好等于剩余串，匹配完成。
+    简化实现：枚举所有「连续块组合」的拼接串，看是否等于 needle。
+    标题块数通常 <15，连续组合数 O(n²)，完全可接受。
+    """
+    blocks = [norm_text(b) for b in re.split(r"[^A-Za-z0-9]+", raw_title or "") if b]
+    n = len(blocks)
+    for i in range(n):
+        acc = ""
+        for j in range(i, n):
+            acc += blocks[j]
+            if acc == needle:
+                return True
+            if len(acc) >= len(needle):
+                break
+    return False
 
 
 def search_best(bili: Bili, title: str) -> str | None:
-    queries = [f"{title} Super Simple Songs", title, f"英文儿歌 {title}", f"SSS {title}"]
+    # 首选「xxx Super Simple Songs」精准短语（B 站搜索支持引号强匹配），
+    # 命中即返回；否则逐个降级宽松关键词，由 pick_best 的完全包含匹配兜底筛选。
+    queries = [
+        f'"{title}" Super Simple Songs',
+        f'"{title}"',
+        f"{title} Super Simple Songs",
+        title,
+        f"英文儿歌 {title}",
+    ]
     for kw in queries:
         bvid = pick_best(title, bili.search(kw))
         if bvid:
@@ -207,11 +245,15 @@ def main():
 
     bili = Bili()
     total = len(catalog)
-    kept = refilled = dead = still_missing = 0
+    kept = refilled = dead = still_missing = skipped_local = 0
     changed = False
 
     try:
         for s in catalog:
+            # 已有本地视频：前端不再展示 B 站按钮，链接是否失效无所谓 → 直接跳过
+            if has_local_video(s.get("id", "")):
+                skipped_local += 1
+                continue
             bvid = s.get("bilibili_bvid")
             if args.recheck:
                 # 严格重算：忽略已有 BV，全部重新检索覆盖（清理误匹配）
@@ -263,7 +305,8 @@ def main():
 
     print(
         f"DONE total={total} found={found} kept={kept} refilled={refilled} "
-        f"dead_recovered={dead} still_missing={still_missing} changed={changed}"
+        f"dead_recovered={dead} still_missing={still_missing} "
+        f"skipped_local={skipped_local} changed={changed}"
     )
 
 

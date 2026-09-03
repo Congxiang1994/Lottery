@@ -33,7 +33,7 @@ const LAST_KEY = "babysong_last_v1";
 const HISTORY_KEY = "babysong_history_v1";
 const HISTORY_MAX = 30;
 
-type FilterMode = "all" | "played" | "unplayed" | "fav" | "recent";
+type FilterMode = "all" | "played" | "unplayed" | "fav" | "recent" | "local";
 
 function loadPlayed(): Set<string> {
   try {
@@ -201,6 +201,7 @@ export default function BabySong() {
       list = list.filter((s) => order.has(s.id));
       list = [...list].sort((a, b) => (order.get(a.id)! - order.get(b.id)!));
     }
+    else if (filter === "local") list = list.filter((s) => !!(s.local && s.local_url));
     return list;
   }, [matched, filter, played, fav, history]);
 
@@ -471,6 +472,9 @@ export default function BabySong() {
           <FilterTab active={filter === "recent"} onClick={() => setFilter("recent")}>
             最近 {history.length}
           </FilterTab>
+          <FilterTab active={filter === "local"} onClick={() => setFilter("local")}>
+            本地 {songs.filter((s) => s.local).length}
+          </FilterTab>
         </div>
       </div>
 
@@ -503,6 +507,8 @@ export default function BabySong() {
                 ? "还没有收藏的儿歌，点卡片右下角的 ♥ 即可收藏～"
                 : filter === "recent"
                 ? "还没有播放记录，点开任意一首即可记录～"
+                : filter === "local"
+                ? "还没有已下载本地的儿歌，可在下载管理页触发爬取～"
                 : `未找到「${query}」相关的儿歌，换个关键词试试`}
             </p>
             <button
