@@ -464,8 +464,9 @@ export default function BabySong() {
         </div>
 
         <p className="mt-2 text-[11px] text-paper-500">
-          已下载的歌点 <span className="font-semibold text-emerald-600">本地</span> 站内秒开；
-          不能翻墙？选 <span className="font-semibold text-[#FB7299]">B站</span> 即可在哔哩哔哩播放
+          带 <span className="font-semibold text-emerald-600">本地</span> 标记的点击卡片站内秒开；
+          其余的悬停选 <span className="font-semibold text-[#FB7299]">B站</span> 或{" "}
+          <span className="font-semibold text-brand-red">YouTube</span> 播放
         </p>
       </section>
 
@@ -593,16 +594,23 @@ export default function BabySong() {
               const isPlayed = played.has(s.id);
               const isFav = fav.has(s.id);
               const isLast = highlightSeq === s.seq;
+              const hasLocal = !!(s.local && s.local_url);
+              /* 有本地视频：点卡片直接本地播放；没有则点卡片跳 YouTube */
+              const openDefault = () => (hasLocal ? openLocal(s) : openYoutube(s));
               return (
                 <div
                   key={s.id}
                   data-seq={s.seq}
                   role="link"
                   tabIndex={0}
-                  title={`#${s.seq} ${s.title} · 点击在 YouTube 播放，悬停可选 B 站`}
-                  onClick={() => openYoutube(s)}
+                  title={
+                    hasLocal
+                      ? `#${s.seq} ${s.title} · 本地视频，点击站内播放`
+                      : `#${s.seq} ${s.title} · 点击在 YouTube 播放，悬停可选 B 站`
+                  }
+                  onClick={openDefault}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") openYoutube(s);
+                    if (e.key === "Enter") openDefault();
                   }}
                   className={`group block cursor-pointer ${isPlayed ? "opacity-90" : ""}`}
                 >
@@ -638,6 +646,15 @@ export default function BabySong() {
                           上次
                         </span>
                       )}
+                      {/* 本地视频标识（左下，仅已下载的歌显示） */}
+                      {hasLocal && (
+                        <span
+                          className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-emerald-500/90 px-2 py-0.5 text-[10px] font-bold text-white shadow"
+                          title="已下载到服务器本地，点击卡片站内播放"
+                        >
+                          <HardDrive size={10} /> 本地
+                        </span>
+                      )}
                       {/* 收藏按钮（右下，点♥切换，不触发跳转） */}
                       <button
                         type="button"
@@ -656,24 +673,17 @@ export default function BabySong() {
                           className={isFav ? "fill-current" : ""}
                         />
                       </button>
-                      {/* hover 平台播放按钮：本地 / B 站 / YouTube（移动端常驻显示；本地排第一） */}
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1.5 bg-paper-900/0 opacity-100 transition group-hover:bg-paper-900/40 md:bg-paper-900/0 md:opacity-0 md:group-hover:opacity-100">
-                        {s.local && s.local_url && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              openLocal(s);
-                            }}
-                            title="站内本地播放（不跳转）"
-                            aria-label="站内本地播放"
-                            className="pointer-events-auto flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-2 text-xs font-semibold text-white shadow-lg transition hover:scale-105"
-                          >
-                            <HardDrive size={14} /> 本地
-                          </button>
-                        )}
-                        {s.bilibili_bvid && (
+                      {/* hover 平台按钮：有本地 → 仅一个「▶ 本地播放」提示（点卡片即播）；
+                          无本地 → B站 / YouTube 双按钮自选（移动端常驻显示） */}
+                      {hasLocal ? (
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-paper-900/0 opacity-100 transition group-hover:bg-paper-900/40 md:bg-paper-900/0 md:opacity-0 md:group-hover:opacity-100">
+                          <span className="flex items-center gap-1.5 rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg">
+                            <Play size={15} className="fill-current" /> 本地播放
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1.5 bg-paper-900/0 opacity-100 transition group-hover:bg-paper-900/40 md:bg-paper-900/0 md:opacity-0 md:group-hover:opacity-100">
+                          {s.bilibili_bvid && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -701,7 +711,8 @@ export default function BabySong() {
                         >
                           <Youtube size={15} /> YouTube
                         </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                     <div className="p-3">
                       <div className="flex items-start gap-1.5">
