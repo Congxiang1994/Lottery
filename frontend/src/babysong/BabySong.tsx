@@ -35,7 +35,6 @@ const HISTORY_KEY = "babysong_history_v1";
 const HISTORY_MAX = 30;
 
 type FilterMode = "all" | "played" | "unplayed" | "fav" | "recent";
-type PlatformMode = "all" | "local" | "bili" | "yt";
 
 function loadPlayed(): Set<string> {
   try {
@@ -135,7 +134,6 @@ export default function BabySong() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState<FilterMode>("all");
-  const [platform, setPlatform] = useState<PlatformMode>("all");
   const [played, setPlayed] = useState<Set<string>>(loadPlayed);
   const [fav, setFav] = useState<Set<string>>(loadFav);
   const [history, setHistory] = useState<string[]>(loadHistory);
@@ -204,22 +202,16 @@ export default function BabySong() {
       list = list.filter((s) => order.has(s.id));
       list = [...list].sort((a, b) => (order.get(a.id)! - order.get(b.id)!));
     }
-    // 平台筛选：local=已下载本地可播；bili=有 B 站链接；yt=有 YouTube 链接（每首都有，故等价于全部）
-    if (platform === "local") list = list.filter((s) => !!s.local && !!s.local_url);
-    else if (platform === "bili") list = list.filter((s) => !!s.bilibili_bvid);
-    else if (platform === "yt") list = list.filter((s) => !!s.youtube_url);
     return list;
-  }, [matched, filter, played, fav, history, platform]);
+  }, [matched, filter, played, fav, history]);
 
   const playedCount = played.size;
   const favCount = fav.size;
 
-  const playedPct = songs.length ? Math.round((playedCount / songs.length) * 100) : 0;
-
-  // 搜索词 / 状态筛选 / 平台筛选变化时回到第一页
+  // 搜索词 / 状态筛选变化时回到第一页
   useEffect(() => {
     setPage(1);
-  }, [query, filter, platform]);
+  }, [query, filter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
@@ -417,17 +409,9 @@ export default function BabySong() {
     <div className="pt-10">
       {/* Hero */}
       <section className="text-center">
-        <div className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-paper-200 bg-paper-100 px-4 py-1.5 text-xs text-paper-700">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-red" />
-          英文儿歌 · 点击跳转 YouTube 播放
-        </div>
         <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
           <span className="gradient-text">Super Simple Songs</span> 儿歌
         </h1>
-        <p className="mx-auto mt-3 max-w-xl text-sm text-paper-700">
-          共收录 <span className="font-bold text-brand-red2">{songs.length}</span> 首经典英文儿歌，
-          带官方封面与 YouTube 直链，点开即看。
-        </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <button
             onClick={openRandom}
@@ -445,29 +429,6 @@ export default function BabySong() {
             </button>
           )}
         </div>
-
-        {/* 整体完成度进度条 */}
-        <div className="mx-auto mt-5 w-full max-w-md px-1">
-          <div className="h-2 overflow-hidden rounded-full bg-paper-200">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-brand-red to-brand-red2 transition-all duration-500"
-              style={{ width: `${playedPct}%` }}
-            />
-          </div>
-          <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] text-paper-500">
-            <span>
-              已播放 <span className="font-bold text-emerald-600">{playedCount}</span> / {songs.length}
-            </span>
-            <span className="text-paper-300">·</span>
-            <span className="font-bold text-paper-700">{playedPct}%</span>
-          </div>
-        </div>
-
-        <p className="mt-2 text-[11px] text-paper-500">
-          带 <span className="font-semibold text-emerald-600">本地</span> 标记的点击卡片站内秒开；
-          其余的悬停选 <span className="font-semibold text-[#FB7299]">B站</span> 或{" "}
-          <span className="font-semibold text-brand-red">YouTube</span> 播放
-        </p>
       </section>
 
       {/* 搜索 + 筛选 */}
@@ -512,39 +473,6 @@ export default function BabySong() {
             最近 {history.length}
           </FilterTab>
         </div>
-
-        {/* 平台筛选（独立一行） */}
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-xs">
-          <span className="text-paper-400">平台</span>
-          <FilterTab active={platform === "all"} onClick={() => setPlatform("all")}>
-            全部
-          </FilterTab>
-          <FilterTab active={platform === "local"} onClick={() => setPlatform("local")}>
-            本地 {songs.filter((s) => s.local).length}
-          </FilterTab>
-          <FilterTab active={platform === "bili"} onClick={() => setPlatform("bili")}>
-            B站可看
-          </FilterTab>
-          <FilterTab active={platform === "yt"} onClick={() => setPlatform("yt")}>
-            Youtube可看
-          </FilterTab>
-        </div>
-
-        {!loading && (
-          <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-paper-600">
-            <span>
-              显示 <span className="font-bold text-paper-800">{filtered.length}</span> / {songs.length}
-            </span>
-            {pageCount > 1 && (
-              <>
-                <span className="text-paper-300">·</span>
-                <span>
-                  第 <span className="font-bold text-paper-800">{safePage}</span> / {pageCount} 页
-                </span>
-              </>
-            )}
-          </div>
-        )}
       </div>
 
       {/* 卡片网格 */}
