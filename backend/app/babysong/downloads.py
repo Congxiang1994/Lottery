@@ -205,15 +205,20 @@ def _download_one(sid: str, url: str) -> None:
 
 
 def _worker_loop() -> None:
-    while True:
-        claimed = _claim_next()
-        if not claimed:
-            return
-        sid, url = claimed
-        if (SONG_DIR / f"{sid}.mp4").is_file():  # 已有文件（可能手动放过），直接完成
-            _finish(sid, "done")
-            continue
-        _download_one(sid, url)
+    try:
+        while True:
+            claimed = _claim_next()
+            if not claimed:
+                return
+            sid, url = claimed
+            if (SONG_DIR / f"{sid}.mp4").is_file():  # 已有文件（可能手动放过），直接完成
+                _finish(sid, "done")
+                continue
+            _download_one(sid, url)
+    finally:
+        # 关键：线程退出（队列清空或异常）必须还锁，否则下次 enqueue
+        # acquire 不到锁 → 永远不再起线程 → 后续任务全部积压（已踩坑）
+        _worker_lock.release()
 
 
 def _ensure_worker() -> None:
@@ -221,6 +226,17 @@ def _ensure_worker() -> None:
     if _worker_lock.acquire(blocking=False):
         t = threading.Thread(target=_worker_loop, daemon=True, name="babysong-dl")
         t.start()
+
+
+def resume_pending() -> None:
+    """服务启动时调用：清理崩溃残留 + 若队列有 pending 则拉起工作线程继续下载。"""
+    recover_stale()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT 1 FROM song_downloads WHERE status='pending' LIMIT 1"
+        ).fetchone()
+    if row:
+        _ensure_worker()
 
 
 def snapshot() -> list[dict]:

@@ -25,6 +25,10 @@ async def lifespan(app: FastAPI):
     password_store.ensure_configured()
     # 触发器调度循环（flock 选 leader，多 worker 仅一个运行；gunicorn 优雅重启安全）
     scheduler.start()
+    # 儿歌下载队列恢复：清理崩溃残留 + 队列有 pending 则继续下载（重启不丢任务）
+    from app.babysong import downloads
+
+    downloads.resume_pending()
     yield
     await scheduler.stop()
 
