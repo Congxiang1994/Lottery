@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronLeft,
+  ChevronRight,
   Music,
+  Play,
   Search,
   Youtube,
   Shuffle,
@@ -9,6 +12,7 @@ import {
   Check,
   RotateCcw,
   Heart,
+  HardDrive,
 } from "lucide-react";
 
 interface Song {
@@ -19,6 +23,8 @@ interface Song {
   cover: string;
   bilibili_bvid?: string; // 哔哩哔哩视频 BV 号（抓取所得，可能为空）
   seq: number; // 全局序号（1..N），按目录顺序，搜索/分页不改变
+  local?: boolean; // 服务器已有本地视频文件（/data/song/{id}.mp4）
+  local_url?: string; // 本地播放地址（nginx /song/ 静态服务）
 }
 
 const PAGE_SIZE = 48;
@@ -29,7 +35,7 @@ const HISTORY_KEY = "babysong_history_v1";
 const HISTORY_MAX = 30;
 
 type FilterMode = "all" | "played" | "unplayed" | "fav" | "recent";
-type PlatformMode = "all" | "bili" | "yt";
+type PlatformMode = "all" | "local" | "bili" | "yt";
 
 function loadPlayed(): Set<string> {
   try {
@@ -137,6 +143,24 @@ export default function BabySong() {
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const [jumpVal, setJumpVal] = useState("");
   const [toast, setToast] = useState("");
+  /* 本地播放弹窗 */
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const modalPushedRef = useRef(false);
+
+  const fetchList = useCallback(() => {
+    fetch("/api/babysong/list")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d) => {
+        const list: Song[] = (Array.isArray(d.songs) ? d.songs : []).map(
+          (s: Omit<Song, "seq">, i: number) => ({ ...s, seq: i + 1 })
+        );
+        setSongs(list);
+      })
+      .catch(() => {
+        /* 静默：保留现有列表 */
+      });
+  }, []);
 
   useEffect(() => {
     fetch("/api/babysong/list")
@@ -150,6 +174,17 @@ export default function BabySong() {
       .catch((e) => setError(e?.message || "加载失败"))
       .finally(() => setLoading(false));
   }, []);
+
+  /* 窗口重新聚焦时刷新列表：下载管理页爬完新视频后，回到本页自动出现「本地」按钮 */
+  useEffect(() => {
+    const onFocus = () => fetchList();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [fetchList]);
 
   const matched = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -169,8 +204,9 @@ export default function BabySong() {
       list = list.filter((s) => order.has(s.id));
       list = [...list].sort((a, b) => (order.get(a.id)! - order.get(b.id)!));
     }
-    // 平台筛选：bili=有 B 站链接可看；yt=有 YouTube 链接可看（每首都有，故等价于全部）
-    if (platform === "bili") list = list.filter((s) => !!s.bilibili_bvid);
+    // 平台筛选：local=已下载本地可播；bili=有 B 站链接；yt=有 YouTube 链接（每首都有，故等价于全部）
+    if (platform === "local") list = list.filter((s) => !!s.local && !!s.local_url);
+    else if (platform === "bili") list = list.filter((s) => !!s.bilibili_bvid);
     else if (platform === "yt") list = list.filter((s) => !!s.youtube_url);
     return list;
   }, [matched, filter, played, fav, history, platform]);
@@ -257,6 +293,89 @@ export default function BabySong() {
     document.addEventListener("visibilitychange", onHide, { once: true });
     window.location.href = app;
   };
+
+  /* ===== 本地播放弹窗（参考「汉字是画出来的」播放器） ===== */
+  const localSongs = useMemo(() => songs.filter((s) => s.local && s.local_url), [songs]);
+
+  const current = useMemo(
+    () => songs.find((s) => s.id === activeId) || null,
+    [songs, activeId]
+  );
+  const curIdx = useMemo(
+    () => localSongs.findIndex((s) => s.id === activeId),
+    [localSongs, activeId]
+  );
+  const prevLocal = curIdx > 0 ? localSongs[curIdx - 1] : null;
+  const nextLocal =
+    curIdx >= 0 && curIdx < localSongs.length - 1 ? localSongs[curIdx + 1] : null;
+
+  const openLocal = (s: Song) => {
+    if (!s.local_url) return;
+    markPlayed(s);
+    setActiveId(s.id);
+    if (!modalPushedRef.current) {
+      modalPushedRef.current = true;
+      window.history.pushState({ babysongModal: true }, "");
+    }
+  };
+
+  const closeLocalModal = useCallback(() => {
+    setActiveId(null);
+    if (modalPushedRef.current) {
+      modalPushedRef.current = false;
+      window.history.back();
+    }
+  }, []);
+
+  /* 弹窗打开时禁止背景滚动 */
+  useEffect(() => {
+    document.body.style.overflow = activeId ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [activeId]);
+
+  /* 浏览器返回键：弹窗开着时仅关弹窗 */
+  useEffect(() => {
+    const onPop = () => {
+      if (modalPushedRef.current) {
+        modalPushedRef.current = false;
+        setActiveId(null);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  /* 切歌自动播放 + 键盘快捷键（Esc 关闭 / ←→ 上下一首） */
+  useEffect(() => {
+    if (!current) return;
+    videoRef.current?.play().catch(() => {});
+  }, [current]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeLocalModal();
+      else if (e.key === "ArrowLeft" && prevLocal) setActiveId(prevLocal.id);
+      else if (e.key === "ArrowRight" && nextLocal) setActiveId(nextLocal.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeId, prevLocal, nextLocal, closeLocalModal]);
+
+  /* 预取下一首本地视频 */
+  useEffect(() => {
+    if (!nextLocal?.local_url) return;
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.as = "video";
+    link.href = nextLocal.local_url;
+    document.head.appendChild(link);
+    return () => {
+      document.head.removeChild(link);
+    };
+  }, [nextLocal]);
 
   // toast 自动消失
   useEffect(() => {
@@ -345,7 +464,8 @@ export default function BabySong() {
         </div>
 
         <p className="mt-2 text-[11px] text-paper-500">
-          不能翻墙？把鼠标移到卡片上，选 <span className="font-semibold text-[#FB7299]">B站</span> 即可在哔哩哔哩播放
+          已下载的歌点 <span className="font-semibold text-emerald-600">本地</span> 站内秒开；
+          不能翻墙？选 <span className="font-semibold text-[#FB7299]">B站</span> 即可在哔哩哔哩播放
         </p>
       </section>
 
@@ -397,6 +517,9 @@ export default function BabySong() {
           <span className="text-paper-400">平台</span>
           <FilterTab active={platform === "all"} onClick={() => setPlatform("all")}>
             全部
+          </FilterTab>
+          <FilterTab active={platform === "local"} onClick={() => setPlatform("local")}>
+            本地 {songs.filter((s) => s.local).length}
           </FilterTab>
           <FilterTab active={platform === "bili"} onClick={() => setPlatform("bili")}>
             B站可看
@@ -533,8 +656,23 @@ export default function BabySong() {
                           className={isFav ? "fill-current" : ""}
                         />
                       </button>
-                      {/* hover 双平台播放按钮：B 站 / YouTube（移动端常驻显示） */}
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-paper-900/0 opacity-100 transition group-hover:bg-paper-900/40 md:bg-paper-900/0 md:opacity-0 md:group-hover:opacity-100">
+                      {/* hover 平台播放按钮：本地 / B 站 / YouTube（移动端常驻显示；本地排第一） */}
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1.5 bg-paper-900/0 opacity-100 transition group-hover:bg-paper-900/40 md:bg-paper-900/0 md:opacity-0 md:group-hover:opacity-100">
+                        {s.local && s.local_url && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openLocal(s);
+                            }}
+                            title="站内本地播放（不跳转）"
+                            aria-label="站内本地播放"
+                            className="pointer-events-auto flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-2 text-xs font-semibold text-white shadow-lg transition hover:scale-105"
+                          >
+                            <HardDrive size={14} /> 本地
+                          </button>
+                        )}
                         {s.bilibili_bvid && (
                           <button
                             type="button"
@@ -545,7 +683,7 @@ export default function BabySong() {
                             }}
                             title="在哔哩哔哩播放"
                             aria-label="在哔哩哔哩播放"
-                            className="pointer-events-auto flex items-center gap-1 rounded-full bg-[#FB7299] px-3 py-2 text-xs font-semibold text-white shadow-lg transition hover:scale-105"
+                            className="pointer-events-auto flex items-center gap-1 rounded-full bg-[#FB7299] px-2.5 py-2 text-xs font-semibold text-white shadow-lg transition hover:scale-105"
                           >
                             <BiliIcon size={15} /> B站
                           </button>
@@ -559,7 +697,7 @@ export default function BabySong() {
                           }}
                           title="在 YouTube 播放"
                           aria-label="在 YouTube 播放"
-                          className="pointer-events-auto flex items-center gap-1 rounded-full bg-brand-red px-3 py-2 text-xs font-semibold text-white shadow-lg transition hover:scale-105"
+                          className="pointer-events-auto flex items-center gap-1 rounded-full bg-brand-red px-2.5 py-2 text-xs font-semibold text-white shadow-lg transition hover:scale-105"
                         >
                           <Youtube size={15} /> YouTube
                         </button>
@@ -636,6 +774,105 @@ export default function BabySong() {
             跳转
           </button>
         </nav>
+      )}
+
+      {/* ====== 本地播放弹窗（参考「汉字是画出来的」播放器样式） ====== */}
+      {activeId && current && current.local_url && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-paper-900/50 p-4 backdrop-blur-md"
+          onClick={closeLocalModal}
+        >
+          <div
+            className="w-full max-w-3xl overflow-hidden rounded-2xl border border-paper-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 顶部信息栏 */}
+            <div className="flex items-center justify-between px-4 py-3 sm:px-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+                  <Music size={17} />
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate text-base font-bold text-paper-900" title={current.title}>
+                    {current.title}
+                  </div>
+                  <div className="text-[11px] text-paper-500">
+                    #{current.seq} · 本地播放 · 本地共 {localSongs.length} 首
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={closeLocalModal}
+                title="关闭"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-paper-200 text-paper-600 transition hover:border-brand-red hover:text-brand-red active:scale-95"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* 视频 */}
+            <div className="relative bg-black">
+              <video
+                ref={videoRef}
+                src={current.local_url}
+                className="w-full"
+                controls
+                autoPlay
+                playsInline
+                preload="auto"
+              />
+            </div>
+
+            {/* 底部导航（仅在有本地文件的歌之间切换） */}
+            <div className="flex items-stretch border-t border-paper-100">
+              {prevLocal ? (
+                <button
+                  onClick={() => setActiveId(prevLocal.id)}
+                  className="flex flex-1 items-center gap-2 px-4 py-3 text-left transition hover:bg-paper-50 active:bg-paper-100 sm:px-5"
+                >
+                  <ChevronLeft size={18} className="shrink-0 text-paper-500" />
+                  <div className="min-w-0">
+                    <span className="block text-[10px] text-paper-500">上一首</span>
+                    <span className="block truncate text-sm font-bold text-paper-900">
+                      {prevLocal.title}
+                    </span>
+                  </div>
+                </button>
+              ) : (
+                <div className="flex flex-1 cursor-not-allowed items-center gap-2 px-4 py-3 text-left opacity-40 sm:px-5">
+                  <ChevronLeft size={18} className="shrink-0 text-paper-500" />
+                  <div className="min-w-0">
+                    <span className="block text-[10px] text-paper-500">上一首</span>
+                    <span className="block truncate text-sm font-bold text-paper-900">已是第一首</span>
+                  </div>
+                </div>
+              )}
+              <div className="w-px bg-paper-100" />
+              {nextLocal ? (
+                <button
+                  onClick={() => setActiveId(nextLocal.id)}
+                  className="flex flex-1 items-center justify-end gap-2 px-4 py-3 text-right transition hover:bg-paper-50 active:bg-paper-100 sm:px-5"
+                >
+                  <div className="min-w-0">
+                    <span className="block text-[10px] text-paper-500">下一首</span>
+                    <span className="block truncate text-sm font-bold text-paper-900">
+                      {nextLocal.title}
+                    </span>
+                  </div>
+                  <ChevronRight size={18} className="shrink-0 text-paper-500" />
+                </button>
+              ) : (
+                <div className="flex flex-1 cursor-not-allowed items-center justify-end gap-2 px-4 py-3 text-right opacity-40 sm:px-5">
+                  <div className="min-w-0">
+                    <span className="block text-[10px] text-paper-500">下一首</span>
+                    <span className="block truncate text-sm font-bold text-paper-900">已是最后一首</span>
+                  </div>
+                  <ChevronRight size={18} className="shrink-0 text-paper-500" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 操作提示 toast */}

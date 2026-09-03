@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Dices, ArrowRight, Github, Sparkles, Clapperboard, Zap, Music, type LucideIcon } from "lucide-react";
+import { Dices, ArrowRight, Github, Sparkles, Clapperboard, Zap, Music, DownloadCloud, type LucideIcon } from "lucide-react";
 
 /**
  * 产品矩阵 —— 新增产品只需在此数组追加一项即可。
@@ -30,6 +30,15 @@ const APPS: {
     icon: Music,
     tags: ["儿歌", "YouTube"],
     href: "/babysong",
+    status: "live",
+  },
+  {
+    id: "babysong-admin",
+    title: "儿歌下载管理",
+    desc: "私有工具：用 yt-dlp 把儿歌爬取到服务器本地，下载完成后站内秒开播放，密码保护。",
+    icon: DownloadCloud,
+    tags: ["下载管理", "私有"],
+    href: "/babysong-admin",
     status: "live",
   },
   {
