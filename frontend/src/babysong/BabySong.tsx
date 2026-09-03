@@ -3,7 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Music,
-  Play,
   Search,
   Youtube,
   Shuffle,
@@ -601,14 +600,10 @@ export default function BabySong() {
                           className={isFav ? "fill-current" : ""}
                         />
                       </button>
-                      {/* hover 平台按钮：有本地 → 仅一个「▶ 本地播放」提示（点卡片即播）；
+                      {/* hover 平台按钮：有本地 → 不加按钮（点卡片即播，仅轻微遮罩提示可点）；
                           无本地 → B站 / YouTube 双按钮自选（移动端常驻显示） */}
                       {hasLocal ? (
-                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-paper-900/0 opacity-100 transition group-hover:bg-paper-900/40 md:bg-paper-900/0 md:opacity-0 md:group-hover:opacity-100">
-                          <span className="flex items-center gap-1.5 rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg">
-                            <Play size={15} className="fill-current" /> 本地播放
-                          </span>
-                        </div>
+                        <div className="pointer-events-none absolute inset-0 bg-paper-900/0 opacity-100 transition group-hover:bg-paper-900/30 md:bg-paper-900/0 md:opacity-0 md:group-hover:opacity-100" />
                       ) : (
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1.5 bg-paper-900/0 opacity-100 transition group-hover:bg-paper-900/40 md:bg-paper-900/0 md:opacity-0 md:group-hover:opacity-100">
                           {s.bilibili_bvid && (

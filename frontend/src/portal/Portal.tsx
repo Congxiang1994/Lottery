@@ -1,9 +1,21 @@
 import { Link } from "react-router-dom";
-import { Dices, ArrowRight, Github, Sparkles, Clapperboard, Zap, Music, DownloadCloud, type LucideIcon } from "lucide-react";
+import {
+  Dices,
+  ArrowRight,
+  Github,
+  Sparkles,
+  Clapperboard,
+  Zap,
+  Music,
+  DownloadCloud,
+  Lock,
+  type LucideIcon,
+} from "lucide-react";
 
 /**
  * 产品矩阵 —— 新增产品只需在此数组追加一项即可。
  * status: "live" 可点击进入；"soon" 为占位（灰度、不可点，用于展示平台扩展性）。
+ * private: true 时卡片右上角显示「锁 + 私有」标识（密码保护功能）。
  */
 const APPS: {
   id: string;
@@ -13,6 +25,7 @@ const APPS: {
   tags: string[];
   href: string;
   status: "live" | "soon";
+  isPrivate?: boolean;
 }[] = [
   {
     id: "hanzi",
@@ -33,6 +46,15 @@ const APPS: {
     status: "live",
   },
   {
+    id: "lottery",
+    title: "彩票数据站",
+    desc: "双色球 / 大乐透历史开奖全量统计、走势追踪与多策略智能推荐，一站看透号码规律。",
+    icon: Dices,
+    tags: ["数据可视化", "AI 推荐"],
+    href: "/lottery",
+    status: "live",
+  },
+  {
     id: "babysong-admin",
     title: "儿歌下载管理",
     desc: "私有工具：用 yt-dlp 把儿歌爬取到服务器本地，下载完成后站内秒开播放，密码保护。",
@@ -40,6 +62,7 @@ const APPS: {
     tags: ["下载管理", "私有"],
     href: "/babysong-admin",
     status: "live",
+    isPrivate: true,
   },
   {
     id: "trigger",
@@ -49,15 +72,7 @@ const APPS: {
     tags: ["定时任务", "私有"],
     href: "/trigger",
     status: "live",
-  },
-  {
-    id: "lottery",
-    title: "彩票数据站",
-    desc: "双色球 / 大乐透历史开奖全量统计、走势追踪与多策略智能推荐，一站看透号码规律。",
-    icon: Dices,
-    tags: ["数据可视化", "AI 推荐"],
-    href: "/lottery",
-    status: "live",
+    isPrivate: true,
   },
   {
     id: "soon",
@@ -148,12 +163,23 @@ function AppCard({
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-brand-red/20 to-brand-gold/10 text-brand-red2 shadow-glow">
             <app.icon size={22} />
           </span>
-          <span
-            className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${
-              live ? "bg-emerald-50 text-emerald-700" : "bg-paper-100 text-paper-600"
-            }`}
-          >
-            {live ? "在线" : "即将推出"}
+          <span className="flex items-center gap-1.5">
+            {/* 私有功能标识：锁 + 私有 */}
+            {app.isPrivate && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700"
+                title="密码保护，仅限本人使用"
+              >
+                <Lock size={10} strokeWidth={2.5} /> 私有
+              </span>
+            )}
+            <span
+              className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${
+                live ? "bg-emerald-50 text-emerald-700" : "bg-paper-100 text-paper-600"
+              }`}
+            >
+              {live ? "在线" : "即将推出"}
+            </span>
           </span>
         </div>
 
