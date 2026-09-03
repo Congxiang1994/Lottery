@@ -108,7 +108,7 @@ function StatusCards({ status }: { status: TriggerStatus | null }) {
   const cards = [
     { label: "任务总数", value: `${status.tasks_enabled}/${status.tasks_total}`, sub: "启用/全部" },
     { label: "今日已触发", value: `${status.fired_today}/${status.tasks_enabled}`, sub: "成功点亮窗口" },
-    { label: "下次触发", value: status.next_fire ? status.next_fire.replace(" ", " ") : "—", sub: "服务器时间对表" },
+    { label: "下次触发", value: status.next_fire ? formatDateTime(status.next_fire) : "—", sub: "服务器时间对表" },
   ];
   return (
     <div className="grid gap-3 sm:grid-cols-3">
@@ -356,7 +356,7 @@ function TaskTable({ tasks, reload, onEdit }: {
                     <div className="flex items-center gap-1 tabular-nums text-paper-900">
                       <Clock size={13} className="text-brand-gold" /> {t.time}
                     </div>
-                    <div className="mt-0.5 text-[10px] text-paper-500">下次 {t.next_fire}</div>
+                    <div className="mt-0.5 text-[10px] text-paper-500">下次 {formatDateTime(t.next_fire)}</div>
                   </td>
                   <td className="hidden max-w-[180px] px-4 py-3 sm:table-cell">
                     <div className="truncate text-xs text-paper-700" title={t.base_url}>{t.base_url}</div>
@@ -432,6 +432,14 @@ const STATUS_BADGE: Record<HistoryRow["status"], { label: string; cls: string; i
   missed: { label: "错过", cls: "bg-amber-50 text-amber-700", icon: <Clock size={12} /> },
 };
 
+function formatDateTime(s: string | null | undefined): string {
+  if (!s) return "—";
+  // 后端可能返回带毫秒/时区的 ISO 串；统一显示为 YYYY-MM-DD HH:MM:SS
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}`;
+  return s;
+}
+
 function HistoryTable({ rows }: { rows: HistoryRow[] }) {
   if (rows.length === 0) {
     return (
@@ -460,7 +468,7 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
               return (
                 <tr key={r.id} className="border-b border-paper-100 last:border-0 align-top hover:bg-paper-50/60">
                   <td className="whitespace-nowrap px-4 py-3 tabular-nums text-paper-900">
-                    {r.fired_at}
+                    {formatDateTime(r.fired_at)}
                     {r.manual && <span className="ml-1.5 rounded bg-brand-red/10 px-1.5 py-0.5 text-[10px] text-brand-red2">手动</span>}
                   </td>
                   <td className="px-4 py-3 font-medium text-paper-900">{r.task_name}</td>
