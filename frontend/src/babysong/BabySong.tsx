@@ -377,6 +377,19 @@ export default function BabySong() {
   }, [toast]);
 
   const openRandom = () => {
+    /* 优先从已下载本地的歌里随机：站内弹窗秒开；
+       一首本地都没有时退回旧逻辑（跳 YouTube） */
+    const pool = songs.filter((s) => s.local && s.local_url);
+    if (pool.length) {
+      const s = pool[Math.floor(Math.random() * pool.length)];
+      /* 翻到目标卡片所在页并高亮，用户能看到「随机选到了哪首」 */
+      setQuery("");
+      setFilter("all");
+      setHighlightSeq(s.seq);
+      goPage(Math.floor((s.seq - 1) / PAGE_SIZE) + 1);
+      openLocal(s);
+      return;
+    }
     if (!filtered.length) return;
     const s = filtered[Math.floor(Math.random() * filtered.length)];
     markPlayed(s);
@@ -415,7 +428,8 @@ export default function BabySong() {
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <button
             onClick={openRandom}
-            disabled={!filtered.length}
+            disabled={!filtered.length && !songs.some((s) => s.local)}
+            title="优先从已下载本地的歌里随机选一首，站内播放"
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-5 py-3 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             <Shuffle size={16} /> 随机来一首
