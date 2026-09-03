@@ -433,6 +433,7 @@ const STATUS_BADGE: Record<HistoryRow["status"], { label: string; cls: string; i
 };
 
 function formatDateTime(s: string | null | undefined): string {
+  // 后端可能返回带毫秒/时区的 ISO 串；统一显示为 YYYY-MM-DD HH:MM:SS（秒固定两位）
   if (!s) return "—";
   // 后端可能返回带毫秒/时区的 ISO 串；统一显示为 YYYY-MM-DD HH:MM:SS
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/);
@@ -469,7 +470,8 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
                 <tr key={r.id} className="border-b border-paper-100 last:border-0 align-top hover:bg-paper-50/60">
                   <td className="whitespace-nowrap px-4 py-3 tabular-nums text-paper-900">
                     {formatDateTime(r.fired_at)}
-                    {r.manual && <span className="ml-1.5 rounded bg-brand-red/10 px-1.5 py-0.5 text-[10px] text-brand-red2">手动</span>}
+                    {/* 注意：manual 是 0/1 数字，`0 && <jsx/>` 会把 0 渲染到页面上（表现为秒变三位） */}
+                    {!!r.manual && <span className="ml-1.5 rounded bg-brand-red/10 px-1.5 py-0.5 text-[10px] text-brand-red2">手动</span>}
                   </td>
                   <td className="px-4 py-3 font-medium text-paper-900">{r.task_name}</td>
                   <td className="px-4 py-3">
