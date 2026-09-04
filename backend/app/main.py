@@ -23,7 +23,7 @@ from app.common import password as password_store
 async def lifespan(app: FastAPI):
     # 操作密码库兜底初始化（库未配置且环境变量已设时自动引导写入；以库为准）
     password_store.ensure_configured()
-    # 触发器调度循环（flock 选 leader，多 worker 仅一个运行；gunicorn 优雅重启安全）
+    # 触发器调度循环（SQLite 租约选派发者，多 worker 自愈；gunicorn 优雅重启安全）
     scheduler.start()
     # 儿歌下载队列恢复：清理崩溃残留 + 队列有 pending 则继续下载（重启不丢任务）
     from app.babysong import downloads

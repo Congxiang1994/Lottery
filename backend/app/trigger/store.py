@@ -7,7 +7,7 @@ api_key 明文存储（目录文件权限保护），对外接口一律脱敏。
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.common.db import get_conn
@@ -42,6 +42,13 @@ CREATE TABLE IF NOT EXISTS trigger_history (
 );
 CREATE INDEX IF NOT EXISTS idx_history_fired ON trigger_history (fired_at DESC);
 CREATE INDEX IF NOT EXISTS idx_history_task_date ON trigger_history (task_id, fired_at);
+CREATE TABLE IF NOT EXISTS trigger_leases (
+    task_id     INTEGER NOT NULL,
+    claim_date  TEXT    NOT NULL,              -- YYYY-MM-DD（每日一租约）
+    owner       TEXT    NOT NULL DEFAULT '',   -- 抢到租约的进程标识（仅可视化）
+    expires_at  TEXT    NOT NULL DEFAULT '1970-01-01 00:00:00',  -- 租约过期时刻
+    PRIMARY KEY (task_id, claim_date)
+);
 """
 
 
@@ -222,4 +229,43 @@ def cleanup_history() -> None:
         con.execute(
             "DELETE FROM trigger_history WHERE created_at < datetime('now', ?)",
             (f"-{HISTORY_KEEP_DAYS} days",),
+        )
+
+
+# ------------------------------------------------------------ 派发租约（多 worker 防双发）
+
+LEASE_SECONDS = 120  # 租约时长：持有者进程崩溃后，其他 worker 最多等这么久即接管
+
+
+def try_claim(task_id: int, date_str: str, owner: str) -> bool:
+    """原子抢占当日派发租约；抢到返回 True（由本进程负责本次派发）。
+
+    实现：先 INSERT OR IGNORE 保证租约行存在，再用「WHERE expires_at < 当前时刻」
+    做条件 UPDATE——同一时刻全局仅一行能被更新成功（rowcount==1），即唯一派发者。
+    租约带过期时间，持有者进程崩溃后自动过期，存活 worker 下轮自动接管（自愈）。
+    """
+    now = datetime.now()
+    now_iso = now.strftime("%Y-%m-%d %H:%M:%S")
+    exp_iso = (now + timedelta(seconds=LEASE_SECONDS)).strftime("%Y-%m-%d %H:%M:%S")
+    with get_conn(DB_PATH) as con:
+        con.execute(
+            "INSERT OR IGNORE INTO trigger_leases(task_id, claim_date, owner, expires_at)"
+            " VALUES (?,?,?,?)",
+            (task_id, date_str, "", "1970-01-01 00:00:00"),
+        )
+        cur = con.execute(
+            "UPDATE trigger_leases SET owner=?, expires_at=? "
+            "WHERE task_id=? AND claim_date=? AND expires_at < ?",
+            (owner, exp_iso, task_id, date_str, now_iso),
+        )
+        return cur.rowcount == 1
+
+
+def release_claim(task_id: int, date_str: str) -> None:
+    """派发失败后释放租约，允许下一分钟其他 worker 重试（避免当日卡死）。"""
+    with get_conn(DB_PATH) as con:
+        con.execute(
+            "UPDATE trigger_leases SET expires_at='1970-01-01 00:00:00' "
+            "WHERE task_id=? AND claim_date=?",
+            (task_id, date_str),
         )
