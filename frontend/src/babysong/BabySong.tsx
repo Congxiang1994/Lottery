@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Heart,
   HardDrive,
+  Repeat,
 } from "lucide-react";
 
 interface Song {
@@ -32,6 +33,7 @@ const FAV_KEY = "babysong_fav_v1";
 const LAST_KEY = "babysong_last_v1";
 const HISTORY_KEY = "babysong_history_v1";
 const HISTORY_MAX = 30;
+const LOOP_KEY = "babysong_loop_v1";
 
 type FilterMode = "all" | "played" | "unplayed" | "fav" | "recent" | "local";
 
@@ -143,7 +145,25 @@ export default function BabySong() {
   /* 本地播放弹窗 */
   const [activeId, setActiveId] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const modalPushedRef = useRef(false);
+  const wasPlayingRef = useRef(false);
+  /* 连播（默认开启）：播完自动播放下一首本地视频，到末尾循环回第一首 */
+  const [loopOn, setLoopOn] = useState<boolean>(() => {
+    const v = localStorage.getItem(LOOP_KEY);
+    return v === null ? true : v === "1";
+  });
+  const toggleLoop = () => {
+    setLoopOn((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(LOOP_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
 
   const fetchList = useCallback(() => {
     fetch("/api/babysong/list")
@@ -319,6 +339,14 @@ export default function BabySong() {
     }
   }, []);
 
+  /* 一首播完：连播开启时自动跳下一首，循环回第一首 */
+  const handleEnded = () => {
+    if (!loopOn || !localSongs.length) return;
+    const idx = localSongs.findIndex((s) => s.id === activeId);
+    const next = (idx + 1) % localSongs.length;
+    setActiveId(localSongs[next].id);
+  };
+
   /* 弹窗打开时禁止背景滚动 */
   useEffect(() => {
     document.body.style.overflow = activeId ? "hidden" : "";
@@ -339,10 +367,18 @@ export default function BabySong() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  /* 切歌自动播放 + 键盘快捷键（Esc 关闭 / ←→ 上下一首） */
+  /* 切歌自动播放（息屏/后台时用音频续播，保证后台不中断） */
   useEffect(() => {
     if (!current) return;
-    videoRef.current?.play().catch(() => {});
+    const a = audioRef.current;
+    if (a && current.local_url) a.src = current.local_url;
+    if (document.hidden) {
+      wasPlayingRef.current = true;
+      a?.play().catch(() => {});
+    } else {
+      wasPlayingRef.current = false;
+      videoRef.current?.play().catch(() => {});
+    }
   }, [current]);
 
   useEffect(() => {
@@ -417,6 +453,127 @@ export default function BabySong() {
     setHighlightSeq(lastSeq);
     goPage(Math.floor((lastSeq - 1) / PAGE_SIZE) + 1);
   };
+
+  /* 息屏/切后台：移动端 <video> 会被系统暂停，这里切换到 <audio> 续播；
+     回到前台再切回 <video> 并同步进度，实现「息屏也能继续播放」 */
+  useEffect(() => {
+    const onVis = () => {
+      const v = videoRef.current;
+      const a = audioRef.current;
+      if (!v || !a || !current?.local_url) return;
+      if (document.hidden) {
+        if (!v.paused) {
+          wasPlayingRef.current = true;
+          if (a.src !== current.local_url) a.src = current.local_url;
+          try {
+            a.currentTime = v.currentTime;
+          } catch {
+            /* 元数据未就绪时忽略，音频将从此刻起播 */
+          }
+          v.pause();
+          a.play().catch(() => {});
+        }
+      } else if (wasPlayingRef.current || !a.paused) {
+        try {
+          v.currentTime = a.currentTime;
+        } catch {
+          /* ignore */
+        }
+        a.pause();
+        wasPlayingRef.current = false;
+        v.play().catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [current]);
+
+  /* 锁屏媒体控制（播放/暂停/上下一首），提升后台播放体验并稳定后台音频 */
+  useEffect(() => {
+    if (!("mediaSession" in navigator) || !current) return;
+    const ms = navigator.mediaSession;
+    try {
+      ms.metadata = new MediaMetadata({
+        title: current.title,
+        artist: "Super Simple Songs",
+        album: "儿歌 · 本地",
+      });
+    } catch {
+      /* ignore */
+    }
+    const onPlay = () =>
+      (document.hidden ? audioRef.current : videoRef.current)?.play().catch(() => {});
+    const onPause = () => {
+      videoRef.current?.pause();
+      audioRef.current?.pause();
+    };
+    const onNext = () => {
+      if (nextLocal) setActiveId(nextLocal.id);
+    };
+    const onPrev = () => {
+      if (prevLocal) setActiveId(prevLocal.id);
+    };
+    try {
+      ms.setActionHandler("play", onPlay);
+    } catch {
+      /* ignore */
+    }
+    try {
+      ms.setActionHandler("pause", onPause);
+    } catch {
+      /* ignore */
+    }
+    try {
+      ms.setActionHandler("nexttrack", onNext);
+    } catch {
+      /* ignore */
+    }
+    try {
+      ms.setActionHandler("previoustrack", onPrev);
+    } catch {
+      /* ignore */
+    }
+    const sync = () => {
+      const playing = !videoRef.current?.paused || !audioRef.current?.paused;
+      try {
+        ms.playbackState = playing ? "playing" : "paused";
+      } catch {
+        /* ignore */
+      }
+    };
+    const v = videoRef.current;
+    const a = audioRef.current;
+    v?.addEventListener("play", sync);
+    v?.addEventListener("pause", sync);
+    a?.addEventListener("play", sync);
+    a?.addEventListener("pause", sync);
+    return () => {
+      try {
+        ms.setActionHandler("play", null);
+      } catch {
+        /* ignore */
+      }
+      try {
+        ms.setActionHandler("pause", null);
+      } catch {
+        /* ignore */
+      }
+      try {
+        ms.setActionHandler("nexttrack", null);
+      } catch {
+        /* ignore */
+      }
+      try {
+        ms.setActionHandler("previoustrack", null);
+      } catch {
+        /* ignore */
+      }
+      v?.removeEventListener("play", sync);
+      v?.removeEventListener("pause", sync);
+      a?.removeEventListener("play", sync);
+      a?.removeEventListener("pause", sync);
+    };
+  }, [current, prevLocal, nextLocal]);
 
   return (
     <div className="pt-10">
@@ -756,6 +913,30 @@ export default function BabySong() {
                 </div>
               </div>
               <button
+                onClick={toggleLoop}
+                title={loopOn ? "连播开启：播完自动播放下一首并循环" : "连播关闭：播完即停"}
+                aria-pressed={loopOn}
+                className={`mr-1 flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition ${
+                  loopOn
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                    : "border-paper-200 text-paper-600 hover:border-brand-red/40"
+                }`}
+              >
+                <Repeat size={15} />
+                连播
+                <span
+                  className={`relative ml-0.5 inline-flex h-4 w-7 items-center rounded-full transition ${
+                    loopOn ? "bg-emerald-500" : "bg-paper-300"
+                  }`}
+                >
+                  <span
+                    className={`absolute h-3 w-3 rounded-full bg-white transition-all ${
+                      loopOn ? "left-3.5" : "left-0.5"
+                    }`}
+                  />
+                </span>
+              </button>
+              <button
                 onClick={closeLocalModal}
                 title="关闭"
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-paper-200 text-paper-600 transition hover:border-brand-red hover:text-brand-red active:scale-95"
@@ -774,6 +955,14 @@ export default function BabySong() {
                 autoPlay
                 playsInline
                 preload="auto"
+                onEnded={handleEnded}
+              />
+              {/* 后台/息屏续播用：视频在移动端后台会被暂停，改用同一地址的音频继续出声 */}
+              <audio
+                ref={audioRef}
+                preload="auto"
+                onEnded={handleEnded}
+                className="hidden"
               />
             </div>
 
