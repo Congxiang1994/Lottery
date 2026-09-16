@@ -109,7 +109,7 @@
 |---|---|
 | 前端框架 | React 18.3.1 + React Router 6.26 + TypeScript 5.5 |
 | 前端构建 | Vite 5.4 + TailwindCSS 3.4 + Recharts 2.12（本地 Node 22 构建，服务器不装 Node） |
-| 后端 | Python 3.12 + FastAPI 0.141 + gunicorn 26（2 worker）+ uvicorn |
+| 后端 | Python 3.14.5 + FastAPI 0.141 + gunicorn 26（2 worker）+ uvicorn |
 | 算法/数据 | numpy 2.5 / scikit-learn 1.9 / scipy 1.18；SQLite（标准库 sqlite3，WAL） |
 | 网关 | Nginx 1.24（:8081）+ cloudflared Tunnel |
 | 进程管理 | systemd（`lottery.service` + `lottery-algos.timer` 每日 0:00 跑批） |
@@ -164,14 +164,16 @@ README 分两层：**根 README 讲「全站」**，**分册讲「各模块实�
 
 ## 本地开发
 
-### 后端（Python 3.12+）
+### 后端（Python 3.14.5）
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
+python3.14 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 PYTHONPATH=. python scripts/fetch_data.py     # 抓取数据
 PYTHONPATH=. uvicorn app.main:app --reload     # http://127.0.0.1:8000
 ```
+> 后端锁定 Python **3.14.5**（本机与服务器一致）。本机若没有该版本，可用
+> `uv python install 3.14.5` 获取；Ubuntu 的 apt/deadsnakes 不提供这个精确补丁号。
 
 ### 前端（Node 22+）
 ```bash
@@ -199,9 +201,11 @@ npm run build        # 产物到 frontend/dist
    ```bash
    sudo bash /opt/lottery/deploy/install.sh
    ```
-   脚本会自动：装系统依赖（nginx / python3-venv / ffmpeg 等）→ 建 venv 装包 → 爬取数据 →
+   脚本会自动：装系统依赖（nginx / python3-venv / ffmpeg 等）→ 用 uv 准备 CPython 3.14.5 到
+   `/opt/python`（不动系统 Python）→ 建 venv 装包 → 爬取数据 →
    建 `/data/lottery` 持久化目录（首次迁移旧库）→ 配置 Nginx(:8081) →
    注册并启动所有 `deploy/*.service/*.timer`（含未来的新模块服务）→ 开放防火墙。
+   > 国内服务器拉取 python-build-standalone 需走代理：`https_proxy=http://127.0.0.1:7890 sudo -E bash deploy/install.sh`
 
 3. 浏览器访问 [https://doudoutech.cloud/](https://doudoutech.cloud/)。
    （公网经 Cloudflare Tunnel 穿透；服务器本机可直连 `http://<IP>:8081` 调试。）

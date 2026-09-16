@@ -18,17 +18,42 @@ BACKEND="$APP_DIR/backend"
 PY="$BACKEND/.venv/bin/python"
 GUNICORN="$BACKEND/.venv/bin/gunicorn"
 
+# 目标 Python 精确版本（与本地开发一致）
+# 说明：Ubuntu 24.04 自带 3.12，deadsnakes PPA 只提供最新的 3.14.x（非 3.14.5），
+# 所以要精确版本只能用 uv 拉 python-build-standalone 的独立发行版装到 /opt/python，
+# 好处是不动系统 Python、可重复安装；国内服务器拉 GitHub 需代理（https_proxy）。
+PY_VERSION="${PY_VERSION:-3.14.5}"
+PY_INSTALL_DIR="${PY_INSTALL_DIR:-/opt/python}"
+PY314="$PY_INSTALL_DIR/cpython-$PY_VERSION-linux-x86_64-gnu/bin/python3.14"
+
 step() { echo -e "\n\033[36m==> $1\033[0m"; }
 
-step "[1/6] 安装系统依赖 (nginx / python3-venv / ffmpeg)"
+step "[1/6] 安装系统依赖 (nginx / python3-venv / python3-pip / ffmpeg)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y nginx python3-venv python3-pip git curl ffmpeg
 
+step "[1.5/6] 准备 CPython $PY_VERSION（uv → $PY_INSTALL_DIR）"
+if [ ! -x "$PY314" ]; then
+  if ! command -v uv >/dev/null 2>&1; then
+    python3 -m venv /tmp/uvboot
+    /tmp/uvboot/bin/pip install -q -i https://pypi.tuna.tsinghua.edu.cn/simple uv
+    install -m 0755 /tmp/uvboot/bin/uv /usr/local/bin/uv
+    rm -rf /tmp/uvboot
+  fi
+  mkdir -p "$PY_INSTALL_DIR"
+  UV_PYTHON_INSTALL_DIR="$PY_INSTALL_DIR" uv python install "$PY_VERSION"
+else
+  echo "已存在：$PY314"
+fi
+"$PY314" -V
+
 step "[2/6] 创建 Python 虚拟环境并安装后端依赖"
-python3 -m venv "$BACKEND/.venv"
-"$PY" -m pip install --upgrade pip -q
-"$PY" -m pip install -r "$BACKEND/requirements.txt" -q
+"$PY314" -m venv "$BACKEND/.venv"
+chown -R ubuntu:ubuntu "$BACKEND/.venv"
+"$PY" -m pip install --upgrade pip -q -i https://pypi.tuna.tsinghua.edu.cn/simple
+"$PY" -m pip install -r "$BACKEND/requirements.txt" -q -i https://pypi.tuna.tsinghua.edu.cn/simple
+"$PY" -V
 
 step "[3/6] 抓取 / 校准历史数据（500彩票网）"
 if (cd "$BACKEND" && PYTHONPATH="$BACKEND" "$PY" scripts/fetch_data.py); then

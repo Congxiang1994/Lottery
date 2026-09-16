@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "彩票数据服务后端 (FastAPI) - 双色球/大乐透"
 authors = [{ name = "WorkBuddy" }]
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
