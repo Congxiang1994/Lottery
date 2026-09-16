@@ -66,9 +66,6 @@ EXTRA_HEADERS = {
 PROBE_MESSAGE = "请回复 ok 确认连接正常"
 PROBE_MAX_TOKENS = 16
 
-# leader 选举锁文件（防 gunicorn 多 worker 双发）
-LEADER_LOCK_PATH = DB_DIR / "trigger_scheduler.lock"
-
 
 def sign_session(expires_at: float) -> str:
     """生成 会话载荷.签名 令牌（载荷仅含过期时间，无用户体系）。"""
