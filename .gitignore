@@ -10,6 +10,9 @@ __pycache__/
 # 系统
 .DS_Store
 
+# WorkBuddy 工作区元数据（记忆 / 会话，不入库）
+.workbuddy/
+
 # 数据文件（本地生成 / 历史数据，不入库）
 backend/app/lottery/data/
 *.db
