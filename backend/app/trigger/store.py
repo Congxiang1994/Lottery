@@ -52,9 +52,21 @@ CREATE TABLE IF NOT EXISTS trigger_leases (
 """
 
 
+# missed 的按日唯一约束：同一任务同一天最多一条 missed。
+# 不能放进 _SCHEMA（老库可能已有重复，建索引会失败）——必须在 dedupe 之后建。
+_MISSED_UNIQUE_INDEX = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_history_missed_daily"
+    " ON trigger_history (task_id, substr(fired_at, 1, 10)) WHERE status = 'missed'"
+)
+
+
 def init() -> None:
     with get_conn(DB_PATH) as con:
         con.executescript(_SCHEMA)
+    # 迁移历史重复（老版本 check-then-act 竞态留下的），再上唯一索引做硬保证
+    dedupe_missed_history()
+    with get_conn(DB_PATH) as con:
+        con.execute(_MISSED_UNIQUE_INDEX)
 
 
 def mask_key(key: str) -> str:
@@ -194,13 +206,60 @@ def record_history(
         )
 
 
+def record_missed_once(
+    task_id: int,
+    task_name: str,
+    *,
+    date_str: str,
+    fired_at: str,
+    error: str = "",
+) -> bool:
+    """原子写入当日 missed 记录，返回是否真的写入（已存在则不动）。
+
+    为什么不能「先 has_record_today 再 record_history」：那是 check-then-act 竞态。
+    gunicorn 起 2 个 worker，重启后两个进程几乎同时跑首轮扫描，都查到「今天还没有
+    记录」，然后各写一条 —— 2026-09-16 实测 trigger_history 出现 id 81/82 完全重复
+    的 missed。改成单条 INSERT ... SELECT ... WHERE NOT EXISTS：判重与插入在同一条
+    SQL 内完成，SQLite 的写锁把并发进程串行化，全局只有一个能写进去。
+    INSERT OR IGNORE 再兜一层（配合 uq_history_missed_daily 唯一索引）。
+    """
+    with get_conn(DB_PATH) as con:
+        cur = con.execute(
+            "INSERT OR IGNORE INTO trigger_history"
+            " (task_id, task_name, fired_at, status, error)"
+            " SELECT ?, ?, ?, 'missed', ? WHERE NOT EXISTS ("
+            "   SELECT 1 FROM trigger_history"
+            "   WHERE task_id=? AND substr(fired_at, 1, 10)=?"
+            "     AND status IN ('success', 'failed', 'missed')"
+            " )",
+            (task_id, task_name, fired_at, error[:500], task_id, date_str),
+        )
+        return cur.rowcount == 1
+
+
+def dedupe_missed_history() -> int:
+    """清理历史上重复的 missed 记录（同任务同日只留最早一条），返回删除条数。
+
+    兼作老库迁移：老版本 `_mark_missed_once` 是 check-then-act，多 worker 并发首轮
+    扫描会各写一条。幂等，每次 init 顺手跑一次。
+    """
+    with get_conn(DB_PATH) as con:
+        cur = con.execute(
+            "DELETE FROM trigger_history WHERE status='missed' AND id NOT IN ("
+            "  SELECT MIN(id) FROM trigger_history WHERE status='missed'"
+            "  GROUP BY task_id, substr(fired_at, 1, 10)"
+            ")"
+        )
+        return cur.rowcount
+
+
 def has_record_today(
     task_id: int, date_str: str, statuses: tuple[str, ...] = ("success",)
 ) -> bool:
     """当日判重：该任务今天是否已存在指定状态的记录。
 
     - statuses=("success",)：触发幂等（调度器/重启防重复派发、页面「今日已触发」）
-    - statuses=("success", "missed")：missed 判重（避免反复刷屏）
+    - missed 的判重不走这里，由 record_missed_once 在单条 SQL 内原子完成（防多 worker 竞态）
     """
     placeholders = ",".join("?" for _ in statuses)
     with get_conn(DB_PATH) as con:

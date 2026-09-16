@@ -67,17 +67,24 @@ async def _fire_and_release(task: dict[str, Any], date_str: str) -> None:
 
 
 def _mark_missed_once() -> None:
-    """首轮扫描：启用任务今天已过触发点且无任何记录 → 记 missed（按日幂等）。"""
+    """首轮扫描：启用任务今天已过触发点且无任何记录 → 记 missed（按日幂等）。
+
+    每个 worker 进程启动都会跑一次，所以判重必须原子：交给
+    store.record_missed_once（单条 INSERT ... WHERE NOT EXISTS）完成，
+    不能在这里「先查后写」——两个 worker 并发首轮扫描会各写一条重复 missed。
+    """
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     now_hhmm = now.strftime("%H:%M")
     for task in store.list_tasks():
         if not task["enabled"] or task["time"] >= now_hhmm:
             continue
-        if store.has_record_today(task["id"], date_str, statuses=("success", "failed", "missed")):
+        if store.has_record_today(task["id"], date_str, statuses=("success", "failed")):
             continue
-        store.record_history(
-            task["id"], task["name"], "missed",
+        store.record_missed_once(
+            task["id"],
+            task["name"],
+            date_str=date_str,
             fired_at=now.strftime("%Y-%m-%d %H:%M:%S"),
             error="进程重启/停机错过当日触发点，可在页面手动补触发",
         )
