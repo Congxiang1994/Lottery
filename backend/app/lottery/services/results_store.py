@@ -84,10 +84,13 @@ CREATE TABLE IF NOT EXISTS backtest_lock (
 );
 
 -- 密码校验流控（单行，跨 worker 限频：同一秒仅允许 1 次）
+-- fail_count / locked_until：连续失败计数与锁定截止时刻（防在线爆破）
 CREATE TABLE IF NOT EXISTS security_lock (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
     last_verify_ts  REAL,
-    last_verify_ok  INTEGER
+    last_verify_ok  INTEGER,
+    fail_count      INTEGER NOT NULL DEFAULT 0,
+    locked_until    REAL NOT NULL DEFAULT 0
 );
 
 -- 全局运行互斥锁（单行，串行化「运行全部算法」防并发）
@@ -114,6 +117,15 @@ def init() -> None:
                 "ALTER TABLE run_progress ADD COLUMN phase TEXT NOT NULL DEFAULT 'predict'")
         except sqlite3.OperationalError:
             pass
+        # 兼容旧库：security_lock 增加失败计数 / 锁定截止（防在线爆破）
+        for ddl in (
+            "ALTER TABLE security_lock ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE security_lock ADD COLUMN locked_until REAL NOT NULL DEFAULT 0",
+        ):
+            try:
+                con.execute(ddl)
+            except sqlite3.OperationalError:
+                pass
 
 
 def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = None) -> int:
@@ -400,19 +412,23 @@ init()
 # ------------------------------------------------------------ 安全锁 / 流控
 
 
-def check_password(password: str) -> bool:
-    """纯密码校验（无流控），供 /run-all 等计算入口在端到端二次校验时使用。
-
-    密码来自数据库（哈希比对），不接收明文期望值参数。流控由
-    /verify-password 接口单独承担（verify_password），这里不重复限速。
-    """
-    from app.common import password as _password
-
-    return _password.verify(password)
+# 防在线爆破：连续失败达到阈值后开始锁定，锁定时长按失败次数递增（封顶 900s）
+FAIL_THRESHOLD = 5
+LOCK_STEPS = (30.0, 60.0, 120.0, 300.0, 900.0)
 
 
 def verify_password(password: str) -> tuple[bool, str, int]:
-    """校验密码 + 每秒 1 次全局流控（sqlite BEGIN IMMEDIATE 串行化）。
+    """校验密码 + 防在线爆破流控（失败计数 + 递增锁定）。
+
+    策略（2026-09-22 改造，替换原先「同一秒仅 1 次」的全局限频）：
+    - **成功不设限**：密码正确永远放行，因此「先 /verify-password 再 /run-all」这类
+      连续两次校验不会被误伤（旧限频方案会 429）。
+    - **失败计数**：连续失败 ≥ FAIL_THRESHOLD 次后进入锁定，锁定时长随失败次数递增
+      （30s → 60s → 120s → 300s → 900s 封顶），期间一律 429。
+    - 一旦成功，失败计数清零，锁定解除。
+
+    为什么换掉「同一秒 1 次」：那种限频对爆破的拦截力只有 86400 次/天，
+    且会误伤正常流程；失败递增锁定既更强也更好用。
 
     密码来自数据库（哈希比对）。返回 (ok, message, http_status)。
     """
@@ -421,24 +437,41 @@ def verify_password(password: str) -> tuple[bool, str, int]:
     from app.common import password as _password
 
     now = _time.time()
+    lock_step: float = 0.0
+    fail_count = 0
     with _conn() as con:
         con.execute("BEGIN IMMEDIATE")
-        con.execute("INSERT OR IGNORE INTO security_lock (id) VALUES (1)")
-        row = con.execute(
-            "SELECT last_verify_ts FROM security_lock WHERE id=1").fetchone()
-        last_ts = row[0] if row else None
-        if last_ts is not None and int(now) == int(last_ts):
-            con.execute(
-                "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=? WHERE id=1",
-                (now, 0))
-            return False, "校验过于频繁，同一秒内仅允许 1 次，请稍候再试", 429
-        ok = _password.verify(password)
         con.execute(
-            "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=? WHERE id=1",
-            (now, 1 if ok else 0))
+            "INSERT OR IGNORE INTO security_lock (id, fail_count, locked_until) VALUES (1,0,0)")
+        row = con.execute(
+            "SELECT fail_count, locked_until FROM security_lock WHERE id=1").fetchone()
+        fail_count = int(row[0] or 0) if row else 0
+        locked_until = float(row[1] or 0) if row else 0.0
+
+        if locked_until > now:
+            wait = int(locked_until - now) + 1
+            con.execute(
+                "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=0 WHERE id=1",
+                (now,))
+            return False, f"密码错误次数过多，请 {wait} 秒后再试", 429
+
+        ok = _password.verify(password)
+        if ok:
+            fail_count, locked_until = 0, 0.0
+        else:
+            fail_count += 1
+            if fail_count >= FAIL_THRESHOLD:
+                lock_step = LOCK_STEPS[min(fail_count - FAIL_THRESHOLD, len(LOCK_STEPS) - 1)]
+                locked_until = now + lock_step
+        con.execute(
+            "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=?,"
+            " fail_count=?, locked_until=? WHERE id=1",
+            (now, 1 if ok else 0, fail_count, locked_until))
     if ok:
         return True, "验证通过", 200
-    return False, "密码错误", 401
+    if lock_step:
+        return False, f"密码错误次数过多，已锁定 {int(lock_step)} 秒", 429
+    return False, f"密码错误（已连续失败 {fail_count} 次，累计 {FAIL_THRESHOLD} 次将临时锁定）", 401
 
 
 def global_lock_start() -> bool:

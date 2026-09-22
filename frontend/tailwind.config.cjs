@@ -3,12 +3,19 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
+        /* 系统字体栈优先：免去外部字体请求（大陆访问 Google Fonts 会阻塞渲染）。
+           macOS/iOS → SF Pro + PingFang SC；Windows → Segoe UI + 微软雅黑；
+           Android/Linux → Roboto/Noto Sans CJK。 */
         sans: [
-          "Inter",
-          "Noto Sans SC",
-          "PingFang SC",
           "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "PingFang SC",
+          "Hiragino Sans GB",
           "Microsoft YaHei",
+          "Noto Sans CJK SC",
+          "Helvetica Neue",
+          "Arial",
           "sans-serif",
         ],
       },

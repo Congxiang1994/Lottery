@@ -1,3 +1,20 @@
+import type {
+  AlgoCatalog,
+  AlgoResult,
+  AlgoSummary,
+  AllRunStatus,
+  BacktestResult,
+  BatchAlgoResponse,
+  CombinedResult,
+  Draw,
+  LotteryInfo,
+  Predict,
+  SavedAlgorithmsLatest,
+  SavedCombined,
+  Stats,
+  Summary,
+} from "./types";
+
 const BASE = "/api/v1";
 
 async function get<T>(path: string): Promise<T> {
@@ -38,25 +55,17 @@ export const api = {
   savedCombined: (k: string) =>
     get<SavedCombined>(`/${k}/saved-combined`),
   // ---- 全量运行（与定时任务同一逻辑，结果落 sqlite；双色球+大乐透一起跑）
-  verifyPassword: (password: string) =>
-    fetch(`${BASE}/verify-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    }).then(async (r) => {
-      if (!r.ok) {
-        const detail = await r.json().then((d) => d.detail ?? "").catch(() => "");
-        throw new Error(detail || `校验失败 ${r.status}`);
-      }
-      return r.json();
-    }),
+  // 密码由 run-all 端到端校验（后端带失败计数锁定流控），无需先单独校验。
   runAll: (password: string) =>
     fetch(`${BASE}/run-all`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
     }).then(async (r) => {
-      if (!r.ok) throw new Error(await r.text());
+      if (!r.ok) {
+        const detail = await r.json().then((d) => d.detail ?? "").catch(() => "");
+        throw new Error(detail || `请求失败 ${r.status}`);
+      }
       return r.json();
     }),
   runStatus: () => get<AllRunStatus>(`/run-status`),

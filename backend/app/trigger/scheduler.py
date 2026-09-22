@@ -130,7 +130,7 @@ async def _fire_and_release(task: dict[str, Any], date_str: str) -> None:
         ok = await fire_task(task)
         if not ok:
             # 派发失败：释放租约，允许后续 tick 其他 worker 重试
-            # （工失败会写 failed 历史，后续 tick 的 has_record_today 会挡住重复派发）
+            # （失败会写 failed 历史，后续 tick 的 has_record_today 会挡住重复派发）
             store.release_claim(task["id"], date_str)
     finally:
         _inflight.discard((task["id"], date_str))

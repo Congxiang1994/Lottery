@@ -11,8 +11,5 @@ Environment=PYTHONPATH=/opt/lottery/backend
 ExecStart=/opt/lottery/backend/.venv/bin/python /opt/lottery/backend/scripts/run_all_algorithms.py
 StandardOutput=journal
 StandardError=journal
-TimeoutStartSec=600
-
-# 失败也保留日志，方便排查
-SuccessExitStatus=0
+# 全量跑批（预测 + 回测）实测约 15 分钟；给足超时上限
 TimeoutStartSec=1800

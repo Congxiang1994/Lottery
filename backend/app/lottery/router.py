@@ -270,15 +270,18 @@ def verify_password(payload: dict):
 def run_all_algorithms_all(payload: dict):
     """启动全量运行：顺序跑双色球 + 大乐透（各含预测 + 回测）并写入 sqlite。
 
-    后端强制校验操作密码（与 /verify-password 同一密码，无流控），
+    后端强制校验操作密码，**走与 /verify-password 同一套流控**（失败计数 + 递增锁定），
     校验通过后由数据库互斥锁防并发。
     """
     from app.lottery.services import runner
-    from app.lottery.services.results_store import check_password
-    if not check_password(str(payload.get("password", ""))):
-        raise HTTPException(status_code=401, detail="密码错误，无法触发运行")
-    ok, msg = runner.start_all()
+    from app.lottery.services import results_store as _rs
+    ok, msg, status = _rs.verify_password(str(payload.get("password", "")))
+    if status == 429:
+        raise HTTPException(status_code=429, detail=msg)
     if not ok:
+        raise HTTPException(status_code=401, detail="密码错误，无法触发运行")
+    started, msg = runner.start_all()
+    if not started:
         raise HTTPException(status_code=409, detail=msg)
     return {"started": True, "message": msg}
 
@@ -295,15 +298,18 @@ def run_all_algorithms(lottery: str, payload: dict):
     """启动单彩种全量运行：跑全部 85 个非集成算法并写入 sqlite。
 
     与每日定时任务同一逻辑；完成后 saved-combined / saved-algorithms/latest
-    自动更新。同样需要操作密码。
+    自动更新。同样需要操作密码，且走统一的失败锁定流控。
     """
     _get(lottery)
     from app.lottery.services import runner
-    from app.lottery.services.results_store import check_password
-    if not check_password(str(payload.get("password", ""))):
-        raise HTTPException(status_code=401, detail="密码错误，无法触发运行")
-    ok, msg = runner.start(lottery)
+    from app.lottery.services import results_store as _rs
+    ok, msg, status = _rs.verify_password(str(payload.get("password", "")))
+    if status == 429:
+        raise HTTPException(status_code=429, detail=msg)
     if not ok:
+        raise HTTPException(status_code=401, detail="密码错误，无法触发运行")
+    started, msg = runner.start(lottery)
+    if not started:
         raise HTTPException(status_code=409, detail=msg)
     return {"lottery": lottery, "started": True, "message": msg}
 
@@ -317,9 +323,20 @@ def run_all_status(lottery: str):
 
 
 @router.post("/{lottery}/refresh")
-def refresh(lottery: str):
+def refresh(lottery: str, payload: dict | None = None):
+    """重新抓取该彩种历史数据（受操作密码保护 + 失败锁定流控）。
+
+    该接口会向 500 彩票网发起真实抓取并覆盖数据文件，属于运维动作，
+    不对外公开（此前无鉴权，任何人可高频调用导致源站封 IP）。
+    """
     if lottery not in LOTTERIES:
         raise HTTPException(status_code=404, detail=f"未知彩种: {lottery}")
+    from app.lottery.services import results_store as _rs
+    ok, msg, status = _rs.verify_password(str((payload or {}).get("password", "")))
+    if status == 429:
+        raise HTTPException(status_code=429, detail=msg)
+    if not ok:
+        raise HTTPException(status_code=401, detail="密码错误，无法刷新数据")
     data = scraper.fetch_lottery(lottery)
     scraper.save_lottery(data)
     return {"lottery": lottery, "count": data["count"], "updated_at": data["updated_at"]}

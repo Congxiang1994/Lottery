@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -17,10 +16,13 @@ from app.trigger import router as trigger_router
 from app.babysong import router as babysong_router
 from app.trigger import scheduler
 from app.common import password as password_store
+from app.common.db import harden_dir
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 持久化目录权限收紧（含明文 API key 的 trigger.db 所在目录）
+    harden_dir(os.environ.get("LOTTERY_DB_DIR", "/data/lottery"))
     # 操作密码库兜底初始化（库未配置且环境变量已设时自动引导写入；以库为准）
     password_store.ensure_configured()
     # 触发器调度循环（SQLite 租约选派发者，多 worker 自愈；gunicorn 优雅重启安全）
@@ -35,12 +37,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Lottery · 彩票数据服务", version="1.0.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# 说明：本站前端与 API 同源（nginx 反代 /api），因此不需要 CORS。
+# 此前 allow_origins=["*"] 会让任意站点可发起跨域请求，已移除。
 
 app.include_router(lottery_router.router)
 app.include_router(hanzi_router.router)
@@ -71,4 +69,5 @@ if DIST.exists():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 仅监听回环：本地调试入口，生产由 gunicorn(127.0.0.1:8000) + nginx 承担
+    uvicorn.run(app, host="127.0.0.1", port=8000)

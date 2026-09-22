@@ -86,7 +86,7 @@ class AlgoOutput:
 
 ```
 「算法广场 · 运行全部」 → POST /api/v1/run-all
-      │ 密码校验（后端强制 check_password, 错/缺 → 401）
+      │ 密码校验（后端强制 verify_password，错/缺 → 401；连续失败会临时锁定 → 429）
       ▼
 runner.start_all() → SQLite 全局互斥锁（防并发, 已运行 → 409）
       ▼
@@ -107,9 +107,11 @@ save_batch 落库 → 首页 saved-combined / saved-algorithms/latest 自动读�
 | 机制 | 说明 |
 |---|---|
 | 只读接口不计算 | `GET /backtest` 等只读接口缓存 miss → **503**，绝不触发计算；计算只走「运行全部」入口 |
-| 操作密码 | `run-all` 后端强制校验密码（无密码/错密码 → 401）；`verify-password` 带每秒 1 次流控 |
+| 操作密码 | 所有密码校验入口（`verify-password` / `run-all` / `refresh` / trigger / 儿歌管理）统一走 `verify_password`：**成功不限流**，连续失败 ≥5 次后递增锁定（30s→60s→120s→300s→900s 封顶） |
+| 密码存储 | scrypt（N=2^15, r=8, p=1, 随机 salt）落库 `auth.db`；历史 SHA-256 记录在校验成功后自动升级 |
 | 互斥锁 | SQLite 全局锁防「运行全部」并发；`backtest_lock` TTL=1800s（防 SIGTERM 残留锁、防长回测抢占） |
 | 回测缓存 | `backtest_cache` 表按 `(lottery, folds, max_cost, issue_base)` 失效 |
+| 数据完整性 | `save_lottery` 原子写（临时文件 + `os.replace`）；`load_lottery` 遇损坏 JSON 返回 None 而非抛异常 |
 
 ## 5. API 全表（前缀 `/api/v1`，共 23 条路由，见 `router.py`）
 
@@ -132,12 +134,12 @@ save_batch 落库 → 首页 saved-combined / saved-algorithms/latest 自动读�
 | GET | `/{ssq\|dlt}/saved-combined` | 对每日跑批缓存做等权融合（纯缓存不实时计算） |
 | GET | `/{ssq\|dlt}/saved-algorithms/runs?limit=` | 最近 N 天入库日期列表 |
 | GET | `/{ssq\|dlt}/saved-algorithms/{run_date}` | 按日期取整批 |
-| POST | `/verify-password` | 校验「运行全部」操作密码（1次/秒流控） |
+| POST | `/verify-password` | 校验「运行全部」操作密码（失败计数 + 递增锁定） |
 | POST | `/run-all` | 启动全量运行（双色球+大乐透，密码校验+互斥锁） |
 | GET | `/run-status` | 全量运行进度（跨 worker 轮询） |
 | POST | `/{ssq\|dlt}/run-all` | 启动单彩种全量运行 |
 | GET | `/{ssq\|dlt}/run-status` | 单彩种运行进度 |
-| POST | `/{ssq\|dlt}/refresh` | 重新爬取数据 |
+| POST | `/{ssq\|dlt}/refresh` | 重新爬取数据（**需操作密码**，body `{"password": "..."}`） |
 
 ## 6. 前端结构（`frontend/src/lottery/`）
 

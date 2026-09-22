@@ -59,7 +59,7 @@ step "[3/6] 抓取 / 校准历史数据（500彩票网）"
 if (cd "$BACKEND" && PYTHONPATH="$BACKEND" "$PY" scripts/fetch_data.py); then
   echo "数据抓取完成"
 else
-  echo "⚠️ 抓取失败，将使用已附带的历史数据（ssq.json / dlt.json）"
+  echo "⚠️ 抓取失败，将回退到仓库自带种子数据（backend/app/lottery/seed/seed_{ssq,dlt}.txt）"
 fi
 
 step "[3.5/6] 创建持久化数据目录 /data/lottery（独立于部署目录，重部署不丢数据）"

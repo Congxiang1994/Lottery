@@ -141,7 +141,6 @@ export default function BabySong() {
   const [lastSeq, setLastSeq] = useState<number | null>(loadLast);
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const [jumpVal, setJumpVal] = useState("");
-  const [toast, setToast] = useState("");
   /* 本地播放弹窗 */
   const [activeId, setActiveId] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -165,8 +164,8 @@ export default function BabySong() {
     });
   };
 
-  const fetchList = useCallback(() => {
-    fetch("/api/babysong/list")
+  const fetchList = useCallback((report = false) => {
+    return fetch("/api/babysong/list")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d) => {
         const list: Song[] = (Array.isArray(d.songs) ? d.songs : []).map(
@@ -174,23 +173,15 @@ export default function BabySong() {
         );
         setSongs(list);
       })
-      .catch(() => {
-        /* 静默：保留现有列表 */
+      .catch((e) => {
+        /* 静默刷新失败保留现有列表；仅首次加载失败才提示 error */
+        if (report) setError(e?.message || "加载失败");
       });
   }, []);
 
   useEffect(() => {
-    fetch("/api/babysong/list")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d) => {
-        const list: Song[] = (Array.isArray(d.songs) ? d.songs : []).map(
-          (s: Omit<Song, "seq">, i: number) => ({ ...s, seq: i + 1 })
-        );
-        setSongs(list);
-      })
-      .catch((e) => setError(e?.message || "加载失败"))
-      .finally(() => setLoading(false));
-  }, []);
+    fetchList(true).finally(() => setLoading(false));
+  }, [fetchList]);
 
   /* 窗口重新聚焦时刷新列表：下载管理页爬完新视频后，回到本页自动出现「本地」按钮 */
   useEffect(() => {
@@ -404,13 +395,6 @@ export default function BabySong() {
       document.head.removeChild(link);
     };
   }, [nextLocal]);
-
-  // toast 自动消失
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(""), 3000);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const openRandom = () => {
     /* 优先从已下载本地的歌里随机：站内弹窗秒开；
@@ -1015,13 +999,6 @@ export default function BabySong() {
               )}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* 操作提示 toast */}
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-paper-900/90 px-4 py-2 text-xs font-medium text-white shadow-lg">
-          {toast}
         </div>
       )}
     </div>

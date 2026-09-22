@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLottery } from "../context";
 import { api } from "../api";
 import {
-  AlgoCatalog, AlgoResult, BacktestResult, RunStatus, SavedCombined,
+  AlgoCatalog, AlgoResult, AllRunStatus, BacktestResult, RunStatus, SavedCombined,
 } from "../types";
 import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
@@ -119,25 +119,24 @@ export default function Algorithms() {
   const [pwdErr, setPwdErr] = useState<string | null>(null);
   const [pwdLoading, setPwdLoading] = useState(false);
 
-  const runAll = (pwd: string) => {
+  const runAll = (pwd: string) =>
     api.runAll(pwd).then(() => {
       setRunStatus({
         lotteries: {}, running: true, done: 0, total: 0, percent: 0,
         phase: "predict", current: "准备中…", current_lottery: null,
-        elapsed: 0, eta: 0, finished: false, error: null,
+        elapsed: 0, eta: 0, finished: false, finished_at: null, error: null,
       });
       startPoll();
-    }).catch((e) => setErr(String(e)));
-  };
+    });
 
-  // 密码弹框：后端校验通过后才触发 run-all（run-all 会再次携带密码做端到端校验）
+  // 密码弹框：直接由 run-all 做端到端校验（后端带失败锁定流控），
+  // 不再先调 /verify-password —— 两次校验会在同一秒内互相触发限流。
   const submitPassword = () => {
     setPwdLoading(true);
     setPwdErr(null);
-    api.verifyPassword(pwd)
+    runAll(pwd)
       .then(() => {
         setPwdOpen(false);
-        runAll(pwd);
         setPwd("");
       })
       .catch((e) => setPwdErr(String(e)))
@@ -488,7 +487,7 @@ function DetailView({ r }: { r: AlgoResult }) {
   const error = (r.detail as Record<string, unknown>).error;
   return (
     <div className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-paper-100 bg-paper-100 p-2.5">
-      {error && (
+      {error != null && (
         <div className="rounded-lg bg-rose-50 px-2 py-1 text-[10px] text-rose-700">⚠ {String(error)}</div>
       )}
       {entries.map(([k, v]) => (

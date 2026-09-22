@@ -2,22 +2,41 @@
 
 数据源：https://datachart.500.com/{ssq,dlt}/history/newinc/history.php
 需带 UA + Referer 绕过反爬。解析 HTML 表格行得到结构化数据。
+
+兜底：抓取失败时回退到仓库自带的种子数据（backend/app/lottery/seed/seed_*.txt，
+随代码一起发布，所以全新机器在抓取失败时也有可用数据，不会跑不出结果）。
 """
 from __future__ import annotations
 
+import os
 import re
 import json
+from datetime import datetime
 from pathlib import Path
 
 import requests
 
-from app.lottery.config import DATA_DIR, SCRAPE_HEADERS, LOTTERIES
+from app.lottery.config import BASE_DIR, DATA_DIR, SCRAPE_HEADERS, LOTTERIES
 
-SEED_FILE = DATA_DIR / "seed_ssq.txt"
+# 种子数据目录：**随仓库发布**（不在 .gitignore / 部署排除清单里），
+# 用于「抓取失败时的兜底」与「全新机器首次部署」。格式：日期,红1..红N,蓝1..蓝M
+SEED_DIR = BASE_DIR / "seed"
 
-# 各彩种起始期号（YYNNN 格式）与抓取终点
+# 各彩种起始期号（YYNNN 格式）
 START_ISSUE = {"ssq": "03001", "dlt": "07001"}
-END_ISSUE = "27999"
+
+
+def _end_issue() -> str:
+    """抓取终点期号（YYNNN）。
+
+    原先硬编码 "27999"（= 2027 年），2028 年起新数据会静默抓不到——
+    每日跑批仍"成功"但数据冻结。改为按当前年份动态计算（当年 + 1 年），
+    永远不需要再维护。
+    """
+    return f"{(datetime.now().year + 1) % 100:02d}999"
+
+
+_END_ISSUE = _end_issue()
 
 _RED_BLUE_CLASS = {
     "ssq": ("t_cfont2", "t_cfont4"),  # 红6 蓝1
@@ -50,35 +69,45 @@ def _parse_rows(html: str, lottery: str) -> list[dict]:
     return draws
 
 
-def _parse_seed_ssq() -> list[dict]:
-    """仓库自带的双色球历史数据作为兜底（ssq.txt: 日期,红1..红6,蓝）。"""
-    if not SEED_FILE.exists():
+def _parse_seed(lottery: str) -> list[dict]:
+    """仓库自带种子数据（seed/seed_{lottery}.txt: 日期,红1..红N,蓝1..蓝M）。"""
+    seed_file = SEED_DIR / f"seed_{lottery}.txt"
+    if not seed_file.exists():
         return []
+    meta = LOTTERIES[lottery]
+    n_red, n_blue = meta["red_count"], meta["blue_count"]
     draws: list[dict] = []
-    for line in SEED_FILE.read_text(encoding="utf-8").splitlines():
+    year_seq: dict[str, int] = {}   # 每年的占位序号（期号仅用于展示/排序兜底）
+    for line in seed_file.read_text(encoding="utf-8").splitlines():
         line = line.strip()
-        if not line:
+        if not line or line.startswith("#"):
             continue
-        parts = [p for p in line.split(",")]
-        if len(parts) != 8:
+        parts = line.split(",")
+        if len(parts) != 1 + n_red + n_blue:
             continue
         try:
-            date = parts[0]
-            red = [int(x) for x in parts[1:7]]
-            blue = [int(parts[7])]
+            date = parts[0].strip()
+            red = [int(x) for x in parts[1:1 + n_red]]
+            blue = [int(x) for x in parts[1 + n_red:]]
         except ValueError:
             continue
-        issue = date[:4] + f"{len(draws)+1:03d}"  # 占位期号
-        draws.append({"issue": issue, "date": date, "red": red, "blue": blue})
+        year = date[:4]
+        year_seq[year] = year_seq.get(year, 0) + 1
+        draws.append({
+            "issue": f"{year}{year_seq[year]:03d}",   # 占位期号（按年内序号，跨年重置）
+            "date": date,
+            "red": red,
+            "blue": blue,
+        })
     return draws
 
 
 def fetch_lottery(lottery: str, use_seed_fallback: bool = True) -> dict:
-    """抓取指定彩种全量历史，返回标准数据结构。失败时回退到种子数据。"""
+    """抓取指定彩种全量历史，返回标准数据结构。失败时回退到仓库种子数据。"""
     meta = LOTTERIES[lottery]
     url = (
         f"https://datachart.500.com/{lottery}/history/newinc/history.php"
-        f"?start={START_ISSUE[lottery]}&end={END_ISSUE}"
+        f"?start={START_ISSUE[lottery]}&end={_END_ISSUE}"
     )
     draws: list[dict] = []
     try:
@@ -88,9 +117,10 @@ def fetch_lottery(lottery: str, use_seed_fallback: bool = True) -> dict:
     except Exception as exc:  # noqa: BLE001
         print(f"[scraper] {lottery} 抓取失败: {exc}")
 
-    if not draws and use_seed_fallback and lottery == "ssq":
-        draws = _parse_seed_ssq()
-        print(f"[scraper] {lottery} 使用本地种子数据 ({len(draws)} 期)")
+    if not draws and use_seed_fallback:
+        draws = _parse_seed(lottery)
+        if draws:
+            print(f"[scraper] {lottery} 使用仓库种子数据 ({len(draws)} 期)")
 
     # 去重（按期号）+ 按日期升序
     uniq: dict[str, dict] = {}
@@ -115,22 +145,34 @@ def fetch_lottery(lottery: str, use_seed_fallback: bool = True) -> dict:
 
 
 def _now() -> str:
-    from datetime import datetime
-
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def save_lottery(data: dict, path: Path | None = None) -> Path:
+    """原子写入 JSON（临时文件 + os.replace）。
+
+    历史实现直接 write_text 覆盖：写入过程中进程被 kill / 磁盘写满时，
+    会留下半截 JSON，导致 load_lottery 抛异常、全站接口 503，直到下次抓取成功。
+    临时文件与目标同目录，os.replace 在同一文件系统内是原子操作。
+    """
     path = path or (DATA_DIR / f"{data['lottery']}.json")
-    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
     return path
 
 
 def load_lottery(lottery: str) -> dict | None:
+    """读取数据文件；文件缺失或内容损坏（半截 JSON）都返回 None，不抛异常。"""
     path = DATA_DIR / f"{lottery}.json"
     if not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        print(f"[scraper] {lottery} 数据文件损坏，已忽略（可重新抓取）: {path}")
+        return None
 
 
 if __name__ == "__main__":
