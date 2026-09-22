@@ -256,7 +256,11 @@ def saved_algorithms_by_date(lottery: str, run_date: str):
 
 @router.post("/verify-password")
 def verify_password(payload: dict):
-    """校验「运行全部算法」操作密码（后端校验 + 每秒 1 次全局流控）。"""
+    """校验「运行全部算法」操作密码（仅做校验，不触发运行）。
+
+    流控：失败计数 + 递增锁定（`results_store.verify_password`），
+    锁定期返 429。前端已改为直接调 /run-all 一步完成，此接口保留供脚本/调试用。
+    """
     password = str(payload.get("password", ""))
     ok, msg, status = results_store.verify_password(password)
     if status == 429:
