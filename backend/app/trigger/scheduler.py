@@ -6,8 +6,21 @@
 调度永久停摆且无任何 missed 记录。新方案下两个 worker 都跑扫描，抢到租约的才派发，
 持有者进程崩溃后租约自动过期，另一个存活 worker 下轮自动接管，天然自愈。
 
-错过不补发：重启跨过触发点只记 missed（按日幂等，不刷屏）；
-当日已 success 的任务不再触发（重启/换 worker 均安全）。
+补发窗口（2026-09-22 加）：触发点过后 GRACE_MINUTES 分钟内仍然补发，超出窗口才记 missed。
+原因：调度只按 HH:MM 精确比对一次，任何一次漏跳（事件循环抖动、循环任务终止、进程重启）
+都会让当日窗口**永久丢失且不留痕**（missed 原先只在启动首扫时写，页面看着还是「等待触发」）。
+
+心跳自愈（2026-09-22 加）：`_supervisor` 每 20s 巡检循环任务的存活与心跳时间戳，
+任务已结束或心跳停滞超过 STALL_SECONDS 就强制重启，并累计 restarts 计数。
+
+死因可见（2026-09-22 加）：循环任务结束必定留日志（done-callback 打印取消/异常/提前退出），
+`/api/trigger/status` 暴露 alive / last_tick / restarts，journalctl 每 10 分钟一条心跳。
+
+> 2026-09-22 事故复盘：9/21 21:45:01 之后调度循环停止心跳，9/22 06:30 未触发，
+> 且进程存活、时钟正确、机器空闲、无重启、无任何日志。根因是**循环任务终止后无人观察其结局**：
+> 没有 done-callback、没有 await、模块全局强引用让它永不进入 GC，
+> 于是连 asyncio 标准的 "Task exception was never retrieved" 都不会打印 —— 静默停摆。
+> 本版本用「补发窗口 + 看门狗 + done-callback」三重兜底，使这一失效模式不再造成漏触发。
 """
 from __future__ import annotations
 
@@ -23,71 +36,104 @@ import httpx
 from app.trigger import store
 from app.trigger.config import (
     EXTRA_HEADERS,
+    GRACE_MINUTES,
+    HEARTBEAT_LOG_EVERY_TICKS,
     HTTP_TIMEOUT_SECONDS,
     PROBE_MAX_TOKENS,
     PROBE_MESSAGE,
     RETRY_INTERVAL_SECONDS,
     RETRY_TIMES,
+    STALL_SECONDS,
+    SUPERVISOR_INTERVAL_SECONDS,
 )
 
 _loop_task: asyncio.Task | None = None
-_inflight: set[tuple[int, str]] = set()   # (task_id, date) 防同一分钟重复派发
+_supervisor_task: asyncio.Task | None = None
+_fire_tasks: set[asyncio.Task] = set()   # 强引用 fire 任务，避免 fire-and-forget 被 GC 回收
+_inflight: set[tuple[int, str]] = set()  # (task_id, date) 防同一分钟/同窗口重复派发
 _OWNER_ID = uuid.uuid4().hex             # 本进程标识（仅用于租约可视化，不影响正确性）
 _logger = logging.getLogger("uvicorn.error")
 
+# —— 可观测性：心跳与自愈计数（/api/trigger/status 暴露 + journalctl 打点）
+_last_tick_mono: float = 0.0
+_last_tick_wall: str = ""
+_tick_count: int = 0
+_loop_restarts: int = 0
+_started_wall: str = ""
+_stopping: bool = False
 
-def _try_claim_and_dispatch() -> None:
-    """对表：到点且当日未触发的任务，原子抢租约后派发 fire_task（不等待完成）。"""
+
+def _hhmm_minutes(hhmm: str) -> int:
+    """HH:MM → 当日分钟数（用于算迟到多少分钟）。"""
+    hh, mm = hhmm.split(":")
+    return int(hh) * 60 + int(mm)
+
+
+def _tick() -> None:
+    """对表：窗口内补发；超出补发窗口记 missed（幂等）。每分钟调用一次。
+
+    判定顺序（每个启用的任务）：
+      1. 时刻还没到 → 跳过
+      2. 今日已有 success / failed 记录 → 跳过（已成功，或已尝试过失败，不自动反复打）
+      3. 迟到 ≤ GRACE_MINUTES → 抢租约后派发（正常触发 / 补发都走这条路）
+      4. 超出窗口且今日无任何记录 → 记一条 missed（同任务同日最多一条，原子写入）
+    """
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     now_hhmm = now.strftime("%H:%M")
+    now_min = _hhmm_minutes(now_hhmm)
+    fired_at = now.strftime("%Y-%m-%d %H:%M:%S")
+
     for task in store.enabled_tasks_with_key():
-        if task["time"] != now_hhmm:
+        if task["time"] > now_hhmm:
             continue
-        if store.has_record_today(task["id"], date_str, statuses=("success",)):
+        if store.has_record_today(task["id"], date_str, statuses=("success", "failed")):
             continue
+        late = now_min - _hhmm_minutes(task["time"])
+        if late > GRACE_MINUTES:
+            # 超出补发窗口：记 missed，让页面明示「错过」而不是继续显示「等待触发」。
+            # 先读一次避免每分钟都开写事务；写入本身仍是原子幂等（防两 worker 竞态）。
+            if not store.has_record_today(task["id"], date_str, statuses=("missed",)):
+                if store.record_missed_once(
+                    task["id"],
+                    task["name"],
+                    date_str=date_str,
+                    fired_at=fired_at,
+                    error=f"超出补发窗口（迟到 {late} 分钟，窗口 {GRACE_MINUTES} 分钟）未触发，可在页面手动补触发",
+                ):
+                    _logger.warning(
+                        "trigger 错过：%s 计划 %s，迟到 %d 分钟超出补发窗口，已记 missed",
+                        task["name"], task["time"], late,
+                    )
+            continue
+
         key = (task["id"], date_str)
         if key in _inflight:
             continue
-        # 全局原子抢占本分钟派发权：仅一个 worker 抢到（rowcount==1）才真正派发
+        # 全局原子抢占本窗口派发权：仅一个 worker 抢到（rowcount==1）才真正派发
         if not store.try_claim(task["id"], date_str, _OWNER_ID):
             continue
         _inflight.add(key)
-        asyncio.get_running_loop().create_task(_fire_and_release(task, date_str))
+        loop = asyncio.get_running_loop()
+        fire = loop.create_task(_fire_and_release(task, date_str))
+        _fire_tasks.add(fire)
+        fire.add_done_callback(_fire_tasks.discard)
+        if late:
+            _logger.info(
+                "trigger 补发：%s 计划 %s，迟到 %d 分钟（窗口 %d 分钟）",
+                task["name"], task["time"], late, GRACE_MINUTES,
+            )
 
 
 async def _fire_and_release(task: dict[str, Any], date_str: str) -> None:
     try:
         ok = await fire_task(task)
         if not ok:
-            # 派发失败：释放租约，允许下一分钟其他 worker 重试（而非卡死当日）
+            # 派发失败：释放租约，允许后续 tick 其他 worker 重试
+            # （工失败会写 failed 历史，后续 tick 的 has_record_today 会挡住重复派发）
             store.release_claim(task["id"], date_str)
     finally:
         _inflight.discard((task["id"], date_str))
-
-
-def _mark_missed_once() -> None:
-    """首轮扫描：启用任务今天已过触发点且无任何记录 → 记 missed（按日幂等）。
-
-    每个 worker 进程启动都会跑一次，所以判重必须原子：交给
-    store.record_missed_once（单条 INSERT ... WHERE NOT EXISTS）完成，
-    不能在这里「先查后写」——两个 worker 并发首轮扫描会各写一条重复 missed。
-    """
-    now = datetime.now()
-    date_str = now.strftime("%Y-%m-%d")
-    now_hhmm = now.strftime("%H:%M")
-    for task in store.list_tasks():
-        if not task["enabled"] or task["time"] >= now_hhmm:
-            continue
-        if store.has_record_today(task["id"], date_str, statuses=("success", "failed")):
-            continue
-        store.record_missed_once(
-            task["id"],
-            task["name"],
-            date_str=date_str,
-            fired_at=now.strftime("%Y-%m-%d %H:%M:%S"),
-            error="进程重启/停机错过当日触发点，可在页面手动补触发",
-        )
 
 
 def _seconds_to_next_minute() -> float:
@@ -97,19 +143,25 @@ def _seconds_to_next_minute() -> float:
 
 
 async def _loop() -> None:
+    """调度主循环：每分钟 tick 一次。任何单轮异常都不终止循环。"""
+    global _last_tick_mono, _last_tick_wall, _tick_count
     last_cleanup_date = ""
-    aligned = False
+    _logger.info("trigger 调度循环启动（补发窗口 %d 分钟，worker %s）", GRACE_MINUTES, _OWNER_ID[:8])
     while True:
         try:
-            if not aligned:
-                # 启动后先对齐到整分再首轮扫描，避免启动瞬间半分钟内的奇怪状态
-                aligned = True
-                _mark_missed_once()
-            _try_claim_and_dispatch()
-            today = datetime.now().strftime("%Y-%m-%d")
+            _tick()
+            _tick_count += 1
+            _last_tick_mono = time.monotonic()
+            _last_tick_wall = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            today = _last_tick_wall[:10]
             if today != last_cleanup_date:
                 store.cleanup_history()
                 last_cleanup_date = today
+            if _tick_count % HEARTBEAT_LOG_EVERY_TICKS == 0:
+                _logger.info(
+                    "trigger 调度心跳：%s（第 %d 次 tick，循环重启 %d 次）",
+                    _last_tick_wall, _tick_count, _loop_restarts,
+                )
         except Exception:
             # 单轮异常不终止循环；打出日志便于 journalctl 排查（不含敏感数据）
             _logger.exception("trigger 调度单轮异常")
@@ -122,29 +174,101 @@ async def _loop() -> None:
             _logger.exception("trigger 调度 sleep 异常")
 
 
+def _on_loop_done(task: asyncio.Task) -> None:
+    """循环任务结束的如实留痕 —— 以前这里静默无声，是排查不到根因的关键。"""
+    if _stopping:
+        return
+    if task.cancelled():
+        _logger.error("trigger 调度循环被取消（预期外，看门狗将重启）")
+        return
+    exc = task.exception()
+    if exc is not None:
+        _logger.error("trigger 调度循环异常终止：%r（看门狗将重启）", exc, exc_info=exc)
+    else:
+        _logger.error("trigger 调度循环提前退出（无异常，看门狗将重启）")
+
+
+async def _supervisor() -> None:
+    """看门狗：循环任务结束或心跳停滞 → 强制重启（自愈）；顺手记录重启次数。"""
+    global _loop_task, _loop_restarts, _last_tick_mono
+    while True:
+        try:
+            await asyncio.sleep(SUPERVISOR_INTERVAL_SECONDS)
+            dead = _loop_task is None or _loop_task.done()
+            stalled = bool(_last_tick_mono) and (time.monotonic() - _last_tick_mono) > STALL_SECONDS
+            if not (dead or stalled):
+                continue
+            reason = "任务已结束" if dead else f"心跳停滞 {round(time.monotonic() - _last_tick_mono)}s"
+            _loop_restarts += 1
+            _logger.error(
+                "trigger 调度循环失活（%s），看门狗第 %d 次重启", reason, _loop_restarts
+            )
+            old = _loop_task
+            if old is not None and not old.done():
+                old.cancel()
+                try:
+                    await old
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
+            _last_tick_mono = 0.0  # 清零，避免重启瞬间又被判定停滞
+            _loop_task = asyncio.get_running_loop().create_task(_loop())
+            _loop_task.add_done_callback(_on_loop_done)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _logger.exception("trigger 看门狗巡检异常")
+
+
 def start() -> None:
-    """lifespan 启动时调用：拉起调度循环（幂等）。
+    """lifespan 启动时调用：拉起调度循环 + 看门狗（幂等）。
 
     每个 worker 进程都会跑自己的循环；派发权由 SQLite 租约保证全局唯一，
-    故任意存活 worker 都能完成派发，单 worker 循环异常不影响整体可用性。
+    故任意存活 worker 都能完成派发，单 worker 循环异常由看门狗自动拉起。
     """
-    global _loop_task
+    global _loop_task, _supervisor_task, _started_wall, _stopping
+    store.init()
     if _loop_task is None or _loop_task.done():
-        store.init()
         _loop_task = asyncio.get_running_loop().create_task(_loop())
+        _loop_task.add_done_callback(_on_loop_done)
+    if _supervisor_task is None or _supervisor_task.done():
+        _supervisor_task = asyncio.get_running_loop().create_task(_supervisor())
+    _stopping = False
+    _started_wall = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 async def stop() -> None:
-    global _loop_task
-    if _loop_task is not None:
-        _loop_task.cancel()
-        try:
-            await _loop_task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            pass
+    global _loop_task, _supervisor_task, _stopping
+    _stopping = True
+    for t in (_supervisor_task, _loop_task):
+        if t is not None:
+            t.cancel()
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+    _supervisor_task = None
     _loop_task = None
+
+
+def status() -> dict[str, Any]:
+    """调度器健康快照（/api/trigger/status 暴露，前端/排查都能看）。"""
+    alive = _loop_task is not None and not _loop_task.done()
+    age = round(time.monotonic() - _last_tick_mono, 1) if _last_tick_mono else None
+    return {
+        "alive": alive,
+        "supervisor_alive": _supervisor_task is not None and not _supervisor_task.done(),
+        "last_tick": _last_tick_wall or None,
+        "tick_age_seconds": age,
+        "ticks": _tick_count,
+        "restarts": _loop_restarts,
+        "grace_minutes": GRACE_MINUTES,
+        "started_at": _started_wall or None,
+        "owner": _OWNER_ID[:8],
+    }
 
 
 async def _do_request(task: dict[str, Any]) -> tuple[bool, int | None, str]:

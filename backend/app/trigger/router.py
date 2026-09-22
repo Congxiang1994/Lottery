@@ -103,6 +103,9 @@ def list_tasks(trigger_session: str | None = Cookie(default=None)):
     now_hhmm = now.strftime("%H:%M")
     for t in tasks:
         t["fired_today"] = has_record_today(t["id"], today, statuses=("success",))
+        # 失败/错过也要让列表能显示出来（否则调度失败时列表仍显示「等待触发」，看不出问题）
+        t["failed_today"] = has_record_today(t["id"], today, statuses=("failed",))
+        t["missed_today"] = has_record_today(t["id"], today, statuses=("missed",))
         # 下次触发：今天还没到点 → 今天该时刻；已过 → 明天
         if t["time"] > now_hhmm:
             t["next_fire"] = f"{today} {t['time']}"
@@ -172,7 +175,7 @@ def history(limit: int = 100, trigger_session: str | None = Cookie(default=None)
 
 @router.get("/status")
 def status(trigger_session: str | None = Cookie(default=None)):
-    """今日统计 + 下次触发时刻。"""
+    """今日统计 + 下次触发时刻 + 调度器健康快照。"""
     _require_session(trigger_session)
     tasks = store.list_tasks()
     enabled = [t for t in tasks if t["enabled"]]
@@ -192,6 +195,8 @@ def status(trigger_session: str | None = Cookie(default=None)):
         "fired_today": len(fired),
         "next_fire": next_fire,
         "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        # 调度器健康：alive / last_tick / restarts（看门狗重启次数）—— 静默停摆不再无感
+        "scheduler": scheduler.status(),
     }
 
 

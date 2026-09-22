@@ -168,8 +168,17 @@ def delete_task(task_id: int) -> bool:
 
 
 def enabled_tasks_with_key() -> list[dict[str, Any]]:
-    """调度器专用：启用的任务（含明文 key）。"""
-    return list_tasks(with_key=True)
+    """调度器专用：**仅启用**的任务（含明文 key）。
+
+    2026-09-22 修 bug：此前直接 `list_tasks(with_key=True)` 返回全部任务（含停用的），
+    调度器又不检查 enabled 字段 → 页面上「停用」的任务到点照样会触发。
+    """
+    with get_conn(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT * FROM trigger_tasks WHERE enabled=1 ORDER BY time_hhmm, id"
+        ).fetchall()
+    return [_row_to_task(r, unmask=True) for r in rows]
 
 
 # ------------------------------------------------------------ 执行历史
@@ -293,7 +302,8 @@ def cleanup_history() -> None:
 
 # ------------------------------------------------------------ 派发租约（多 worker 防双发）
 
-LEASE_SECONDS = 120  # 租约时长：持有者进程崩溃后，其他 worker 最多等这么久即接管
+LEASE_SECONDS = 300  # 租约时长：必须覆盖一次派发的最长耗时（重试 2×60s + 单次超时 30s + 余量），
+                     # 否则提前过期会让另一个 worker 在同一窗口内重复派发；持有者崩溃后最多等这么久即接管
 
 
 def try_claim(task_id: int, date_str: str, owner: str) -> bool:

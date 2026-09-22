@@ -103,12 +103,41 @@ function PasswordGate({ onPass }: { onPass: () => void }) {
 
 /* ---------------- 状态卡 ---------------- */
 
+/** 任务今日状态徽标：成功 / 失败 / 错过 都要显示出来，不能一律「等待触发」。 */
+function todayBadge(t: TriggerTask) {
+  if (t.fired_today) return { label: "今日已触发", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" };
+  if (t.failed_today) return { label: "今日失败", cls: "bg-rose-50 text-rose-700", dot: "bg-rose-500" };
+  if (t.missed_today) return { label: "今日错过", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" };
+  return { label: "等待触发", cls: "bg-blue-50 text-blue-700", dot: "animate-pulse bg-blue-500" };
+}
+
+/** 调度器健康：心跳超 3 分钟视为失活（看门狗会在 20s 内拉起）。 */
+function schedulerHealth(status: TriggerStatus | null) {
+  const sc = status?.scheduler;
+  if (!sc) return { healthy: false, text: "调度状态未知" };
+  const age = sc.tick_age_seconds ?? 9999;
+  const heartbeat = sc.last_tick ? sc.last_tick.slice(11) : "—";
+  if (sc.alive && age < 180) {
+    return { healthy: true, text: `调度心跳 ${heartbeat}${sc.restarts ? ` · 自愈 ${sc.restarts} 次` : ""}` };
+  }
+  return {
+    healthy: false,
+    text: sc.alive ? `⚠ 调度心跳滞后 ${Math.round(age)}s，看门狗自愈中` : "⚠ 调度循环已停，看门狗自愈中",
+  };
+}
+
 function StatusCards({ status }: { status: TriggerStatus | null }) {
   if (!status) return null;
+  const sc = schedulerHealth(status);
   const cards = [
-    { label: "任务总数", value: `${status.tasks_enabled}/${status.tasks_total}`, sub: "启用/全部" },
-    { label: "今日已触发", value: `${status.fired_today}/${status.tasks_enabled}`, sub: "成功点亮窗口" },
-    { label: "下次触发", value: status.next_fire ? formatDateTime(status.next_fire) : "—", sub: "服务器时间对表" },
+    { label: "任务总数", value: `${status.tasks_enabled}/${status.tasks_total}`, sub: "启用/全部", subCls: "text-paper-500" },
+    { label: "今日已触发", value: `${status.fired_today}/${status.tasks_enabled}`, sub: "成功点亮窗口", subCls: "text-paper-500" },
+    {
+      label: "下次触发",
+      value: status.next_fire ? formatDateTime(status.next_fire) : "—",
+      sub: sc.text,
+      subCls: sc.healthy ? "text-paper-500" : "font-medium text-rose-600",
+    },
   ];
   return (
     <div className="grid gap-3 sm:grid-cols-3">
@@ -116,7 +145,7 @@ function StatusCards({ status }: { status: TriggerStatus | null }) {
         <div key={c.label} className="glass rounded-2xl p-4 shadow-card">
           <div className="text-[11px] font-medium text-paper-700">{c.label}</div>
           <div className="mt-1 text-xl font-extrabold tabular-nums text-paper-900">{c.value}</div>
-          <div className="mt-0.5 text-[10px] text-paper-500">{c.sub}</div>
+          <div className={`mt-0.5 text-[10px] ${c.subCls}`}>{c.sub}</div>
         </div>
       ))}
     </div>
@@ -365,10 +394,15 @@ function TaskTable({ tasks, reload, onEdit }: {
                   <td className="px-4 py-3 font-mono text-xs text-paper-700">{t.api_key_masked}</td>
                   <td className="px-4 py-3">
                     {t.enabled ? (
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${t.fired_today ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${t.fired_today ? "bg-emerald-500" : "animate-pulse bg-blue-500"}`} />
-                        {t.fired_today ? "今日已触发" : "等待触发"}
-                      </span>
+                      (() => {
+                        const b = todayBadge(t);
+                        return (
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${b.cls}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${b.dot}`} />
+                            {b.label}
+                          </span>
+                        );
+                      })()
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full bg-paper-100 px-2 py-0.5 text-[10px] text-paper-600">
                         已停用

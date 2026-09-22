@@ -30,6 +30,8 @@ export interface TriggerTask {
   note: string;
   api_key_masked: string;
   fired_today: boolean;
+  failed_today: boolean;
+  missed_today: boolean;
   next_fire: string;
   created_at: string;
   updated_at: string;
@@ -48,12 +50,25 @@ export interface HistoryRow {
   error: string;
 }
 
+export interface SchedulerStatus {
+  alive: boolean;
+  supervisor_alive: boolean;
+  last_tick: string | null;
+  tick_age_seconds: number | null;
+  ticks: number;
+  restarts: number;
+  grace_minutes: number;
+  started_at: string | null;
+  owner: string;
+}
+
 export interface TriggerStatus {
   tasks_total: number;
   tasks_enabled: number;
   fired_today: number;
   next_fire: string | null;
   server_time: string;
+  scheduler: SchedulerStatus;
 }
 
 export const triggerApi = {
