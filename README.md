@@ -41,6 +41,21 @@
 
 📖 实现逻辑与技术结构见 **[README_babysong.md](./README_babysong.md)**
 
+### 📖 每日儿童睡前故事（`/story`）· 在线产品
+
+**按日期倒序展示的睡前故事页**：当天故事置顶高亮（「今晚的故事」），其下按 `story_date` 倒序铺开，
+点开即全文弹窗（正文 17px / 行高 1.9 / 保留空行），支持**整页沉浸的夜间模式**（`localStorage` 记忆）。
+
+配套一个**密码保护的私有管理页**（`/story-admin`，密码同全站操作密码）：
+
+- **故事管理**：增删改查、发布 ↔ 草稿、行内预览、来源溯源（`manual` / `api:<密钥名>`）
+- **API 管理**：密钥增删改查（明文可查看复制、可启停、可重置计数）、调用次数配额（今日/累计）、
+  **接口定义表 + curl/Python 调用样例**（自动带入本站域名与密钥，一键复制）、调用日志
+
+对外提供 `X-API-Key` 鉴权的 REST 接口（`/api/story/v1/*`），供脚本 / 定时任务直接写入故事。
+
+📖 实现逻辑与技术结构见 **[README_story.md](./README_story.md)**
+
 ### ⚡ API 用量触发器（`/trigger`）· 在线产品（私有）
 
 **密码保护的私有定时任务**：到点由服务器向大模型 API（OpenAI 兼容格式）发送一次最小请求
@@ -88,6 +103,9 @@
 │  │    └─ 视频列表（扫描目录）  │
 │  ├─ babysong 域 (/api/babysong)│
 │  │    └─ 儿歌列表（读 catalog）│
+│  ├─ story 域  (/api/story)    │
+│  │    ├─ 公开阅读 + 管理会话   │
+│  │    └─ 对外 API（X-API-Key） │
 │  ├─ trigger 域 (/api/trigger) │
 │  │    └─ API 用量触发器      │
 │  └─ SQLite: /data/lottery/    │
@@ -125,6 +143,7 @@
 │   │   ├── lottery/         # 彩票数据服务（/api/v1，自包含功能域）
 │   │   ├── hanzi/           # 汉字课视频列表（/api/hanzi，自包含功能域）
 │   │   ├── babysong/        # 儿歌列表（/api/babysong，自包含功能域，读 catalog.json）
+│   │   ├── story/           # 睡前故事（/api/story，故事库 + API 密钥 + 调用日志）
 │   │   └── trigger/         # API 用量触发器（/api/trigger，密码保护定时任务）
 │   ├── scripts/             # 爬取 / 定时跑批脚本
 │   └── requirements.txt
@@ -134,6 +153,7 @@
 │   ├── src/lottery/         # 彩票站（api/types/context/components/pages）
 │   ├── src/hanzi/           # 汉字课点播页（HanziPlayer.tsx）
 │   ├── src/babysong/        # 儿歌列表页（BabySong.tsx）
+│   ├── src/story/           # 睡前故事（Story.tsx 公开页 / StoryAdmin.tsx 管理页 / ApiPanel.tsx API 管理）
 │   ├── src/trigger/         # API 用量触发器（api.ts + Trigger.tsx）
 │   └── public/song-covers/  # 儿歌封面（518 张 jpg，随构建产物 dist/song-covers/ 由 Nginx 静态服务）
 │   └── dist/                # 生产构建产物（Nginx 托管）
@@ -157,6 +177,7 @@ README 分两层：**根 README 讲「全站」**，**分册讲「各模块实�
 | [README_lottery.md](./README_lottery.md) | 彩票模块：算法引擎设计、数据流、定时跑批、防并发设计、API 全表 |
 | [README_hanzi.md](./README_hanzi.md) | 汉字课点播模块：列表接口、Nginx 视频静态服务、伪全屏播放器设计、安全要点 |
 | [README_babysong.md](./README_babysong.md) | 儿歌列表模块：518 首元数据、封面本地托管、前端进度管理（localStorage）、静态资源避坑 |
+| [README_story.md](./README_story.md) | 睡前故事模块：三条鉴权通道、故事/密钥/日志三表、原子配额计数、对外 API 全表、验收清单 |
 | [README_trigger.md](./README_trigger.md) | API 用量触发器：需求定稿、密码会话、调度与防双发设计、API 全表、验收清单 |
 | [tools/xiaoe-downloader/README.md](./tools/xiaoe-downloader/README.md) | 小鹅通下载器：接口链路、踩坑记录、使用步骤 |
 

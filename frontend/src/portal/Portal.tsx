@@ -9,6 +9,8 @@ import {
   Music,
   DownloadCloud,
   Lock,
+  BookOpen,
+  BookMarked,
   type LucideIcon,
 } from "lucide-react";
 
@@ -44,6 +46,25 @@ const APPS: {
     tags: ["儿歌", "YouTube"],
     href: "/babysong",
     status: "live",
+  },
+  {
+    id: "story",
+    title: "每日儿童睡前故事",
+    desc: "每晚一篇睡前故事，按日期倒序铺开，点开即可全文阅读，支持夜间模式。",
+    icon: BookOpen,
+    tags: ["睡前故事", "儿童阅读"],
+    href: "/story",
+    status: "live",
+  },
+  {
+    id: "story-admin",
+    title: "睡前故事管理",
+    desc: "私有工具：故事的增删改查与发布管理，并可签发 API 密钥，供外部程序直接写入故事。",
+    icon: BookMarked,
+    tags: ["内容管理", "私有"],
+    href: "/story-admin",
+    status: "live",
+    isPrivate: true,
   },
   {
     id: "lottery",

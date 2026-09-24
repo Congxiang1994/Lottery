@@ -11,6 +11,8 @@ import HanziPlayer from "./hanzi/HanziPlayer";
 import Trigger from "./trigger/Trigger";
 import BabySong from "./babysong/BabySong";
 import BabySongAdmin from "./babysong/BabySongAdmin";
+import StoryPage from "./story/Story";
+import StoryAdmin from "./story/StoryAdmin";
 import { api } from "./lottery/api";
 import { LotteryInfo } from "./lottery/types";
 import { LotteryCtx } from "./lottery/context";
@@ -43,6 +45,8 @@ export default function App() {
             <Route path="/trigger" element={<Trigger />} />
             <Route path="/babysong" element={<BabySong />} />
             <Route path="/babysong-admin" element={<BabySongAdmin />} />
+            <Route path="/story" element={<StoryPage />} />
+            <Route path="/story-admin" element={<StoryAdmin />} />
             {/* 兼容旧链接：/ 原为彩票首页，现统一指向聚合门户 */}
             <Route path="*" element={<Portal />} />
           </Routes>

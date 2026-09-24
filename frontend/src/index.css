@@ -96,3 +96,32 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ---------- 睡前故事：夜间模式（整页沉浸） ----------
+   .story-night 只在该页面开启夜间模式时挂到 <html> 上，卸载/关闭即移除，
+   因此下面这些覆盖规则不会影响其他页面。 */
+.story-night .bg-aurora {
+  background: #17120f;
+}
+.story-night header {
+  background: rgba(23, 18, 15, 0.9);
+  border-color: #2c2320;
+}
+.story-night header a,
+.story-night header button {
+  color: #b5a18c;
+}
+/* 导航里的累计访问徽标（浅底胶囊，在暗色导航上会突兀） */
+.story-night header span[title^="本站累计被访问"] {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: #2c2320;
+  color: #b5a18c;
+}
+.story-night footer {
+  background: rgba(27, 21, 18, 0.9);
+  border-color: #2c2320;
+}
+.story-night footer,
+.story-night footer * {
+  color: #7d6c5b;
+}
