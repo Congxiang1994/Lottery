@@ -98,30 +98,136 @@ body {
 }
 
 /* ---------- 睡前故事：夜间模式（整页沉浸） ----------
-   .story-night 只在该页面开启夜间模式时挂到 <html> 上，卸载/关闭即移除，
-   因此下面这些覆盖规则不会影响其他页面。 */
-.story-night .bg-aurora {
-  background: #17120f;
+   已升级为全站全局日/夜模式：见下方 .site-night 段。
+   .site-night 挂在 <html> 上，由 useTheme.ts 切换、index.html 内联脚本防闪烁。
+   睡前故事页的沉浸暖黑配色直接复用这套全局映射。 */
+
+/* ---------- 全局夜间模式（暖黑，与品牌米白/金色一脉相承） ---------- */
+.site-night {
+  color-scheme: dark;
 }
-.story-night header {
+.site-night body {
+  background: #17120f;
+  color: #e8ddd0;
+}
+.site-night .bg-aurora {
+  background:
+    radial-gradient(900px circle at 12% -8%, rgba(226, 59, 82, 0.10), transparent 45%),
+    radial-gradient(800px circle at 92% 0%, rgba(59, 130, 246, 0.08), transparent 45%),
+    radial-gradient(700px circle at 50% 120%, rgba(232, 195, 122, 0.07), transparent 50%),
+    #17120f;
+}
+.site-night .glass {
+  background: linear-gradient(180deg, rgba(34, 27, 23, 0.85), rgba(30, 24, 21, 0.72));
+  border-color: rgba(90, 70, 54, 0.55);
+}
+.site-night ::-webkit-scrollbar-thumb {
+  background: rgba(181, 161, 140, 0.22);
+}
+.site-night ::-webkit-scrollbar-thumb:hover {
+  background: rgba(181, 161, 140, 0.38);
+}
+/* 选中文本 */
+.site-night ::selection {
+  background: rgba(232, 195, 122, 0.3);
+}
+
+/* paper-* 高频类的暗色映射（方案 A：CSS 覆盖，组件无需逐个加 dark: 变体）。
+   色阶设计：bg 面板 = 暖黑阶梯（比 body 略浅），文字 = 米白阶梯，边框 = 暖棕。 */
+.site-night .text-paper-900 { color: #f2e9dc; }
+.site-night .text-paper-800 { color: #ddd0c0; }
+.site-night .text-paper-700 { color: #b5a18c; }
+.site-night .text-paper-600 { color: #9c8a77; }
+.site-night .text-paper-500 { color: #8a7866; }
+.site-night .text-paper-400 { color: #6e5f51; }
+.site-night .text-paper-300 { color: #5a4d41; }
+
+.site-night .bg-paper-50 { background-color: #1e1815; }
+.site-night .bg-paper-100 { background-color: #221b17; }
+.site-night .bg-paper-200 { background-color: #2c2320; }
+.site-night .bg-paper-900 { background-color: #e8ddd0; }
+
+.site-night .border-paper-100 { border-color: #2c2320; }
+.site-night .border-paper-200 { border-color: #3a2f28; }
+.site-night .border-paper-300 { border-color: #4a3c33; }
+
+/* 半透明面板与纯白面板：bg-white 与 bg-white/xx（导航徽标、tab 选中、弹窗等） */
+.site-night .bg-white\/50 {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+.site-night .bg-white\/60,
+.site-night .bg-white\/70,
+.site-night .bg-white\/80 {
+  background-color: rgba(255, 255, 255, 0.07);
+}
+/* 纯白 bg-white 多为「浅色面板上的选中 tab / 卡片」：暗色下映射为浅一档的暖面板，
+   文字由 .text-paper-900 映射保证可读。hover:/focus: 变体（输入框聚焦、按钮悬停）一并覆盖 */
+.site-night .bg-white,
+.site-night .hover\:bg-white:hover,
+.site-night .focus\:bg-white:focus {
+  background-color: #2c2320;
+}
+/* text-white 是彩色按钮（品牌红/金底）上的文字，暗色下保持不变 */
+
+/* 渐变文字在暗底下提亮 */
+.site-night .gradient-text {
+  background-image: linear-gradient(100deg, #f27a5e, #f5a08a 40%, #e8c37a);
+}
+.site-night .gradient-text-blue {
+  background-image: linear-gradient(100deg, #38bdf8, #6b8afd 60%, #a5b4fc);
+}
+
+/* 骨架屏 shimmer */
+.site-night .shimmer {
+  background: linear-gradient(90deg, #221b17 25%, #2c2320 37%, #221b17 63%);
+  background-size: 400% 100%;
+}
+
+/* 卡片 hover 阴影在暗底上收敛 */
+.site-night .card-hover:hover {
+  border-color: rgba(232, 195, 122, 0.4);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.55);
+}
+
+/* 导航 / 页脚（沿用原故事页夜间配方） */
+.site-night header {
   background: rgba(23, 18, 15, 0.9);
   border-color: #2c2320;
 }
-.story-night header a,
-.story-night header button {
+.site-night header a,
+.site-night header button {
   color: #b5a18c;
 }
-/* 导航里的累计访问徽标（浅底胶囊，在暗色导航上会突兀） */
-.story-night header span[title^="本站累计被访问"] {
+.site-night header .text-paper-900 {
+  color: #f2e9dc;
+}
+.site-night footer {
+  background: rgba(27, 21, 18, 0.9);
+  border-color: #2c2320;
+}
+.site-night footer,
+.site-night footer * {
+  color: #7d6c5b;
+}
+/* 导航里的累计访问徽标 */
+.site-night header span[title^="本站累计被访问"] {
   background: rgba(255, 255, 255, 0.08);
   border-color: #2c2320;
   color: #b5a18c;
 }
-.story-night footer {
-  background: rgba(27, 21, 18, 0.9);
-  border-color: #2c2320;
+
+/* 理性购彩声明（amber 提示块）暗色化 */
+.site-night .bg-amber-50 {
+  background-color: rgba(201, 134, 0, 0.12);
 }
-.story-night footer,
-.story-night footer * {
-  color: #7d6c5b;
+.site-night .text-amber-700,
+.site-night .text-amber-800 {
+  color: #d9b36a;
 }
+.site-night .text-amber-600 {
+  color: #e8c37a;
+}
+.site-night .bg-amber-100 {
+  background-color: rgba(201, 134, 0, 0.18);
+}
+

@@ -1,6 +1,7 @@
 import { NavLink, Link, useLocation } from "react-router-dom";
-import { Dices, LayoutDashboard, History, Sparkles, Layers, Github, Eye } from "lucide-react";
+import { Dices, LayoutDashboard, History, Sparkles, Layers, Github, Eye, Moon, Sun } from "lucide-react";
 import { useVisitCount } from "./useVisitCount";
+import { useTheme } from "./useTheme";
 
 const GITHUB_URL = "https://github.com/Congxiang1994/Lottery";
 
@@ -28,6 +29,7 @@ function useNavLinks() {
 export default function Nav() {
   const links = useNavLinks();
   const visits = useVisitCount();
+  const { night, toggle } = useTheme();
   return (
     <header className="sticky top-0 z-30 border-b border-paper-100 bg-paper-100/75 backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
@@ -78,6 +80,14 @@ export default function Nav() {
             <Github size={15} className="transition group-hover:scale-110" />
             <span className="hidden sm:inline">Star</span>
           </a>
+
+          <button
+            onClick={toggle}
+            title={night ? "切换到日间模式" : "切换到夜间模式"}
+            className="ml-1 grid h-9 w-9 place-items-center rounded-lg border border-paper-200 text-paper-700 transition hover:border-brand-gold/50 hover:bg-brand-gold/10 hover:text-paper-900"
+          >
+            {night ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
         </nav>
       </div>
     </header>

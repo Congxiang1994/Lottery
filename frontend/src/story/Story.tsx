@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -7,9 +7,7 @@ import {
   ChevronRight,
   Copy,
   Loader2,
-  Moon,
   Pause,
-  Sun,
   Volume2,
   X,
 } from "lucide-react";
@@ -21,7 +19,8 @@ import { Story, storyApi } from "./api";
  * 列表卡：左侧金色日期竖块做版式锚点，标签按内容上淡色。
  * 详情弹窗：书页化排版 —— 居中刊头 + 段落首行缩进 + 「睡吧」结尾落点句，
  *   底栏支持 上一篇/下一篇、阅读字号（localStorage 记忆）。
- * 睡前阅读优先：正文 15.5/17/19px 三档，行高 2.05，暖米底，夜间模式（localStorage 记忆）。
+ * 睡前阅读优先：正文 15.5/17/19px 三档，行高 2.05，暖米底。
+ * 夜间模式跟随全站全局开关（Nav 右上角，useTheme），页内不再单独切换。
  */
 
 const WEEK = "日一二三四五六";
@@ -234,14 +233,30 @@ function MoonDecor({ night }: { night: boolean }) {
   );
 }
 
+/** 全站日/夜状态：<html> 有 .site-night 即夜间（由 Nav 右上角全局开关控制）。
+ *  useLayoutEffect 在首帧渲染前读取，避免夜色下刷新时正文先闪一帧日间配色。 */
+function useNightMode(): boolean {
+  const read = () =>
+    typeof document !== "undefined" &&
+    document.documentElement.classList.contains("site-night");
+  const [night, setNight] = useState(read);
+  useLayoutEffect(() => {
+    setNight(read());
+    // 全局开关在 Nav 里，切主题时 <html> class 变化但不会触发本组件重渲染；
+    // 这里用轻量观察：离开页面无须清理（class 由全局管理）。
+    const ob = new MutationObserver(() => setNight(read()));
+    ob.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => ob.disconnect();
+  }, []);
+  return night;
+}
+
 export default function StoryPage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<Story | null>(null);
-  const [night, setNight] = useState(
-    () => localStorage.getItem("story_night") === "1",
-  );
+  const night = useNightMode();
   const [font, setFont] = useState<FontKey>(() => {
     const v = localStorage.getItem(FONT_KEY);
     return v === "s" || v === "l" ? v : "m";
@@ -254,14 +269,6 @@ export default function StoryPage() {
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("story_night", night ? "1" : "0");
-    // 夜间模式整页沉浸：给 <html> 挂 class，样式见 index.css 的 .story-night 段。
-    // 离开页面/关掉夜间即移除，不会影响其他页面。
-    document.documentElement.classList.toggle("story-night", night);
-    return () => document.documentElement.classList.remove("story-night");
-  }, [night]);
 
   useEffect(() => {
     localStorage.setItem(FONT_KEY, font);
@@ -307,31 +314,18 @@ export default function StoryPage() {
     >
       <div className="mx-auto max-w-3xl">
         {/* 页头 */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1
-              className={`flex items-center gap-2 text-3xl font-extrabold tracking-tight ${strong}`}
-            >
-              <BookOpen size={26} className="text-brand-gold" />
-              睡前故事
-            </h1>
-            <p className={`mt-1.5 text-sm ${dim}`}>
-              {stories.length > 0
-                ? `共 ${stories.length} 篇 · 每晚一篇，读完就睡`
-                : "每晚一篇，读完就睡"}
-            </p>
-          </div>
-          <button
-            onClick={() => setNight((v) => !v)}
-            title={night ? "切换到日间模式" : "切换到夜间模式"}
-            className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl border transition ${
-              night
-                ? "border-[#3a2f28] bg-[#221b17] text-[#e8c37a] hover:bg-[#2a221d]"
-                : "border-paper-200 bg-paper-100 text-paper-800 hover:bg-paper-200"
-            }`}
+        <div>
+          <h1
+            className={`flex items-center gap-2 text-3xl font-extrabold tracking-tight ${strong}`}
           >
-            {night ? <Sun size={15} /> : <Moon size={15} />}
-          </button>
+            <BookOpen size={26} className="text-brand-gold" />
+            睡前故事
+          </h1>
+          <p className={`mt-1.5 text-sm ${dim}`}>
+            {stories.length > 0
+              ? `共 ${stories.length} 篇 · 每晚一篇，读完就睡`
+              : "每晚一篇，读完就睡"}
+          </p>
         </div>
 
         {/* 状态 */}
