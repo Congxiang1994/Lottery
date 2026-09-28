@@ -111,7 +111,7 @@ export default function PredictionMatrix({
   redLabel: string;
   blueLabel: string;
 }) {
-  const [onlyWin, setOnlyWin] = useState(false);
+  const [onlyWin, setOnlyWin] = useState(true);
   const [cat, setCat] = useState<string>("all");
 
   // 分类选项：仅从数据中出现过的分类取，保证切换有意义
@@ -149,7 +149,7 @@ export default function PredictionMatrix({
               : "border-paper-200 bg-paper-100 text-paper-700 hover:bg-paper-200"
           }`}
         >
-          只看中奖列
+          只看中奖
         </button>
         <div className="flex flex-wrap gap-1">
           <button
