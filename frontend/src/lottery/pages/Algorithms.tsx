@@ -206,9 +206,9 @@ export default function Algorithms() {
 
       {/* 密码弹框 */}
       {pwdOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={() => { if (!pwdLoading) setPwdOpen(false); }}>
+        <div className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={() => { if (!pwdLoading) setPwdOpen(false); }}>
           <div
-            className="glass w-full max-w-sm rounded-3xl p-6 shadow-card"
+            className="anim-panel glass w-full max-w-sm rounded-3xl p-6 shadow-card"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
@@ -242,7 +242,7 @@ export default function Algorithms() {
               <button
                 onClick={submitPassword}
                 disabled={pwdLoading || !pwd}
-                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
               >
                 {pwdLoading ? <><Loader2 size={14} className="animate-spin" /> 校验中…</> : "确认运行"}
               </button>

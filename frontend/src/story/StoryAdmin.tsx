@@ -72,7 +72,7 @@ function PasswordGate({ onPass }: { onPass: () => void }) {
         <button
           onClick={submit}
           disabled={loading || !pwd}
-          className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+          className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2.5 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
         >
           {loading ? (
             <>
@@ -130,11 +130,11 @@ function ConfirmModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+      className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
       onClick={onCancel}
     >
       <div
-        className="glass w-full max-w-xs rounded-3xl p-6 shadow-card"
+        className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-base font-bold text-paper-900">{title}</h3>
@@ -236,11 +236,11 @@ function StoryModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+      className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
       onClick={() => !saving && onClose()}
     >
       <div
-        className="glass max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl p-6 shadow-card"
+        className="anim-panel glass max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
@@ -356,7 +356,7 @@ function StoryModal({
           <button
             onClick={save}
             disabled={saving}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
           >
             {saving ? (
               <>
@@ -457,7 +457,7 @@ export default function StoryAdmin() {
           {tab === "stories" && (
             <button
               onClick={() => setModal({ open: true, editing: null })}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90"
             >
               <Plus size={15} /> 新建故事
             </button>

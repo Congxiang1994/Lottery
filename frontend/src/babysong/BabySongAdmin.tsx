@@ -246,7 +246,7 @@ export default function BabySongAdmin() {
           <button
             type="submit"
             disabled={authBusy || !password}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 py-2.5 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
           >
             {authBusy ? <Loader2 size={15} className="animate-spin" /> : null} 解锁
           </button>
@@ -287,7 +287,7 @@ export default function BabySongAdmin() {
           <button
             onClick={() => download(pendingIds)}
             disabled={actionBusy || !pendingIds.length}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-4 py-2.5 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             <DownloadCloud size={16} />
             下载全部待下载（{pendingIds.length}）

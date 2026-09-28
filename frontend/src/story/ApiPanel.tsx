@@ -145,11 +145,11 @@ function KeyModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+      className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
       onClick={() => !saving && onClose()}
     >
       <div
-        className="glass max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl p-6 shadow-card"
+        className="anim-panel glass max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
@@ -214,7 +214,7 @@ function KeyModal({
           <button
             onClick={save}
             disabled={saving}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
           >
             {saving ? (
               <>
@@ -353,7 +353,7 @@ export default function ApiPanel() {
           </div>
           <button
             onClick={() => setModal({ open: true, editing: null })}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-3.5 py-2 text-xs font-semibold text-white shadow-glow transition hover:opacity-90"
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-3.5 py-2 text-xs font-semibold text-white shadow-glow press transition hover:opacity-90"
           >
             <Plus size={14} /> 新建密钥
           </button>
@@ -740,11 +740,11 @@ export default function ApiPanel() {
 
       {confirmDel && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+          className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
           onClick={() => setConfirmDel(null)}
         >
           <div
-            className="glass w-full max-w-xs rounded-3xl p-6 shadow-card"
+            className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-bold text-paper-900">删除密钥</h3>

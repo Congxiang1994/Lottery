@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
 import Nav from "./common/Nav";
 import Footer from "./common/Footer";
 import Portal from "./portal/Portal";
@@ -22,6 +22,9 @@ export default function App() {
   const [lotteries, setLotteries] = useState<LotteryInfo[]>([]);
   const [key, setKey] = useState("ssq");
   const theme = useThemeState();
+  // 路由切换时 key 变化 → 内容容器重挂载，统一播放页面入场动画
+  const location = useLocation();
+  const pageKey = location.pathname;
 
   useEffect(() => {
     api.lotteries().then(setLotteries).catch(() => {
@@ -38,7 +41,8 @@ export default function App() {
         <div className="bg-aurora min-h-screen">
           <Nav />
           <main className="mx-auto max-w-6xl px-5 pb-10">
-            <Routes>
+            <div key={pageKey} className="anim-page-in">
+              <Routes>
               <Route path="/" element={<Portal />} />
               <Route path="/lottery" element={<Home />} />
               <Route path="/history" element={<History />} />
@@ -52,7 +56,8 @@ export default function App() {
               <Route path="/story-admin" element={<StoryAdmin />} />
               {/* 兼容旧链接：/ 原为彩票首页，现统一指向聚合门户 */}
               <Route path="*" element={<Portal />} />
-            </Routes>
+              </Routes>
+            </div>
           </main>
           <Footer />
         </div>

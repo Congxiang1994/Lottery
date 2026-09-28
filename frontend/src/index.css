@@ -124,6 +124,47 @@ body {
 .animate-hanzi-fade-in { animation: hanzi-fade-in 0.18s ease-out both; }
 .animate-hanzi-scale-in { animation: hanzi-scale-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+/* ---------- 全站统一动效 token ----------
+   页面入场 / 弹窗 / 按压反馈共用一条缓动曲线（与 rise / Reveal 一致）。
+   遵循 prefers-reduced-motion：用户关闭动效时全部退化。 */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes panel-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.anim-page-in { animation: page-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-overlay { animation: overlay-in 0.2s ease-out both; }
+.anim-panel { animation: panel-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* 统一按压反馈：作用于按钮 / 可点卡片 */
+.press {
+  transition: transform 0.12s ease;
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-page-in,
+  .anim-overlay,
+  .anim-panel,
+  .animate-rise {
+    animation: none;
+  }
+  .press,
+  .press:active {
+    transition: none;
+    transform: none;
+  }
+}
+
 /* 隐藏横向滚动条（字母筛选单行滑动） */
 .no-scrollbar {
   scrollbar-width: none;

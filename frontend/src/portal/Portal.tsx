@@ -141,7 +141,7 @@ export default function Portal() {
           >
             <Link
               to="/hanzi"
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-5 py-3 text-sm font-semibold text-white shadow-glow transition hover:opacity-90"
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-5 py-3 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90"
             >
               <Clapperboard size={16} /> 欢迎进入《汉字是画出来的》{" "}
               <ArrowRight size={15} />

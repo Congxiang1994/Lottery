@@ -184,7 +184,7 @@ export default function Home() {
           )}
           <button
             onClick={() => nav("/predict")}
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 py-3 text-sm font-semibold text-white shadow-glow transition hover:opacity-90"
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 py-3 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90"
           >
             <Sparkles size={16} /> 获取智能推荐 <ArrowRight size={15} />
           </button>

@@ -571,7 +571,7 @@ export default function BabySong() {
             onClick={openRandom}
             disabled={!filtered.length && !songs.some((s) => s.local)}
             title="优先从已下载本地的歌里随机选一首，站内播放"
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-5 py-3 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-5 py-3 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             <Shuffle size={16} /> 随机来一首
           </button>
@@ -874,11 +874,11 @@ export default function BabySong() {
       {/* ====== 本地播放弹窗（参考「汉字是画出来的」播放器样式） ====== */}
       {activeId && current && current.local_url && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-paper-900/50 p-4 backdrop-blur-md"
+          className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-paper-900/50 p-4 backdrop-blur-md"
           onClick={closeLocalModal}
         >
           <div
-            className="w-full max-w-3xl overflow-hidden rounded-2xl border border-paper-200 bg-white shadow-2xl"
+            className="anim-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-paper-200 bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 顶部信息栏 */}

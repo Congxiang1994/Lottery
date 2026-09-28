@@ -660,11 +660,11 @@ export default function HanziPlayer() {
       {/* ====== 选集面板（嵌套在播放器 z-index 之上） ====== */}
       {showPicker && (
         <div
-          className="animate-hanzi-fade-in fixed inset-0 z-[60] flex items-center justify-center bg-[#3d2b1f]/40 p-4 backdrop-blur-sm"
+          className="anim-overlay fixed inset-0 z-[60] flex items-center justify-center bg-[#3d2b1f]/40 p-4 backdrop-blur-sm"
           onClick={() => setShowPicker(false)}
         >
           <div
-            className="animate-hanzi-scale-in w-full max-w-2xl rounded-2xl border border-[#d4c4a8] bg-[#faf6f1] p-5 shadow-2xl"
+            className="anim-panel w-full max-w-2xl rounded-2xl border border-[#d4c4a8] bg-[#faf6f1] p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">

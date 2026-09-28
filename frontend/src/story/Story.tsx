@@ -459,11 +459,11 @@ export default function StoryPage() {
       {/* 全文弹窗：书页化排版 */}
       {active && (
         <div
-          className="animate-hanzi-fade-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+          className="anim-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
           onClick={() => setActive(null)}
         >
           <div
-            className={`animate-hanzi-scale-in my-8 w-full max-w-2xl rounded-3xl border p-7 shadow-card ${
+            className={`anim-panel my-8 w-full max-w-2xl rounded-3xl border p-7 shadow-card ${
               night
                 ? "border-[#3a2f28] bg-[#1e1815]"
                 : "glass"

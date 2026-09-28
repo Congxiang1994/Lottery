@@ -86,7 +86,7 @@ function PasswordGate({ onPass }: { onPass: () => void }) {
         <button
           onClick={submit}
           disabled={loading || !pwd}
-          className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+          className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2.5 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
         >
           {loading ? (
             <>
@@ -227,11 +227,11 @@ function TaskModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+      className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
       onClick={() => !saving && onClose()}
     >
       <div
-        className="glass max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl p-6 shadow-card"
+        className="anim-panel glass max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
@@ -301,7 +301,7 @@ function TaskModal({
             <button onClick={onClose} disabled={saving || testing} className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40">
               取消
             </button>
-            <button onClick={save} disabled={saving || testing} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40">
+            <button onClick={save} disabled={saving || testing} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40">
               {saving ? <><Loader2 size={14} className="animate-spin" /> 保存中…</> : "保存"}
             </button>
           </div>
@@ -317,8 +317,8 @@ function ConfirmModal({ title, message, onCancel, onConfirm }: {
   title: string; message: string; onCancel: () => void; onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={onCancel}>
-      <div className="glass w-full max-w-xs rounded-3xl p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
+    <div className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={onCancel}>
+      <div className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-base font-bold text-paper-900">{title}</h3>
         <p className="mt-2 text-xs leading-relaxed text-paper-700">{message}</p>
         <div className="mt-5 flex justify-end gap-2">
@@ -586,7 +586,7 @@ export default function Trigger() {
           {tab === "tasks" && (
             <button
               onClick={() => setModal({ open: true, editing: null })}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90"
             >
               <Plus size={15} /> 新建任务
             </button>
