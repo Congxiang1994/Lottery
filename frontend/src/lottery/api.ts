@@ -7,6 +7,7 @@ import type {
   BatchAlgoResponse,
   CombinedResult,
   Draw,
+  HistoryPredictions,
   LotteryInfo,
   Predict,
   SavedAlgorithmsLatest,
@@ -34,6 +35,10 @@ export const api = {
   history: (k: string, page: number, pageSize: number) =>
     get<{ lottery: string; page: number; page_size: number; total: number; draws: Draw[] }>(
       `/${k}/history?page=${page}&page_size=${pageSize}`
+    ),
+  historyPredictions: (k: string, page: number, pageSize: number) =>
+    get<HistoryPredictions>(
+      `/${k}/history-predictions?page=${page}&page_size=${pageSize}`
     ),
   predict: (k: string) => get<Predict>(`/${k}/predict`),
   // ---- 算法引擎

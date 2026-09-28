@@ -237,3 +237,40 @@ export interface AllRunStatus {
   finished_at: string | null;
   error: string | null;
 }
+
+// ------------------------------------------------------------ 历史开奖 × 算法对照
+
+/** 单列预测（共识列或单个算法列）：号码 + 命中数 + 奖级 */
+export interface PredictionColumn {
+  id?: string;
+  name: string;
+  category?: string;
+  red: number[];
+  blue: number[];
+  red_hit: number;
+  blue_hit: number;
+  prize: string | null;
+}
+
+/** 单期开奖的算法对照矩阵 */
+export interface PredictionItem {
+  issue: string;
+  date: string;
+  red: number[];
+  blue: number[];
+  run_date: string | null;
+  predictions: {
+    count: number;
+    consensus: PredictionColumn;
+    algos: PredictionColumn[];
+  } | null;
+}
+
+/** /history-predictions 响应 */
+export interface HistoryPredictions {
+  lottery: string;
+  page: number;
+  page_size: number;
+  total: number;
+  items: PredictionItem[];
+}

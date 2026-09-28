@@ -251,6 +251,107 @@ def saved_algorithms_by_date(lottery: str, run_date: str):
     return res
 
 
+# ------------------------------------------------------------ 历史开奖 × 算法对照
+
+
+@router.get("/{lottery}/history-predictions")
+def history_predictions(
+    lottery: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(15, ge=1, le=50),
+):
+    """历史开奖 × 算法推荐对照矩阵。
+
+    对当前页的每一期开奖：
+    - 定位预测批次：取 run_date <= 开奖日期 的最近一次每日跑批（严格无未来泄漏）；
+    - 共识列：对该批全部算法打分等权平均取 top-k（同 saved-combined 口径）；
+    - 算法列：每个算法一列，红/蓝命中号在前端高亮；
+    - 每列附命中数与奖级（app.lottery.prizes）。
+    跑批数据不覆盖的历史期，该期 predictions 为 null（前端显示「无预测数据」）。
+    """
+    data = _get(lottery)
+    draws = data["draws"]
+    total = len(draws)
+    start = max(0, total - page * page_size)
+    end = total - (page - 1) * page_size
+    page_draws = draws[start:end][::-1]  # 最新在前，与 /history 一致
+
+    meta = LOTTERIES[lottery]
+    import numpy as np
+    from app.lottery.algorithms.base import pick_top
+    from app.lottery.prizes import prize_level
+
+    # 1) 逐期定位预测批次（run_date <= 开奖日期 的最近一次）
+    items: list[dict] = []
+    wanted_dates: set[str] = set()
+    for d in page_draws:
+        d = dict(d)
+        run = results_store.runs_before(lottery, d["date"], limit=1)
+        d["_run_date"] = run[0] if run else None
+        if d["_run_date"]:
+            wanted_dates.add(d["_run_date"])
+        items.append(d)
+    if not wanted_dates:
+        return {"lottery": lottery, "page": page, "page_size": page_size,
+                "total": total, "items": []}
+
+    # 2) 批量取整批算法结果
+    batches = results_store.batch_by_dates(lottery, sorted(wanted_dates))
+
+    # 3) 组装：共识列 + 算法列 + 命中/奖级
+    #    共识口径：对整批 85 个算法的推荐号码做「出现次数」等权计票，取 top-k
+    #    （与 saved-combined 的打分平均略不同，但只依赖裁剪字段、语义直观）
+    seed_base = 0
+    for d in items:
+        rd = d.pop("_run_date", None)
+        base = {"issue": d["issue"], "date": d["date"],
+                "red": d["red"], "blue": d["blue"], "run_date": rd}
+        batch = batches.get(rd) if rd else None
+        if not batch:
+            d.clear()
+            d.update({**base, "predictions": None})
+            continue
+        ar, ab = set(int(v) for v in d["red"]), set(int(v) for v in d["blue"])
+        seed_base += 1
+        seed = int(str(d["issue"])[-6:] or seed_base)
+
+        rm, rk = meta["red_max"], meta["red_count"]
+        bm, bk = meta["blue_max"], meta["blue_count"]
+        rv = np.zeros(rm)
+        bv = np.zeros(bm)
+        for r in batch:
+            for n in r["red"]:
+                rv[int(n) - 1] += 1.0
+            for n in r["blue"]:
+                bv[int(n) - 1] += 1.0
+        cons_red = pick_top(rv, rk, rm, tiebreak=seed)
+        cons_blue = pick_top(bv, bk, bm, tiebreak=seed + 999)
+        ch_r, ch_b = len(ar & set(cons_red)), len(ab & set(cons_blue))
+        consensus = {
+            "name": "全算法共识",
+            "red": cons_red, "blue": cons_blue,
+            "red_hit": ch_r, "blue_hit": ch_b,
+            "prize": prize_level(lottery, ch_r, ch_b),
+        }
+
+        algos = []
+        for r in batch:
+            hr = len(ar & set(int(x) for x in r["red"]))
+            hb = len(ab & set(int(x) for x in r["blue"]))
+            algos.append({
+                "id": r["id"], "name": r["name"], "category": r["category"],
+                "red": r["red"], "blue": r["blue"],
+                "red_hit": hr, "blue_hit": hb,
+                "prize": prize_level(lottery, hr, hb),
+            })
+        d.clear()
+        d.update({**base, "predictions": {
+            "count": len(batch), "consensus": consensus, "algos": algos,
+        }})
+    return {"lottery": lottery, "page": page, "page_size": page_size,
+            "total": total, "items": items}
+
+
 # ------------------------------------------------------------ 全量运行（算法广场 → sqlite 一致性）
 
 

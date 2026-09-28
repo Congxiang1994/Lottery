@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
 import { useLottery } from "../context";
 import { api } from "../api";
-import { Draw, Summary, Stats } from "../types";
+import { Draw, HistoryPredictions, Summary, Stats } from "../types";
 import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
+import PredictionMatrix from "../components/PredictionMatrix";
 import Reveal from "../components/Reveal";
 import TrendMatrix from "../components/TrendMatrix";
-import { TrendingUp } from "lucide-react";
+import { Table2, TrendingUp } from "lucide-react";
 
 const PAGE_SIZE = 15;
 const TREND_OPTIONS = [15, 30, 50];
 
+type ViewTab = "draws" | "matrix";
+
 export default function History() {
   const { lotteries, key, setKey } = useLottery();
+  const [tab, setTab] = useState<ViewTab>("draws");
   const [draws, setDraws] = useState<Draw[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -20,6 +24,8 @@ export default function History() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [trendLen, setTrendLen] = useState(30);
+  const [pred, setPred] = useState<HistoryPredictions | null>(null);
+  const [predLoading, setPredLoading] = useState(false);
 
   useEffect(() => {
     setPage(1);
@@ -41,6 +47,17 @@ export default function History() {
     api.summary(key).then(setSummary).catch(() => {});
     api.stats(key).then(setStats).catch(() => {});
   }, [key]);
+
+  // 算法对照数据：切到 matrix tab 或翻页/换彩种时拉取
+  useEffect(() => {
+    if (tab !== "matrix") return;
+    setPredLoading(true);
+    api
+      .historyPredictions(key, page, PAGE_SIZE)
+      .then(setPred)
+      .catch(() => {})
+      .finally(() => setPredLoading(false));
+  }, [key, page, tab]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -101,51 +118,105 @@ export default function History() {
         </div>
       </Reveal>
 
-      {/* 分页明细表 */}
+      {/* 视图切换 + 明细表 / 算法对照 */}
       <Reveal className="mt-6">
         <div className="glass overflow-hidden rounded-3xl shadow-card">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-paper-100 text-left text-xs uppercase tracking-wider text-paper-600">
-                  <th className="px-5 py-3">期号</th>
-                  <th className="px-5 py-3">开奖日期</th>
-                  <th className="px-5 py-3">红球 / 前区</th>
-                  <th className="px-5 py-3">蓝球 / 后区</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading
-                  ? Array.from({ length: 8 }).map((_, i) => (
-                      <tr key={i}>
-                        <td colSpan={4} className="px-5 py-4">
-                          <div className="shimmer h-6 w-full animate-shimmer rounded" />
-                        </td>
-                      </tr>
-                    ))
-                  : draws.map((d) => (
-                      <tr key={d.issue} className="border-b border-paper-100 transition hover:bg-paper-100">
-                        <td className="px-5 py-3 font-semibold text-paper-900">{d.issue}</td>
-                        <td className="px-5 py-3 text-paper-700">{d.date}</td>
-                        <td className="px-5 py-3">
-                          <div className="flex flex-wrap">
-                            {d.red.map((n, i) => (
-                              <Ball key={i} n={n} kind="red" size={30} />
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3">
-                          <div className="flex flex-wrap">
-                            {d.blue.map((n, i) => (
-                              <Ball key={i} n={n} kind="blue" size={30} />
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-              </tbody>
-            </table>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-paper-100 px-5 py-3">
+            <div className="flex gap-1 rounded-xl bg-paper-100 p-1">
+              <button
+                onClick={() => setTab("draws")}
+                className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+                  tab === "draws"
+                    ? "bg-white text-paper-900 shadow-sm"
+                    : "text-paper-600 hover:text-paper-900"
+                }`}
+              >
+                <Table2 size={14} />
+                开奖明细
+              </button>
+              <button
+                onClick={() => setTab("matrix")}
+                className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+                  tab === "matrix"
+                    ? "bg-white text-paper-900 shadow-sm"
+                    : "text-paper-600 hover:text-paper-900"
+                }`}
+              >
+                <TrendingUp size={14} />
+                算法对照
+              </button>
+            </div>
+            {tab === "matrix" && (
+              <span className="text-xs text-paper-500">
+                1 列全算法共识 + 85 列算法 · 每列对照该期开奖判定奖级
+              </span>
+            )}
           </div>
+
+          {tab === "draws" ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead>
+                  <tr className="border-b border-paper-100 text-left text-xs uppercase tracking-wider text-paper-600">
+                    <th className="px-5 py-3">期号</th>
+                    <th className="px-5 py-3">开奖日期</th>
+                    <th className="px-5 py-3">红球 / 前区</th>
+                    <th className="px-5 py-3">蓝球 / 后区</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading
+                    ? Array.from({ length: 8 }).map((_, i) => (
+                        <tr key={i}>
+                          <td colSpan={4} className="px-5 py-4">
+                            <div className="shimmer h-6 w-full animate-shimmer rounded" />
+                          </td>
+                        </tr>
+                      ))
+                    : draws.map((d) => (
+                        <tr key={d.issue} className="border-b border-paper-100 transition hover:bg-paper-100">
+                          <td className="px-5 py-3 font-semibold text-paper-900">{d.issue}</td>
+                          <td className="px-5 py-3 text-paper-700">{d.date}</td>
+                          <td className="px-5 py-3">
+                            <div className="flex flex-wrap">
+                              {d.red.map((n, i) => (
+                                <Ball key={i} n={n} kind="red" size={30} />
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex flex-wrap">
+                              {d.blue.map((n, i) => (
+                                <Ball key={i} n={n} kind="blue" size={30} />
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-5">
+              {predLoading ? (
+                <div className="space-y-4">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="shimmer h-40 w-full animate-shimmer rounded-2xl" />
+                  ))}
+                </div>
+              ) : pred && meta ? (
+                <PredictionMatrix
+                  items={pred.items}
+                  redLabel={meta.red_label ?? "红球"}
+                  blueLabel={meta.blue_label ?? "蓝球"}
+                />
+              ) : (
+                <div className="py-12 text-center text-sm text-paper-500">
+                  数据加载失败，请稍后重试
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </Reveal>
 

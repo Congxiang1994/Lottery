@@ -225,6 +225,45 @@ def runs(lottery: str, limit: int = 14) -> list[str]:
         return [r[0] for r in cur.fetchall()]
 
 
+def runs_before(lottery: str, date: str, limit: int = 1) -> list[str]:
+    """该彩种在 date（含）之前最近 limit 次 run_date（降序）。"""
+    with _conn() as con:
+        cur = con.execute(
+            """SELECT DISTINCT run_date FROM algo_results
+               WHERE lottery = ? AND run_date <= ?
+               ORDER BY run_date DESC LIMIT ?""",
+            (lottery, date, limit),
+        )
+        return [r[0] for r in cur.fetchall()]
+
+
+def batch_by_dates(lottery: str, run_dates: list[str]) -> dict[str, list[dict]]:
+    """按多个 run_date 一次性取整批结果（轻量版：裁掉 detail/conf/scores）。
+
+    返回 {run_date: [{id, name, category, red, blue}, ...]}，
+    未出现在返回中的 run_date 表示该日无跑批数据。
+    """
+    if not run_dates:
+        return {}
+    marks = ",".join("?" for _ in run_dates)
+    with _conn() as con:
+        cur = con.execute(
+            f"""SELECT run_date, algo_id, algo_name, category, red, blue
+                FROM algo_results
+                WHERE lottery = ? AND run_date IN ({marks})
+                ORDER BY run_date DESC, category, algo_id""",
+            (lottery, *run_dates),
+        )
+        out: dict[str, list[dict]] = {d: [] for d in run_dates}
+        for (rd, aid, name, cat, red, blue) in cur.fetchall():
+            if rd in out:
+                out[rd].append({
+                    "id": aid, "name": name, "category": cat,
+                    "red": json.loads(red), "blue": json.loads(blue),
+                })
+        return {d: v for d, v in out.items() if v}
+
+
 def by_date(lottery: str, run_date: str) -> dict | None:
     """按 run_date 取整批。"""
     with _conn() as con:
