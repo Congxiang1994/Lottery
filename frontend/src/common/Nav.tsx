@@ -28,7 +28,7 @@ function useNavLinks() {
 
 export default function Nav() {
   const links = useNavLinks();
-  const visits = useVisitCount();
+  const { total: visits, visitors } = useVisitCount();
   const { night, toggle } = useTheme();
   return (
     <header className="sticky top-0 z-30 border-b border-paper-100 bg-paper-100/75 backdrop-blur-xl">
@@ -42,11 +42,17 @@ export default function Nav() {
           </span>
           {visits != null && (
             <span
-              title={`本站累计被访问 ${visits.toLocaleString()} 次`}
+              title={
+                visitors != null
+                  ? `本站共 ${visitors.toLocaleString()} 人来访，累计 ${visits.toLocaleString()} 次`
+                  : `本站累计被访问 ${visits.toLocaleString()} 次`
+              }
               className="ml-1 hidden items-center gap-1 rounded-full border border-paper-200 bg-white/60 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-paper-700 sm:inline-flex"
             >
               <Eye size={11} className="text-brand-red" />
-              {visits.toLocaleString()}
+              {visitors != null
+                ? `${visitors.toLocaleString()} 人来访 · 共 ${visits.toLocaleString()} 次`
+                : visits.toLocaleString()}
             </span>
           )}
         </Link>
