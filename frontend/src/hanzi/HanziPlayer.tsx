@@ -285,7 +285,7 @@ export default function HanziPlayer() {
   const pad = (n: number | null) => String(n ?? "").padStart(3, "0");
 
   return (
-    <div className="min-h-screen" style={{ background: "#faf6f1" }}>
+    <div className="min-h-screen" style={{ background: "var(--hanzi-bg, #faf6f1)" }}>
       {/* ====== 顶部 Hero 区 ====== */}
       <div className="relative overflow-hidden px-4 pb-10 pt-12 sm:pt-16">
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 opacity-30">
