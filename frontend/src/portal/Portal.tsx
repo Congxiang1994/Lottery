@@ -105,14 +105,6 @@ const APPS: {
   },
 ];
 
-/* 首页数据亮点：只在有确定数据时追加，避免虚标 */
-const STATS: { value: string; label: string }[] = [
-  { value: "108", label: "节汉字动画课" },
-  { value: "518", label: "首经典英文儿歌" },
-  { value: "每日", label: "更新一篇睡前故事" },
-  { value: "全量", label: "双色球 / 大乐透数据" },
-];
-
 export default function Portal() {
   const liveApps = APPS.filter((a) => a.status === "live" && !a.isPrivate);
   const privateApps = APPS.filter((a) => a.status === "live" && a.isPrivate);
@@ -162,23 +154,6 @@ export default function Portal() {
             >
               <Github size={16} /> GitHub
             </a>
-          </div>
-
-          {/* 数据亮点条 */}
-          <div
-            className="animate-rise glass mx-auto mt-12 grid max-w-3xl grid-cols-2 gap-y-6 rounded-3xl px-6 py-6 sm:grid-cols-4 sm:py-7"
-            style={{ animationDelay: "280ms" }}
-          >
-            {STATS.map((s) => (
-              <div key={s.label} className="text-center">
-                <div className="gradient-text text-2xl font-extrabold tracking-tight sm:text-[28px]">
-                  {s.value}
-                </div>
-                <div className="mt-1 text-[11px] leading-snug text-paper-600 sm:text-xs">
-                  {s.label}
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </section>
