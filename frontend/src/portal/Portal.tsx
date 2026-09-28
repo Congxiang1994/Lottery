@@ -3,7 +3,6 @@ import {
   Dices,
   ArrowRight,
   Github,
-  Sparkles,
   Clapperboard,
   Zap,
   Music,
@@ -95,19 +94,11 @@ const APPS: {
     status: "live",
     isPrivate: true,
   },
-  {
-    id: "soon",
-    title: "更多产品筹备中",
-    desc: "我们正在打磨下一款产品，敬请期待。如果你有想法，欢迎到 GitHub 一起共建。",
-    icon: Sparkles,
-    tags: ["Coming Soon"],
-    href: "",
-    status: "soon",
-  },
 ];
 
 export default function Portal() {
-  const liveCount = APPS.filter((a) => a.status === "live").length;
+  const liveApps = APPS.filter((a) => a.status === "live" && !a.isPrivate);
+  const privateApps = APPS.filter((a) => a.status === "live" && a.isPrivate);
 
   return (
     <div className="pt-12 sm:pt-16">
@@ -141,16 +132,33 @@ export default function Portal() {
         </div>
       </section>
 
-      {/* 产品网格 */}
+      {/* 全部产品（公开在线） */}
       <section className="mt-16 sm:mt-20">
         <div className="mb-7 flex items-center gap-3">
           <h2 className="text-xl font-bold">全部产品</h2>
           <span className="h-px flex-1 bg-paper-200" />
-          <span className="text-xs text-paper-600">{liveCount} 款在线</span>
+          <span className="text-xs text-paper-600">{liveApps.length} 款在线</span>
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {APPS.map((app) => (
+          {liveApps.map((app) => (
+            <AppCard key={app.id} app={app} />
+          ))}
+        </div>
+      </section>
+
+      {/* 私有产品 */}
+      <section className="mt-14 sm:mt-16">
+        <div className="mb-7 flex items-center gap-3">
+          <h2 className="text-xl font-bold">私有产品</h2>
+          <span className="h-px flex-1 bg-paper-200" />
+          <span className="inline-flex items-center gap-1 text-xs text-paper-600">
+            <Lock size={11} strokeWidth={2.5} /> 密码保护 · 仅限本人
+          </span>
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {privateApps.map((app) => (
             <AppCard key={app.id} app={app} />
           ))}
         </div>
