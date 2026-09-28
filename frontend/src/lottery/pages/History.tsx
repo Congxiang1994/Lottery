@@ -1,29 +1,24 @@
 import { useEffect, useState } from "react";
 import { useLottery } from "../context";
 import { api } from "../api";
-import { Draw, HistoryPredictions, Summary, Stats } from "../types";
+import { Draw, HistoryPredictions } from "../types";
 import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
 import PredictionMatrix from "../components/PredictionMatrix";
 import Reveal from "../components/Reveal";
-import TrendMatrix from "../components/TrendMatrix";
 import { Table2, TrendingUp } from "lucide-react";
 
 const PAGE_SIZE = 15;
-const TREND_OPTIONS = [15, 30, 50];
 
-type ViewTab = "draws" | "matrix";
+type ViewTab = "matrix" | "draws";
 
 export default function History() {
   const { lotteries, key, setKey } = useLottery();
-  const [tab, setTab] = useState<ViewTab>("draws");
+  const [tab, setTab] = useState<ViewTab>("matrix");
   const [draws, setDraws] = useState<Draw[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [trendLen, setTrendLen] = useState(30);
   const [pred, setPred] = useState<HistoryPredictions | null>(null);
   const [predLoading, setPredLoading] = useState(false);
 
@@ -43,97 +38,34 @@ export default function History() {
       .finally(() => setLoading(false));
   }, [key, page]);
 
+  // 算法对照数据：翻页/换彩种时拉取（默认 tab 即 matrix）
   useEffect(() => {
-    api.summary(key).then(setSummary).catch(() => {});
-    api.stats(key).then(setStats).catch(() => {});
-  }, [key]);
-
-  // 算法对照数据：切到 matrix tab 或翻页/换彩种时拉取
-  useEffect(() => {
-    if (tab !== "matrix") return;
     setPredLoading(true);
     api
       .historyPredictions(key, page, PAGE_SIZE)
       .then(setPred)
       .catch(() => {})
       .finally(() => setPredLoading(false));
-  }, [key, page, tab]);
+  }, [key, page]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  // 走势图数据：最近 N 期，旧 → 新（上 → 下）
-  const trendDraws = (stats?.trend ?? []).slice(-trendLen);
   const meta = lotteries.find((l) => l.key === key);
-  const redOmit = (stats?.omission.red ?? []).map((o) => o.omission);
-  const blueOmit = (stats?.omission.blue ?? []).map((o) => o.omission);
 
   return (
     <div className="pt-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">历史开奖</h1>
-          <p className="mt-1 text-sm text-paper-700">共 {total.toLocaleString()} 期 · 走势图 + 明细</p>
+          <p className="mt-1 text-sm text-paper-700">共 {total.toLocaleString()} 期 · 算法对照 + 明细</p>
         </div>
         <LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />
       </div>
 
-      {/* 走势图 */}
-      <Reveal className="mt-6">
-        <div className="glass rounded-3xl p-5 shadow-card">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 text-base font-bold text-paper-900">
-              <TrendingUp size={16} className="text-brand-red" />
-              {key === "ssq" ? "红蓝球" : "前后区"}走势图
-            </h2>
-            <div className="flex items-center gap-2">
-              {TREND_OPTIONS.map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setTrendLen(n)}
-                  className={`rounded-full border px-3 py-1 text-xs transition ${
-                    trendLen === n
-                      ? "border-brand-red/50 bg-brand-red/15 text-brand-red"
-                      : "border-paper-200 bg-paper-100 text-paper-700 hover:bg-paper-200"
-                  }`}
-                >
-                  近 {n} 期
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="mt-3">
-            {stats ? (
-              <TrendMatrix
-                draws={trendDraws}
-                redMax={summary?.red_max ?? 33}
-                blueMax={summary?.blue_max ?? 16}
-                redOmit={redOmit}
-                blueOmit={blueOmit}
-                title={`${meta?.name ?? ""} · ${trendDraws.length} 期走势`}
-              />
-            ) : (
-              <div className="shimmer h-[520px] animate-shimmer rounded-xl" />
-            )}
-          </div>
-        </div>
-      </Reveal>
-
-      {/* 视图切换 + 明细表 / 算法对照 */}
+      {/* 视图切换：算法对照（默认）/ 开奖明细 */}
       <Reveal className="mt-6">
         <div className="glass overflow-hidden rounded-3xl shadow-card">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-paper-100 px-5 py-3">
             <div className="flex gap-1 rounded-xl bg-paper-100 p-1">
-              <button
-                onClick={() => setTab("draws")}
-                className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-                  tab === "draws"
-                    ? "bg-white text-paper-900 shadow-sm"
-                    : "text-paper-600 hover:text-paper-900"
-                }`}
-              >
-                <Table2 size={14} />
-                开奖明细
-              </button>
               <button
                 onClick={() => setTab("matrix")}
                 className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition ${
@@ -144,6 +76,17 @@ export default function History() {
               >
                 <TrendingUp size={14} />
                 算法对照
+              </button>
+              <button
+                onClick={() => setTab("draws")}
+                className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+                  tab === "draws"
+                    ? "bg-white text-paper-900 shadow-sm"
+                    : "text-paper-600 hover:text-paper-900"
+                }`}
+              >
+                <Table2 size={14} />
+                开奖明细
               </button>
             </div>
             {tab === "matrix" && (
