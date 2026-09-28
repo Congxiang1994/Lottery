@@ -3,6 +3,8 @@ import {
   ArrowRight,
   BookOpen,
   CalendarDays,
+  Check,
+  Copy,
   Loader2,
   Moon,
   Sun,
@@ -36,6 +38,46 @@ function tagsOf(tags: string): string[] {
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
+}
+
+/** 复制按钮：点击复制文本到剪贴板，成功后短暂变为对勾 */
+function CopyBtn({
+  text, night, size = 13,
+}: { text: string; night: boolean; size?: number }) {
+  const [ok, setOk] = useState(false);
+  const copy = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // 不触发卡片/弹窗的点击行为
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // 剪贴板 API 不可用（如非安全上下文）时退回 execCommand
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setOk(true);
+    setTimeout(() => setOk(false), 1500);
+  };
+  return (
+    <button
+      onClick={copy}
+      title={ok ? "已复制" : "复制全文"}
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition ${
+        ok
+          ? "border-emerald-300 bg-emerald-50 text-emerald-600"
+          : night
+            ? "border-[#3a2f28] text-[#a99683] hover:bg-[#2a221d]"
+            : "border-paper-200 bg-paper-100/80 text-paper-700 hover:bg-paper-200"
+      }`}
+    >
+      {ok ? <Check size={size} /> : <Copy size={size} />}
+    </button>
+  );
 }
 
 export default function StoryPage() {
@@ -162,9 +204,12 @@ export default function StoryPage() {
               <div className={`mt-4 flex items-center gap-2 text-xs ${faint}`}>
                 <CalendarDays size={13} />
                 {formatDate(hero.story_date)}
-                <span className="ml-auto inline-flex items-center gap-1 font-medium text-brand-gold">
-                  点击阅读
-                  <ArrowRight size={13} className="transition group-hover:translate-x-0.5" />
+                <span className="ml-auto inline-flex items-center gap-1.5">
+                  <CopyBtn text={hero.content} night={night} />
+                  <span className="inline-flex items-center gap-1 font-medium text-brand-gold">
+                    点击阅读
+                    <ArrowRight size={13} className="transition group-hover:translate-x-0.5" />
+                  </span>
                 </span>
               </div>
             </div>
@@ -189,14 +234,19 @@ export default function StoryPage() {
                   onClick={() => setActive(s)}
                   className="block w-full text-left"
                 >
-                  <div className={`rounded-2xl border px-5 py-4 transition ${card}`}>
+                  <div className={`group relative rounded-2xl border px-5 py-4 transition ${card}`}>
                     <div className="flex items-baseline justify-between gap-3">
                       <h3 className={`text-base font-semibold ${strong}`}>
                         {s.title}
                       </h3>
-                      <span className={`shrink-0 text-[11px] tabular-nums ${faint}`}>
-                        {formatDate(s.story_date)}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className={`text-[11px] tabular-nums ${faint}`}>
+                          {formatDate(s.story_date)}
+                        </span>
+                        <span className="opacity-60 transition group-hover:opacity-100">
+                          <CopyBtn text={s.content} night={night} />
+                        </span>
+                      </div>
                     </div>
                     {s.summary && (
                       <p className={`mt-1.5 line-clamp-2 text-xs leading-relaxed ${dim}`}>
@@ -254,17 +304,20 @@ export default function StoryPage() {
                   <p className={`mt-2 text-sm ${dim}`}>{active.summary}</p>
                 )}
               </div>
-              <button
-                onClick={() => setActive(null)}
-                title="关闭"
-                className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl border transition ${
-                  night
-                    ? "border-[#3a2f28] text-[#a99683] hover:bg-[#2a221d]"
-                    : "border-paper-200 bg-paper-100 text-paper-800 hover:bg-paper-200"
-                }`}
-              >
-                <X size={15} />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <CopyBtn text={active.content} night={night} size={14} />
+                <button
+                  onClick={() => setActive(null)}
+                  title="关闭"
+                  className={`grid h-9 w-9 place-items-center rounded-xl border transition ${
+                    night
+                      ? "border-[#3a2f28] text-[#a99683] hover:bg-[#2a221d]"
+                      : "border-paper-200 bg-paper-100 text-paper-800 hover:bg-paper-200"
+                  }`}
+                >
+                  <X size={15} />
+                </button>
+              </div>
             </div>
 
             <div
