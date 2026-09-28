@@ -55,7 +55,43 @@ body {
 .card-hover:hover {
   transform: translateY(-4px);
   border-color: rgba(201, 134, 0, 0.45);
-  box-shadow: 0 18px 40px -18px rgba(61, 43, 31, 0.25);
+  /* 双层阴影：近实贴边 + 远虚扩散，更有「浮起」质感 */
+  box-shadow:
+    0 4px 10px -4px rgba(61, 43, 31, 0.12),
+    0 24px 48px -20px rgba(61, 43, 31, 0.28);
+}
+
+/* hero 顶部极淡网格纹理，向下渐隐 */
+.hero-grid {
+  background-image:
+    linear-gradient(rgba(139, 115, 85, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 115, 85, 0.07) 1px, transparent 1px);
+  background-size: 36px 36px;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 85%);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 85%);
+}
+
+/* ---------- 首页卡片图标配色（tint-*）----------
+   浅色底 + 同系深色图标，hover 光晕由卡片统一处理。 */
+.tint-red {
+  background: linear-gradient(135deg, rgba(226, 59, 82, 0.16), rgba(242, 122, 94, 0.1));
+  color: #d33550;
+}
+.tint-sky {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.15), rgba(59, 130, 246, 0.1));
+  color: #0284c7;
+}
+.tint-gold {
+  background: linear-gradient(135deg, rgba(201, 134, 0, 0.16), rgba(232, 195, 122, 0.12));
+  color: #a06f00;
+}
+.tint-violet {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.1));
+  color: #7c3aed;
+}
+.tint-amber {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.16), rgba(245, 158, 11, 0.1));
+  color: #b45309;
 }
 
 /* 滚动条（浅色） */
@@ -186,7 +222,38 @@ body {
 /* 卡片 hover 阴影在暗底上收敛 */
 .site-night .card-hover:hover {
   border-color: rgba(232, 195, 122, 0.4);
-  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.55);
+  box-shadow:
+    0 4px 10px -4px rgba(0, 0, 0, 0.4),
+    0 24px 48px -20px rgba(0, 0, 0, 0.6);
+}
+
+/* hero 网格纹理：暗底下用暖金线、更淡 */
+.site-night .hero-grid {
+  background-image:
+    linear-gradient(rgba(232, 195, 122, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232, 195, 122, 0.06) 1px, transparent 1px);
+}
+
+/* 卡片图标 tint 暗色适配：暗底提亮 + 图标换亮色 */
+.site-night .tint-red {
+  background: linear-gradient(135deg, rgba(242, 122, 94, 0.22), rgba(226, 59, 82, 0.14));
+  color: #f5938a;
+}
+.site-night .tint-sky {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(59, 130, 246, 0.14));
+  color: #67cdf5;
+}
+.site-night .tint-gold {
+  background: linear-gradient(135deg, rgba(232, 195, 122, 0.22), rgba(201, 134, 0, 0.14));
+  color: #e8c37a;
+}
+.site-night .tint-violet {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.2), rgba(139, 92, 246, 0.14));
+  color: #b7a3fb;
+}
+.site-night .tint-amber {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(217, 119, 6, 0.14));
+  color: #f0b45c;
 }
 
 /* 导航 / 页脚（沿用原故事页夜间配方） */
