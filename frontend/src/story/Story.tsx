@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -257,6 +257,15 @@ export default function StoryPage() {
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<Story | null>(null);
   const night = useNightMode();
+  /* 弹框历史栈：打开时压入一条历史记录，浏览器返回（含手机侧滑）只关弹框、不离开页面。
+     与 /hanzi、/babysong 两个弹框页同一模式；modalPushedRef 防止重复压栈。
+     bodyRef 指向正文滚动区，供「换一篇后回到顶部」使用。 */
+  const modalPushedRef = useRef(false);
+  /* 标记「下一个 popstate 是我自己发起的」：主动关闭时先 back()，
+     而 back() 到 popstate 派发之间是异步的 —— 若这期间用户又点开了另一篇，
+     那次迟到的 popstate 会误关新弹窗。用标记把它吃掉。 */
+  const selfPopRef = useRef(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [font, setFont] = useState<FontKey>(() => {
     const v = localStorage.getItem(FONT_KEY);
     return v === "s" || v === "l" ? v : "m";
@@ -274,6 +283,41 @@ export default function StoryPage() {
     localStorage.setItem(FONT_KEY, font);
   }, [font]);
 
+  /* 打开弹框：压入一条历史记录，让「返回」优先命中弹框而不是离开页面 */
+  const openModal = useCallback((s: Story) => {
+    setActive(s);
+    if (!modalPushedRef.current) {
+      modalPushedRef.current = true;
+      window.history.pushState({ storyModal: true }, "");
+    }
+  }, []);
+
+  /* 关闭弹框：先置空状态，再弹掉自己压入的那条历史记录（保持历史干净）。
+     该次 back 引发的 popstate 由 selfPopRef 标记吃掉，不重复处理。 */
+  const closeModal = useCallback(() => {
+    setActive(null);
+    if (modalPushedRef.current) {
+      modalPushedRef.current = false;
+      selfPopRef.current = true;
+      window.history.back();
+    }
+  }, []);
+
+  /* 浏览器返回键 / 手机侧滑返回：弹框开着时仅关弹框，不离开列表页 */
+  useEffect(() => {
+    const onPop = () => {
+      if (selfPopRef.current) {
+        selfPopRef.current = false; // 自己发起的 back，忽略
+        return;
+      }
+      if (!modalPushedRef.current) return;
+      modalPushedRef.current = false;
+      setActive(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   // 弹窗内的键盘操作：Esc 关闭，← 翻更早，→ 翻更新
   useEffect(() => {
     const step = (cur: Story, delta: 1 | -1): Story | null => {
@@ -282,13 +326,28 @@ export default function StoryPage() {
       return j >= 0 && j < stories.length ? stories[j] : null;
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setActive(null);
+      if (e.key === "Escape") closeModal();
       else if (e.key === "ArrowLeft") setActive((a) => (a ? step(a, 1) : a));
       else if (e.key === "ArrowRight") setActive((a) => (a ? step(a, -1) : a));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stories]);
+  }, [stories, closeModal]);
+
+  /* 弹框打开时锁住背景滚动：否则手机上会「穿透」到背后的列表一起滚 */
+  useEffect(() => {
+    if (!active) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [active]);
+
+  /* 上一篇/下一篇：换一篇后正文回到顶部，否则会停在上一篇的滚动位置 */
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: 0 });
+  }, [active?.id]);
 
   const today = todayStr();
   const hero = stories[0]?.story_date === today ? stories[0] : null;
@@ -351,7 +410,7 @@ export default function StoryPage() {
         {/* 今晚的故事 */}
         {hero && (
           <button
-            onClick={() => setActive(hero)}
+            onClick={() => openModal(hero)}
             className="group mt-7 block w-full text-left"
           >
             <div
@@ -404,7 +463,7 @@ export default function StoryPage() {
                 return (
                   <button
                     key={s.id}
-                    onClick={() => setActive(s)}
+                    onClick={() => openModal(s)}
                     className="block w-full text-left"
                   >
                     <div className={`group relative flex gap-4 rounded-2xl border px-5 py-4 transition ${card}`}>
@@ -456,27 +515,36 @@ export default function StoryPage() {
         )}
       </div>
 
-      {/* 全文弹窗：书页化排版 */}
+      {/* 全文弹窗：书页化排版。
+          分层：遮罩（fixed 定位 + 滚动兜底）→ 面板（定高 flex 纵向）→ 操作栏（钉顶）
+          + 正文区（独立滚动）。手机上滚动只发生在正文区，右上角关闭按钮不会滑走。 */}
       {active && (
         <div
-          className="anim-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-          onClick={() => setActive(null)}
+          className="anim-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-[#3d2b1f]/60 p-4 backdrop-blur-sm sm:items-center"
+          onClick={closeModal}
         >
           <div
-            className={`anim-panel my-8 w-full max-w-2xl rounded-3xl border p-7 shadow-card ${
+            className={`anim-panel my-4 flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border shadow-card sm:my-8 ${
               night
                 ? "border-[#3a2f28] bg-[#1e1815]"
                 : "glass"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 右上角操作：朗读（有音频时）/ 复制 / 关闭 */}
-            <div className="flex justify-end gap-2">
+            {/* 操作栏：朗读（有音频时）/ 复制 / 关闭。钉在面板顶部，不随正文滚动 */}
+            <div
+              className={`sticky top-0 z-10 flex shrink-0 justify-end gap-2 rounded-t-3xl border-b px-7 pb-3 pt-4 ${
+                night
+                  ? "border-[#3a2f28] bg-[#1e1815]"
+                  : "border-paper-200/70 bg-white/85 backdrop-blur-md"
+              }`}
+            >
               {active.audio_url && <AudioBtn src={active.audio_url} night={night} />}
               <CopyBtn text={active.content} night={night} size={14} />
               <button
-                onClick={() => setActive(null)}
+                onClick={closeModal}
                 title="关闭"
+                aria-label="关闭"
                 className={`grid h-7 w-7 place-items-center rounded-lg border transition ${
                   night
                     ? "border-[#3a2f28] text-[#a99683] hover:bg-[#2a221d]"
@@ -487,44 +555,51 @@ export default function StoryPage() {
               </button>
             </div>
 
-            {/* 刊头：日期小字 → 标题 → 金色短线 → 摘要 */}
-            <div className="mx-auto mt-2 max-w-md text-center">
-              <p
-                className="text-xs font-medium tracking-[0.2em]"
-                style={{ color: gold }}
-              >
-                {formatDate(active.story_date)}
-              </p>
-              <h2 className={`mt-2 text-[22px] font-bold leading-snug ${strong}`}>
-                {active.title}
-              </h2>
-              <div className="mx-auto mt-3 h-0.5 w-9 rounded-full bg-brand-gold/70" />
-              {active.summary && (
-                <p className={`mt-3 text-[13px] leading-relaxed ${dim}`}>
-                  {active.summary}
+            {/* 正文滚动区：面板内唯一的滚动容器 */}
+            <div
+              ref={bodyRef}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-7 pb-6 pt-4"
+            >
+              {/* 刊头：日期小字 → 标题 → 金色短线 → 摘要 */}
+              <div className="mx-auto max-w-md text-center">
+                <p
+                  className="text-xs font-medium tracking-[0.2em]"
+                  style={{ color: gold }}
+                >
+                  {formatDate(active.story_date)}
                 </p>
+                <h2 className={`mt-2 text-[22px] font-bold leading-snug ${strong}`}>
+                  {active.title}
+                </h2>
+                <div className="mx-auto mt-3 h-0.5 w-9 rounded-full bg-brand-gold/70" />
+                {active.summary && (
+                  <p className={`mt-3 text-[13px] leading-relaxed ${dim}`}>
+                    {active.summary}
+                  </p>
+                )}
+              </div>
+
+              {/* 正文 */}
+              <div className="mt-6">
+                <StoryBody content={active.content} night={night} font={font} />
+              </div>
+
+              {/* 标签 */}
+              {tagsOf(active.tags).length > 0 && (
+                <div className="mt-6 flex flex-wrap justify-center gap-1.5">
+                  {tagsOf(active.tags).map((t) => (
+                    <Tag key={t} t={t} night={night} />
+                  ))}
+                </div>
               )}
             </div>
 
-            {/* 正文 */}
-            <div className="mt-6">
-              <StoryBody content={active.content} night={night} font={font} />
-            </div>
-
-            {/* 标签 */}
-            {tagsOf(active.tags).length > 0 && (
-              <div className="mt-6 flex flex-wrap justify-center gap-1.5">
-                {tagsOf(active.tags).map((t) => (
-                  <Tag key={t} t={t} night={night} />
-                ))}
-              </div>
-            )}
-
-            {/* 底栏：上一篇 / 字号 / 下一篇 */}
+            {/* 底栏：上一篇 / 字号 / 下一篇。与操作栏一样钉在面板底部，只有正文区滚动 */}
             <div
-              className={`mt-7 flex items-center justify-between gap-3 border-t pt-4 ${
-                night ? "border-[#3a2f28]" : "border-paper-200/80"
+              className={`flex shrink-0 items-center justify-between gap-3 border-t px-7 pt-3 ${
+                night ? "border-[#3a2f28] bg-[#1e1815]" : "border-paper-200/80 bg-white/85 backdrop-blur-md"
               }`}
+              style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
             >
               <button
                 disabled={!older}
