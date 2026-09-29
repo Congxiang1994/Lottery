@@ -516,29 +516,31 @@ export default function StoryPage() {
       </div>
 
       {/* 全文弹窗：书页化排版。
-          分层：遮罩（fixed 定位 + 滚动兜底）→ 面板（定高 flex 纵向）→ 操作栏（钉顶）
-          + 正文区（独立滚动）。手机上滚动只发生在正文区，右上角关闭按钮不会滑走。 */}
+          分层：遮罩（定位 + 溢出兜底）→ 面板（限高纵向 flex）→ 操作栏 / 正文区 / 底栏。
+          正文区是唯一的滚动容器，操作栏与底栏在 flex 里天然不动 —— 因此它们
+          **不需要背景色、边框和 sticky**，加了反而把整块书页切成三段（且 bg-white/85
+          在夜间模式没有映射，会变成白条）。
+          ⚠️ 限高必须用 max-h-[calc(100dvh-6rem)]：可用高度 = 视口 − 遮罩 p-4(2rem) −
+          面板 my-8(4rem)。写成 100dvh-2rem 会算出 100dvh+4rem，把遮罩层撑成滚动容器，
+          滚轮一滚整块面板连关闭按钮一起上移（桌面端实测复现）。也不能用 max-h-full ——
+          flex item 的百分比高度解析不到定高父级，等于失效。
+          ⚠️ 遮罩保持 items-start：items-center 配 overflow-y-auto 是经典 bug，内容超长时
+          顶部被裁且滚不回去。定位方式与改动前一致，避免观感跳变。 */}
       {active && (
         <div
-          className="anim-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-[#3d2b1f]/60 p-4 backdrop-blur-sm sm:items-center"
+          className="anim-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
           onClick={closeModal}
         >
           <div
-            className={`anim-panel my-4 flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border shadow-card sm:my-8 ${
+            className={`anim-panel my-8 flex max-h-[calc(100dvh-6rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border shadow-card ${
               night
                 ? "border-[#3a2f28] bg-[#1e1815]"
                 : "glass"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 操作栏：朗读（有音频时）/ 复制 / 关闭。钉在面板顶部，不随正文滚动 */}
-            <div
-              className={`sticky top-0 z-10 flex shrink-0 justify-end gap-2 rounded-t-3xl border-b px-7 pb-3 pt-4 ${
-                night
-                  ? "border-[#3a2f28] bg-[#1e1815]"
-                  : "border-paper-200/70 bg-white/85 backdrop-blur-md"
-              }`}
-            >
+            {/* 操作栏：朗读（有音频时）/ 复制 / 关闭。不随正文滚动，故无需背板 */}
+            <div className="flex shrink-0 justify-end gap-2 px-7 pt-7">
               {active.audio_url && <AudioBtn src={active.audio_url} night={night} />}
               <CopyBtn text={active.content} night={night} size={14} />
               <button
@@ -558,7 +560,7 @@ export default function StoryPage() {
             {/* 正文滚动区：面板内唯一的滚动容器 */}
             <div
               ref={bodyRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-7 pb-6 pt-4"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-7 pb-7 pt-2"
             >
               {/* 刊头：日期小字 → 标题 → 金色短线 → 摘要 */}
               <div className="mx-auto max-w-md text-center">
@@ -594,12 +596,11 @@ export default function StoryPage() {
               )}
             </div>
 
-            {/* 底栏：上一篇 / 字号 / 下一篇。与操作栏一样钉在面板底部，只有正文区滚动 */}
+            {/* 底栏：上一篇 / 字号 / 下一篇。同样不随正文滚动，保持原书页观感 */}
             <div
-              className={`flex shrink-0 items-center justify-between gap-3 border-t px-7 pt-3 ${
-                night ? "border-[#3a2f28] bg-[#1e1815]" : "border-paper-200/80 bg-white/85 backdrop-blur-md"
+              className={`flex shrink-0 items-center justify-between gap-3 border-t px-7 pb-7 pt-4 ${
+                night ? "border-[#3a2f28]" : "border-paper-200/80"
               }`}
-              style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
             >
               <button
                 disabled={!older}
