@@ -35,6 +35,25 @@ body {
   backdrop-filter: blur(14px);
 }
 
+/* ---------- 书页纸面（睡前故事详情弹窗）----------
+   比 .glass 更「实」：不透明暖纸底 + 极淡纤维纹，读长文时不透出背后的暗遮罩，
+   与「书页化排版」的气质一致。夜间对应暖黑纸。 */
+.paper-sheet {
+  background-color: #fffdf9;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(139, 115, 85, 0.022) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(139, 115, 85, 0.016) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg, #fffdf9 0%, #fdf8f0 58%, #faf2e6 100%);
+  border: 1px solid rgba(212, 196, 168, 0.7);
+}
+.site-night .paper-sheet {
+  background-color: #1f1915;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(232, 195, 122, 0.018) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #241d18 0%, #1f1915 60%, #1a1512 100%);
+  border-color: rgba(90, 70, 54, 0.6);
+}
+
 .gradient-text {
   background: linear-gradient(100deg, #e23b52, #f27a5e 40%, #c98600);
   -webkit-background-clip: text;
@@ -139,9 +158,17 @@ body {
   from { opacity: 0; transform: scale(0.96) translateY(8px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
-.anim-page-in { animation: page-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.anim-overlay { animation: overlay-in 0.2s ease-out both; }
-.anim-panel { animation: panel-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* ⚠️ fill-mode 必须用 backwards，**不能用 both**：
+   both = forwards + backwards，动画结束后永久保留 to 关键帧的 transform
+   （page-in 的 to 是 translateY(0)，computed 为 matrix(...)，**不是 none**）。
+   按 CSS Transforms 规范，transform 非 none 的元素会成为 position:fixed 后代的
+   **包含块** → 页面里所有 fixed 弹窗的 inset-0 不再相对视口，而是相对这个容器
+   （桌面实际落在 84→1196、手机 20→370），且页面一滚弹窗就整个掉出视口。
+   backwards 同样能避免入场前的闪烁，但动画结束即释放 transform，包含块消失。
+   视觉零变化（to 值本就等于元素自然态）。三个弹窗页 /story /hanzi /babysong 同源受益。 */
+.anim-page-in { animation: page-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.anim-overlay { animation: overlay-in 0.2s ease-out backwards; }
+.anim-panel { animation: panel-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 
 /* 统一按压反馈：作用于按钮 / 可点卡片 */
 .press {
@@ -234,7 +261,10 @@ body {
 }
 .site-night .bg-white\/60,
 .site-night .bg-white\/70,
-.site-night .bg-white\/80 {
+.site-night .bg-white\/80,
+.site-night .bg-white\/85,
+.site-night .bg-white\/90,
+.site-night .bg-white\/95 {
   background-color: rgba(255, 255, 255, 0.07);
 }
 /* 纯白 bg-white 多为「浅色面板上的选中 tab / 卡片」：暗色下映射为浅一档的暖面板，
@@ -337,6 +367,48 @@ body {
 }
 .site-night .bg-amber-100 {
   background-color: rgba(201, 134, 0, 0.18);
+}
+
+/* 成功 / 危险语义色（emerald / rose）：全站大量用于状态徽章、错误提示、复制成功态。
+   此前**完全没有映射** → 夜间会闪出亮粉 / 亮绿块。按暖黑底重配一档。 */
+.site-night .bg-rose-50,
+.site-night .bg-rose-400\/10 {
+  background-color: rgba(226, 59, 82, 0.14);
+}
+.site-night .bg-rose-100 {
+  background-color: rgba(226, 59, 82, 0.2);
+}
+.site-night .text-rose-700,
+.site-night .text-rose-600 {
+  color: #f5938a;
+}
+.site-night .border-rose-600\/25,
+.site-night .border-rose-400\/30,
+.site-night .border-rose-300 {
+  border-color: rgba(226, 59, 82, 0.38);
+}
+.site-night .bg-emerald-50,
+.site-night .bg-emerald-50\/60,
+.site-night .bg-emerald-500\/10 {
+  background-color: rgba(16, 185, 129, 0.14);
+}
+.site-night .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.2);
+}
+.site-night .text-emerald-700,
+.site-night .text-emerald-600 {
+  color: #5fd0a4;
+}
+.site-night .border-emerald-600\/25,
+.site-night .border-emerald-300,
+.site-night .border-emerald-200 {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* 品牌金作文字色：日间 #c98600 压米白只有 2.83:1（不达 3:1），
+   夜间压暖黑更显浑浊。统一在暗底提亮一档。 */
+.site-night .text-brand-gold {
+  color: #e8c37a;
 }
 
 /* ---------- 汉字课（水墨中国风）：暗色适配 ----------

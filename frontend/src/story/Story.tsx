@@ -1,277 +1,183 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Copy,
-  Loader2,
-  Pause,
-  Volume2,
+  RefreshCw,
+  Search,
+  Shuffle,
   X,
 } from "lucide-react";
 import { Story, storyApi } from "./api";
+import {
+  Cover,
+  FONT_KEY,
+  FontKey,
+  MoonDecor,
+  Tag,
+  formatDate,
+  loadReadIds,
+  relDate,
+  saveReadIds,
+  shortDate,
+  splitEmoji,
+  storyTheme,
+  tagsOf,
+  tidy,
+  useNightMode,
+  weekdayOf,
+} from "./parts";
+import StoryModal from "./StoryModal";
 
 /**
  * 每日儿童睡前故事 /story
- * 公开页：按故事日期倒序展示（只展示已发布），点击卡片打开全文。
- * 列表卡：左侧金色日期竖块做版式锚点，标签按内容上淡色。
- * 详情弹窗：书页化排版 —— 居中刊头 + 段落首行缩进 + 「睡吧」结尾落点句，
- *   底栏支持 上一篇/下一篇、阅读字号（localStorage 记忆）。
- * 睡前阅读优先：正文 15.5/17/19px 三档，行高 2.05，暖米底。
+ *
+ * 公开页：按故事日期倒序展示（只展示已发布），点击卡片打开全文弹窗。
+ * 版式：内容宽度与顶部导航同宽（max-w-6xl），左右边界对齐；
+ *   首屏一张「最近一篇」重点卡，其余按日期分组、桌面双列排布。
+ * 交互：关键词搜索 + 主题标签筛选 + 随机一篇（优先未读）+ 已读标记。
+ * 弹窗：书页化排版（见 StoryModal）。
  * 夜间模式跟随全站全局开关（Nav 右上角，useTheme），页内不再单独切换。
  */
 
-const WEEK = "日一二三四五六";
-const FONT_KEY = "story_font";
-const FONTS = { s: 15.5, m: 17, l: 19 } as const;
-type FontKey = keyof typeof FONTS;
+/* ------------------------------ 卡片 ------------------------------ */
 
-function todayStr(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-function formatDate(s: string): string {
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return s;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return `${d.getMonth() + 1}月${d.getDate()}日 · 周${WEEK[d.getDay()]}`;
-}
-
-/** 拆出 月 / 日 / 星期，用于列表卡的日期竖块 */
-function dateParts(s: string): { m: string; d: string; w: string } {
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return { m: "", d: "", w: "" };
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return { m: String(d.getMonth() + 1), d: String(d.getDate()), w: WEEK[d.getDay()] };
-}
-
-function tagsOf(tags: string): string[] {
-  return (tags || "")
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
-
-/** 正文按空行切块（连续换行压平），块内保留单换行为 <br/>（诗行感） */
-function paragraphsOf(content: string): string[] {
-  return content
-    .split(/\n\s*\n/)
-    .map((b) => b.trim())
-    .filter(Boolean);
-}
-
-/** 标签淡色盘：日/夜各一套，按 tag 内容哈希固定取色 */
-const TAG_PALETTES: { d: [string, string]; n: [string, string] }[] = [
-  { d: ["#faeeda", "#8a5a10"], n: ["rgba(201,134,0,0.18)", "#e8c37a"] }, // 琥珀
-  { d: ["#e1f5ee", "#0f6e56"], n: ["rgba(45,166,130,0.18)", "#8fd8bd"] }, // 青绿
-  { d: ["#e6f1fb", "#1a5fa5"], n: ["rgba(59,130,246,0.18)", "#a5c3f2"] }, // 蓝
-  { d: ["#fbeaf0", "#993556"], n: ["rgba(212,83,126,0.18)", "#eeb1c6"] }, // 粉
-  { d: ["#eaf3de", "#3f6d12"], n: ["rgba(99,153,34,0.18)", "#b9d690"] }, // 草绿
-];
-
-function tagPalette(tag: string) {
-  let h = 0;
-  for (const c of tag) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return TAG_PALETTES[h % TAG_PALETTES.length];
-}
-
-function Tag({ t, night }: { t: string; night: boolean }) {
-  const p = tagPalette(t);
-  const [bg, color] = night ? p.n : p.d;
+function StoryCard({
+  s, night, read, onOpen,
+}: { s: Story; night: boolean; read: boolean; onOpen: (s: Story) => void }) {
+  const t = storyTheme(night);
+  const tags = tagsOf(s.tags);
+  const { emoji, text } = splitEmoji(s.title);
   return (
-    <span
-      className="rounded-full px-2.5 py-0.5 text-[10px] font-medium"
-      style={{ background: bg, color }}
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`${text}，${relDate(s.story_date)}${read ? "，已读过" : ""}`}
+      onClick={() => onOpen(s)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(s);
+        }
+      }}
+      className={`press group flex cursor-pointer gap-3.5 rounded-2xl border px-4 py-3.5 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-brand-gold/60 sm:px-5 sm:py-4 ${t.card}`}
     >
-      {t}
-    </span>
-  );
-}
-
-/** 复制按钮：点击复制文本到剪贴板，成功后短暂变为对勾 */
-function CopyBtn({
-  text, night, size = 13,
-}: { text: string; night: boolean; size?: number }) {
-  const [ok, setOk] = useState(false);
-  const copy = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // 不触发卡片/弹窗的点击行为
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // 剪贴板 API 不可用（如非安全上下文）时退回 execCommand
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    }
-    setOk(true);
-    setTimeout(() => setOk(false), 1500);
-  };
-  return (
-    <button
-      onClick={copy}
-      title={ok ? "已复制" : "复制全文"}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition ${
-        ok
-          ? "border-emerald-300 bg-emerald-50 text-emerald-600"
-          : night
-            ? "border-[#3a2f28] text-[#a99683] hover:bg-[#2a221d]"
-            : "border-paper-200 bg-paper-100/80 text-paper-700 hover:bg-paper-200"
-      }`}
-    >
-      {ok ? <Check size={size} /> : <Copy size={size} />}
-    </button>
-  );
-}
-
-/** 朗读按钮：audio_url 有值时才渲染，播放中变暂停图标 */
-function AudioBtn({ src, night }: { src: string; night: boolean }) {
-  const ref = useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const toggle = () => {
-    if (!ref.current) {
-      ref.current = new Audio(src);
-      ref.current.onended = () => setPlaying(false);
-    }
-    if (playing) {
-      ref.current.pause();
-      setPlaying(false);
-    } else {
-      ref.current.play().catch(() => setPlaying(false));
-      setPlaying(true);
-    }
-  };
-  useEffect(() => () => ref.current?.pause(), []);
-  return (
-    <button
-      onClick={toggle}
-      title={playing ? "暂停朗读" : "播放朗读"}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition ${
-        night
-          ? "border-[#3a2f28] text-[#a99683] hover:bg-[#2a221d]"
-          : "border-paper-200 bg-paper-100/80 text-paper-700 hover:bg-paper-200"
-      }`}
-    >
-      {playing ? <Pause size={13} /> : <Volume2 size={13} />}
-    </button>
-  );
-}
-
-/** 书页化正文：段落首行缩进、行高 2.05；末段以「睡吧」开头时作为落点句居中收尾 */
-function StoryBody({
-  content, night, font,
-}: { content: string; night: boolean; font: FontKey }) {
-  const blocks = paragraphsOf(content);
-  const last = blocks[blocks.length - 1] ?? "";
-  const hasEnding = blocks.length > 1 && last.startsWith("睡吧");
-  const body = hasEnding ? blocks.slice(0, -1) : blocks;
-  const px = FONTS[font];
-  return (
-    <div>
-      <div style={{ fontSize: px, lineHeight: 2.05, color: night ? "#e8ddd0" : "#4a3826" }}>
-        {body.map((b, i) => (
-          <p key={i} style={{ textIndent: "2em", margin: i === 0 ? 0 : "0 0 0.85em" }}>
-            {b.split("\n").map((line, j) => (
-              <Fragment key={j}>
-                {j > 0 && <br />}
-                {line}
-              </Fragment>
-            ))}
-          </p>
-        ))}
-      </div>
-      {hasEnding && (
-        <div className="mt-6 text-center">
-          <div className={`mx-auto h-px w-24 ${night ? "bg-[#3a2f28]" : "bg-paper-200"}`} />
-          <p
-            className="mt-4"
-            style={{
-              fontSize: px - 1.5,
-              lineHeight: 1.9,
-              letterSpacing: "0.06em",
-              color: night ? "#d9b36a" : "#a9762a",
-            }}
+      <Cover emoji={emoji} tag={tags[0] || ""} night={night} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-2">
+          <h3
+            className="min-w-0 flex-1 text-[15px] font-semibold leading-snug sm:text-[15.5px]"
+            style={{ color: t.strong }}
           >
-            {last}
-          </p>
+            {text}
+          </h3>
+          {read && (
+            <span
+              title="已读过"
+              aria-hidden
+              className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${
+                night ? "bg-[#5a4d41]" : "bg-paper-300"
+              }`}
+            />
+          )}
         </div>
-      )}
+        {s.summary && (
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed" style={{ color: t.dim }}>
+            {tidy(s.summary)}
+          </p>
+        )}
+        {tags.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {tags.slice(0, 3).map((x) => (
+              <Tag key={x} t={x} night={night} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-/** hero 卡右上角的月亮与星星装饰（低透明度，日夜两套色） */
-function MoonDecor({ night }: { night: boolean }) {
-  const moon = night ? "rgba(232,195,122,0.22)" : "rgba(201,134,0,0.16)";
-  const star = night ? "rgba(232,195,122,0.35)" : "rgba(201,134,0,0.28)";
+function Chip({
+  active, night, onClick, children,
+}: {
+  active: boolean;
+  night: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <svg
-      className="pointer-events-none absolute right-6 top-6"
-      width="60"
-      height="60"
-      viewBox="0 0 64 64"
-      fill="none"
-      aria-hidden
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`press inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition ${
+        active
+          ? night
+            ? "border-[#5a4636] bg-[#2a221d] text-[#e8c37a]"
+            : "border-brand-gold/50 bg-brand-gold/15 text-[#8a5a10]"
+          : night
+            ? "border-[#3a2f28] text-[#8a7866] hover:text-[#b5a18c]"
+            : "border-paper-200 text-paper-700 hover:bg-paper-100"
+      }`}
     >
-      <path
-        fillRule="evenodd"
-        d="M32 12a20 20 0 1 0 0 40a20 20 0 1 0 0-40Z M37 19a13 13 0 1 0 0 26a13 13 0 1 0 0-26Z"
-        fill={moon}
-      />
-      <circle cx="12" cy="16" r="1.6" fill={star} />
-      <circle cx="20" cy="9" r="1.1" fill={star} />
-      <circle cx="8" cy="28" r="1.1" fill={star} />
-    </svg>
+      {children}
+    </button>
   );
 }
 
-/** 全站日/夜状态：<html> 有 .site-night 即夜间（由 Nav 右上角全局开关控制）。
- *  useLayoutEffect 在首帧渲染前读取，避免夜色下刷新时正文先闪一帧日间配色。 */
-function useNightMode(): boolean {
-  const read = () =>
-    typeof document !== "undefined" &&
-    document.documentElement.classList.contains("site-night");
-  const [night, setNight] = useState(read);
-  useLayoutEffect(() => {
-    setNight(read());
-    // 全局开关在 Nav 里，切主题时 <html> class 变化但不会触发本组件重渲染；
-    // 这里用轻量观察：离开页面无须清理（class 由全局管理）。
-    const ob = new MutationObserver(() => setNight(read()));
-    ob.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => ob.disconnect();
-  }, []);
-  return night;
+/* ------------------------------ 骨架屏 ------------------------------ */
+
+function SkeletonCards({ night }: { night: boolean }) {
+  const box = `rounded-xl ${night ? "bg-[#2c2320]" : "bg-paper-200"}`;
+  return (
+    <div className="mt-7 space-y-3">
+      {[0, 1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className={`flex gap-3.5 rounded-2xl border px-4 py-3.5 sm:px-5 sm:py-4 ${
+            night ? "border-[#3a2f28] bg-[#221b17]" : "glass border-paper-100"
+          }`}
+        >
+          <div className={`h-11 w-11 shrink-0 rounded-xl shimmer animate-shimmer ${box}`} />
+          <div className="flex-1 space-y-2.5 pt-0.5">
+            <div className={`h-4 w-2/3 shimmer animate-shimmer ${box}`} />
+            <div className={`h-3 w-full shimmer animate-shimmer ${box}`} />
+            <div className={`h-3 w-4/5 shimmer animate-shimmer ${box}`} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
+
+/* ------------------------------ 页面 ------------------------------ */
 
 export default function StoryPage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<Story | null>(null);
+  const [q, setQ] = useState("");
+  const [tag, setTag] = useState<string | null>(null);
+  const [readIds, setReadIds] = useState<number[]>(loadReadIds);
   const night = useNightMode();
+
   /* 弹框历史栈：打开时压入一条历史记录，浏览器返回（含手机侧滑）只关弹框、不离开页面。
-     与 /hanzi、/babysong 两个弹框页同一模式；modalPushedRef 防止重复压栈。
-     bodyRef 指向正文滚动区，供「换一篇后回到顶部」使用。 */
+     与 /hanzi、/babysong 两个弹框页同一模式；modalPushedRef 防止重复压栈。 */
   const modalPushedRef = useRef(false);
   /* 标记「下一个 popstate 是我自己发起的」：主动关闭时先 back()，
      而 back() 到 popstate 派发之间是异步的 —— 若这期间用户又点开了另一篇，
      那次迟到的 popstate 会误关新弹窗。用标记把它吃掉。 */
   const selfPopRef = useRef(false);
-  const bodyRef = useRef<HTMLDivElement>(null);
+
   const [font, setFont] = useState<FontKey>(() => {
     const v = localStorage.getItem(FONT_KEY);
     return v === "s" || v === "l" ? v : "m";
   });
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setErr(null);
     storyApi
       .publicList()
       .then((d) => setStories(d.items ?? []))
@@ -279,18 +185,33 @@ export default function StoryPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(load, [load]);
+
   useEffect(() => {
     localStorage.setItem(FONT_KEY, font);
   }, [font]);
 
-  /* 打开弹框：压入一条历史记录，让「返回」优先命中弹框而不是离开页面 */
-  const openModal = useCallback((s: Story) => {
-    setActive(s);
-    if (!modalPushedRef.current) {
-      modalPushedRef.current = true;
-      window.history.pushState({ storyModal: true }, "");
-    }
+  const markRead = useCallback((id: number) => {
+    setReadIds((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      saveReadIds(next);
+      return next;
+    });
   }, []);
+
+  /* 打开弹框：压入一条历史记录，让「返回」优先命中弹框而不是离开页面 */
+  const openModal = useCallback(
+    (s: Story) => {
+      setActive(s);
+      markRead(s.id);
+      if (!modalPushedRef.current) {
+        modalPushedRef.current = true;
+        window.history.pushState({ storyModal: true }, "");
+      }
+    },
+    [markRead],
+  );
 
   /* 关闭弹框：先置空状态，再弹掉自己压入的那条历史记录（保持历史干净）。
      该次 back 引发的 popstate 由 selfPopRef 标记吃掉，不重复处理。 */
@@ -334,326 +255,303 @@ export default function StoryPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [stories, closeModal]);
 
-  /* 弹框打开时锁住背景滚动：否则手机上会「穿透」到背后的列表一起滚 */
+  /* 弹框打开时锁住背景滚动（否则手机上会「穿透」到背后的列表一起滚），
+     并补偿滚动条消失带来的宽度 —— 不补的话桌面居中容器会整体横移 5px。 */
   useEffect(() => {
     if (!active) return;
-    const prev = document.body.style.overflow;
+    const sw = window.innerWidth - document.documentElement.clientWidth;
+    const prevOverflow = document.body.style.overflow;
+    const prevPad = document.body.style.paddingRight;
     document.body.style.overflow = "hidden";
+    if (sw > 0) document.body.style.paddingRight = `${sw}px`;
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPad;
     };
   }, [active]);
 
-  /* 上一篇/下一篇：换一篇后正文回到顶部，否则会停在上一篇的滚动位置 */
-  useEffect(() => {
-    bodyRef.current?.scrollTo({ top: 0 });
-  }, [active?.id]);
+  /* ---------------------------- 筛选 ---------------------------- */
 
-  const today = todayStr();
-  const hero = stories[0]?.story_date === today ? stories[0] : null;
-  const rest = hero ? stories.slice(1) : stories;
+  const tagStats = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of stories)
+      for (const x of tagsOf(s.tags)) m.set(x, (m.get(x) || 0) + 1);
+    return [...m.entries()]
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh"))
+      .slice(0, 9);
+  }, [stories]);
 
-  const dim = night ? "text-[#a99683]" : "text-paper-700";
-  const faint = night ? "text-[#8a7866]" : "text-paper-500";
-  const strong = night ? "text-[#f2e9dc]" : "text-paper-900";
-  const card = night
-    ? "border-[#3a2f28] bg-[#221b17] hover:border-[#5a4636]"
-    : "glass border-paper-100 card-hover";
-  const gold = night ? "#e8c37a" : "#c98600";
+  const filtered = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    return stories.filter((s) => {
+      if (tag && !tagsOf(s.tags).includes(tag)) return false;
+      if (!kw) return true;
+      return `${s.title} ${s.summary} ${s.tags}`.toLowerCase().includes(kw);
+    });
+  }, [stories, q, tag]);
+
+  const filtering = q.trim().length > 0 || tag !== null;
+  /* 重点卡只在「未筛选」时出现；筛选后平铺展示全部命中项，避免歧义 */
+  const hero = filtering ? null : filtered[0] ?? null;
+
+  const groups = useMemo(() => {
+    const rest = hero ? filtered.slice(1) : filtered;
+    const out: { date: string; items: Story[] }[] = [];
+    for (const s of rest) {
+      const last = out[out.length - 1];
+      if (last && last.date === s.story_date) last.items.push(s);
+      else out.push({ date: s.story_date, items: [s] });
+    }
+    return out;
+  }, [filtered, hero]);
+
+  const t = storyTheme(night);
+  const readSet = useMemo(() => new Set(readIds), [readIds]);
+
+  const openRandom = () => {
+    if (stories.length === 0) return;
+    const unread = stories.filter((s) => !readSet.has(s.id));
+    const pool = unread.length > 0 ? unread : stories;
+    openModal(pool[Math.floor(Math.random() * pool.length)]);
+  };
 
   const activeIdx = active ? stories.findIndex((s) => s.id === active.id) : -1;
   const older = activeIdx >= 0 && activeIdx < stories.length - 1 ? stories[activeIdx + 1] : null;
   const newer = activeIdx > 0 ? stories[activeIdx - 1] : null;
 
+  const heroRel = hero ? relDate(hero.story_date) : "";
+  const heroParts = hero ? splitEmoji(hero.title) : null;
+
   return (
-    <div
-      className={`-mx-5 min-h-screen px-5 pt-10 pb-16 transition-colors ${
-        night ? "bg-[#17120f]" : ""
-      }`}
-    >
-      <div className="mx-auto max-w-3xl">
-        {/* 页头 */}
+    <div className="pt-8 pb-16">
+      {/* 页头 */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1
-            className={`flex items-center gap-2 text-3xl font-extrabold tracking-tight ${strong}`}
+            className="flex items-center gap-2 text-[26px] font-extrabold tracking-tight sm:text-3xl"
+            style={{ color: t.strong }}
           >
-            <BookOpen size={26} className="text-brand-gold" />
+            <BookOpen size={24} className="text-brand-gold" />
             睡前故事
           </h1>
-          <p className={`mt-1.5 text-sm ${dim}`}>
+          <p className="mt-1.5 text-sm" style={{ color: t.dim }}>
             {stories.length > 0
               ? `共 ${stories.length} 篇 · 每晚一篇，读完就睡`
               : "每晚一篇，读完就睡"}
           </p>
         </div>
-
-        {/* 状态 */}
-        {loading && (
-          <div className="mt-24 flex justify-center">
-            <Loader2 size={22} className="animate-spin text-paper-500" />
-          </div>
-        )}
-        {err && (
-          <div className="mt-6 rounded-2xl border border-rose-600/25 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            加载失败：{err}
-          </div>
-        )}
-        {!loading && !err && stories.length === 0 && (
-          <div
-            className={`mt-16 rounded-3xl border p-12 text-center ${card}`}
-          >
-            <BookOpen size={30} className="mx-auto text-paper-300" />
-            <p className={`mt-3 text-sm ${dim}`}>还没有故事</p>
-          </div>
-        )}
-
-        {/* 今晚的故事 */}
-        {hero && (
+        {stories.length > 0 && (
           <button
-            onClick={() => openModal(hero)}
-            className="group mt-7 block w-full text-left"
+            type="button"
+            onClick={openRandom}
+            title="随机挑一篇（优先没读过的）"
+            className={`press inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-medium transition ${t.btn}`}
           >
-            <div
-              className={`relative overflow-hidden rounded-3xl border p-7 transition ${
-                night
-                  ? "border-[#3a2f28] bg-[#221b17] hover:border-[#5a4636]"
-                  : "border-brand-gold/45 bg-gradient-to-br from-[#fffdf9] to-[#fbf0e0] hover:shadow-card"
-              }`}
-            >
-              <MoonDecor night={night} />
-              <span
-                className="inline-flex items-center gap-1.5 rounded-full bg-brand-gold/15 px-3 py-1 text-[11px] font-semibold"
-                style={{ color: gold }}
-              >
-                今晚的故事 · {formatDate(hero.story_date)}
-              </span>
-              <h2 className={`mt-3 text-2xl font-bold leading-snug ${strong}`}>
-                {hero.title}
-              </h2>
-              {hero.summary && (
-                <p className={`mt-2 text-sm leading-relaxed ${dim}`}>
-                  {hero.summary}
-                </p>
-              )}
-              <div className={`mt-5 flex items-center gap-2 text-xs ${faint}`}>
-                <CopyBtn text={hero.content} night={night} />
-                <span className="ml-auto inline-flex items-center gap-1 font-medium" style={{ color: gold }}>
-                  点击阅读
-                  <ArrowRight size={13} className="transition group-hover:translate-x-0.5" />
-                </span>
-              </div>
-            </div>
+            <Shuffle size={15} />
+            随机一篇
           </button>
-        )}
-
-        {/* 历史列表 */}
-        {rest.length > 0 && (
-          <>
-            {hero && (
-              <div className={`mt-9 mb-3 flex items-center gap-3 text-xs font-medium ${faint}`}>
-                <span>更早的故事</span>
-                <span
-                  className={`h-px flex-1 ${night ? "bg-[#3a2f28]" : "bg-paper-200"}`}
-                />
-              </div>
-            )}
-            <div className="mt-3 space-y-3">
-              {rest.map((s) => {
-                const dp = dateParts(s.story_date);
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => openModal(s)}
-                    className="block w-full text-left"
-                  >
-                    <div className={`group relative flex gap-4 rounded-2xl border px-5 py-4 transition ${card}`}>
-                      {/* 日期竖块 */}
-                      <div
-                        className={`flex w-[3.4rem] shrink-0 flex-col items-center justify-center border-r pr-3.5 ${
-                          night ? "border-[#3a2f28]" : "border-paper-200"
-                        }`}
-                      >
-                        <span
-                          className="text-[22px] font-bold leading-none tabular-nums"
-                          style={{ color: gold }}
-                        >
-                          {dp.d || "—"}
-                        </span>
-                        <span className={`mt-1.5 whitespace-nowrap text-[10.5px] ${faint}`}>
-                          {dp.m ? `${dp.m}月 · 周${dp.w}` : formatDate(s.story_date)}
-                        </span>
-                      </div>
-                      {/* 内容 */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <h3 className={`text-[15.5px] font-semibold leading-snug ${strong}`}>
-                            {s.title}
-                          </h3>
-                          <span className="shrink-0 opacity-50 transition group-hover:opacity-100">
-                            <CopyBtn text={s.content} night={night} />
-                          </span>
-                        </div>
-                        {s.summary && (
-                          <p className={`mt-1 line-clamp-2 text-xs leading-relaxed ${dim}`}>
-                            {s.summary}
-                          </p>
-                        )}
-                        {tagsOf(s.tags).length > 0 && (
-                          <div className="mt-2.5 flex flex-wrap gap-1.5">
-                            {tagsOf(s.tags).map((t) => (
-                              <Tag key={t} t={t} night={night} />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </>
         )}
       </div>
 
-      {/* 全文弹窗：书页化排版。
-          分层：遮罩（定位 + 溢出兜底）→ 面板（限高纵向 flex）→ 操作栏 / 正文区 / 底栏。
-          正文区是唯一的滚动容器，操作栏与底栏在 flex 里天然不动 —— 因此它们
-          **不需要背景色、边框和 sticky**，加了反而把整块书页切成三段（且 bg-white/85
-          在夜间模式没有映射，会变成白条）。
-          ⚠️ 限高必须用 max-h-[calc(100dvh-6rem)]：可用高度 = 视口 − 遮罩 p-4(2rem) −
-          面板 my-8(4rem)。写成 100dvh-2rem 会算出 100dvh+4rem，把遮罩层撑成滚动容器，
-          滚轮一滚整块面板连关闭按钮一起上移（桌面端实测复现）。也不能用 max-h-full ——
-          flex item 的百分比高度解析不到定高父级，等于失效。
-          ⚠️ 遮罩保持 items-start：items-center 配 overflow-y-auto 是经典 bug，内容超长时
-          顶部被裁且滚不回去。定位方式与改动前一致，避免观感跳变。 */}
-      {active && (
-        <div
-          className="anim-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-          onClick={closeModal}
+      {/* 搜索 + 主题筛选 */}
+      {stories.length > 0 && (
+        <div className="mt-5 space-y-3">
+          <div className="relative">
+            <Search
+              size={15}
+              className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${
+                night ? "text-[#6e5f51]" : "text-paper-500"
+              }`}
+            />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              type="search"
+              placeholder="搜索故事标题或摘要…"
+              aria-label="搜索故事"
+              className={`w-full rounded-xl border py-2.5 pl-9 pr-9 text-sm outline-none transition focus:border-brand-gold/60 ${
+                night
+                  ? "border-[#3a2f28] bg-[#221b17] text-[#e8ddd0] placeholder:text-[#6e5f51]"
+                  : "border-paper-200 bg-white/70 text-paper-900 placeholder:text-[#8b7355]"
+              }`}
+            />
+            {q && (
+              <button
+                type="button"
+                onClick={() => setQ("")}
+                title="清除"
+                aria-label="清除搜索"
+                className={`press absolute right-2.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md transition ${
+                  night ? "text-[#8a7866] hover:bg-[#2a221d]" : "text-paper-500 hover:bg-paper-200"
+                }`}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+          {tagStats.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Chip active={!tag} night={night} onClick={() => setTag(null)}>
+                全部
+              </Chip>
+              {tagStats.map(([name, n]) => (
+                <Chip
+                  key={name}
+                  active={tag === name}
+                  night={night}
+                  onClick={() => setTag(tag === name ? null : name)}
+                >
+                  {name}
+                  <span className="text-[10px] opacity-60">{n}</span>
+                </Chip>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 状态 */}
+      {loading && <SkeletonCards night={night} />}
+
+      {err && (
+        <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-rose-600/25 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <span className="min-w-0 flex-1">加载失败：{err}</span>
+          <button
+            type="button"
+            onClick={load}
+            className="press inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-600/30 px-2.5 py-1 text-xs font-medium transition hover:bg-rose-600/10"
+          >
+            <RefreshCw size={12} />
+            重试
+          </button>
+        </div>
+      )}
+
+      {!loading && !err && stories.length === 0 && (
+        <div className={`mt-10 rounded-3xl border p-12 text-center ${t.card}`}>
+          <BookOpen size={30} className="mx-auto text-paper-300" />
+          <p className="mt-3 text-sm" style={{ color: t.dim }}>
+            还没有故事
+          </p>
+        </div>
+      )}
+
+      {!loading && !err && stories.length > 0 && filtered.length === 0 && (
+        <div className={`mt-10 rounded-3xl border p-10 text-center ${t.card}`}>
+          <Search size={26} className="mx-auto text-paper-300" />
+          <p className="mt-3 text-sm" style={{ color: t.dim }}>
+            没有匹配的故事
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setQ("");
+              setTag(null);
+            }}
+            className="press mt-4 rounded-lg border border-paper-200 bg-paper-100 px-3 py-1.5 text-xs font-medium text-paper-800 transition hover:bg-paper-200"
+          >
+            清除筛选
+          </button>
+        </div>
+      )}
+
+      {filtering && filtered.length > 0 && (
+        <p className="mt-5 text-xs" style={{ color: t.faint }}>
+          找到 {filtered.length} 篇
+        </p>
+      )}
+
+      {/* 最近一篇 */}
+      {hero && heroParts && (
+        <button
+          type="button"
+          onClick={() => openModal(hero)}
+          className="press group mt-6 block w-full text-left"
         >
           <div
-            className={`anim-panel my-8 flex max-h-[calc(100dvh-6rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border shadow-card ${
+            className={`relative overflow-hidden rounded-3xl border p-6 transition sm:p-8 ${
               night
-                ? "border-[#3a2f28] bg-[#1e1815]"
-                : "glass"
+                ? "border-[#3a2f28] bg-[#221b17] hover:border-[#5a4636]"
+                : "border-brand-gold/45 bg-gradient-to-br from-[#fffdf9] to-[#fbf0e0] hover:shadow-card"
             }`}
-            onClick={(e) => e.stopPropagation()}
           >
-            {/* 操作栏：朗读（有音频时）/ 复制 / 关闭。不随正文滚动，故无需背板 */}
-            <div className="flex shrink-0 justify-end gap-2 px-7 pt-7">
-              {active.audio_url && <AudioBtn src={active.audio_url} night={night} />}
-              <CopyBtn text={active.content} night={night} size={14} />
-              <button
-                onClick={closeModal}
-                title="关闭"
-                aria-label="关闭"
-                className={`grid h-7 w-7 place-items-center rounded-lg border transition ${
-                  night
-                    ? "border-[#3a2f28] text-[#a99683] hover:bg-[#2a221d]"
-                    : "border-paper-200 bg-paper-100 text-paper-800 hover:bg-paper-200"
-                }`}
+            <MoonDecor night={night} size={84} />
+            <div className="relative max-w-2xl">
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-brand-gold/15 px-3 py-1 text-[11px] font-semibold"
+                style={{ color: t.gold }}
               >
-                <X size={14} />
-              </button>
-            </div>
-
-            {/* 正文滚动区：面板内唯一的滚动容器 */}
-            <div
-              ref={bodyRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-7 pb-7 pt-2"
-            >
-              {/* 刊头：日期小字 → 标题 → 金色短线 → 摘要 */}
-              <div className="mx-auto max-w-md text-center">
-                <p
-                  className="text-xs font-medium tracking-[0.2em]"
-                  style={{ color: gold }}
-                >
-                  {formatDate(active.story_date)}
+                {heroRel === "今天"
+                  ? `今晚的故事 · ${formatDate(hero.story_date)}`
+                  : `最近更新 · ${heroRel} · ${shortDate(hero.story_date)}`}
+              </span>
+              <h2
+                className="mt-3 text-[21px] font-bold leading-snug sm:text-[25px]"
+                style={{ color: t.strong }}
+              >
+                {heroParts.text}
+              </h2>
+              {hero.summary && (
+                <p className="mt-2.5 text-sm leading-relaxed" style={{ color: t.dim }}>
+                  {tidy(hero.summary)}
                 </p>
-                <h2 className={`mt-2 text-[22px] font-bold leading-snug ${strong}`}>
-                  {active.title}
-                </h2>
-                <div className="mx-auto mt-3 h-0.5 w-9 rounded-full bg-brand-gold/70" />
-                {active.summary && (
-                  <p className={`mt-3 text-[13px] leading-relaxed ${dim}`}>
-                    {active.summary}
-                  </p>
-                )}
-              </div>
-
-              {/* 正文 */}
-              <div className="mt-6">
-                <StoryBody content={active.content} night={night} font={font} />
-              </div>
-
-              {/* 标签 */}
-              {tagsOf(active.tags).length > 0 && (
-                <div className="mt-6 flex flex-wrap justify-center gap-1.5">
-                  {tagsOf(active.tags).map((t) => (
-                    <Tag key={t} t={t} night={night} />
-                  ))}
-                </div>
               )}
-            </div>
-
-            {/* 底栏：上一篇 / 字号 / 下一篇。同样不随正文滚动，保持原书页观感 */}
-            <div
-              className={`flex shrink-0 items-center justify-between gap-3 border-t px-7 pb-7 pt-4 ${
-                night ? "border-[#3a2f28]" : "border-paper-200/80"
-              }`}
-            >
-              <button
-                disabled={!older}
-                onClick={() => older && setActive(older)}
-                title={older ? older.title : "已经是更早的一篇了"}
-                className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs transition disabled:opacity-35 ${
-                  night
-                    ? "border-[#3a2f28] text-[#a99683] hover:bg-[#2a221d]"
-                    : "border-paper-200 bg-paper-100 text-paper-800 hover:bg-paper-200"
-                }`}
+              <span
+                className="mt-5 inline-flex items-center gap-1.5 text-[13px] font-semibold"
+                style={{ color: t.gold }}
               >
-                <ChevronLeft size={14} />
-                更早
-              </button>
-              <div
-                className={`flex items-center rounded-lg border ${
-                  night ? "border-[#3a2f28]" : "border-paper-200"
-                }`}
-              >
-                {(["s", "m", "l"] as FontKey[]).map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => setFont(k)}
-                    className={`px-2.5 py-1 text-[11px] transition ${
-                      font === k
-                        ? night
-                          ? "bg-[#2a221d] font-semibold text-[#e8c37a]"
-                          : "bg-paper-100 font-semibold text-paper-900"
-                        : night
-                          ? "text-[#8a7866]"
-                          : "text-paper-500"
-                    }`}
-                  >
-                    {k === "s" ? "小" : k === "m" ? "标准" : "大"}
-                  </button>
-                ))}
-              </div>
-              <button
-                disabled={!newer}
-                onClick={() => newer && setActive(newer)}
-                title={newer ? newer.title : "已经是最新的一篇了"}
-                className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs transition disabled:opacity-35 ${
-                  night
-                    ? "border-[#3a2f28] text-[#a99683] hover:bg-[#2a221d]"
-                    : "border-paper-200 bg-paper-100 text-paper-800 hover:bg-paper-200"
-                }`}
-              >
-                更新
-                <ChevronRight size={14} />
-              </button>
+                点击阅读
+                <ArrowRight size={14} className="transition group-hover:translate-x-0.5" />
+              </span>
             </div>
           </div>
-        </div>
+        </button>
+      )}
+
+      {/* 历史列表：按日期分组，桌面双列 */}
+      {groups.map((g) => (
+        <section key={g.date} className="mt-7">
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-xs font-semibold" style={{ color: t.faint }}>
+              {relDate(g.date)} · {weekdayOf(g.date)}
+            </span>
+            {g.items.length > 1 && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  night ? "bg-[#2a221d] text-[#8a7866]" : "bg-paper-200 text-paper-700"
+                }`}
+              >
+                {g.items.length} 篇
+              </span>
+            )}
+            <span className={`h-px flex-1 ${t.hairline}`} />
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {g.items.map((s) => (
+              <StoryCard
+                key={s.id}
+                s={s}
+                night={night}
+                read={readSet.has(s.id)}
+                onOpen={openModal}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      {active && (
+        <StoryModal
+          story={active}
+          night={night}
+          font={font}
+          setFont={setFont}
+          older={older}
+          newer={newer}
+          onGo={openModal}
+          onClose={closeModal}
+        />
       )}
     </div>
   );
