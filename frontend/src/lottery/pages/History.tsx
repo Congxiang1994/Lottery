@@ -6,6 +6,7 @@ import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
 import PredictionMatrix from "../components/PredictionMatrix";
 import Reveal from "../components/Reveal";
+import { ErrorBlock, errText } from "../../common/State";
 import { Table2, TrendingUp } from "lucide-react";
 
 const PAGE_SIZE = 15;
@@ -21,6 +22,11 @@ export default function History() {
   const [loading, setLoading] = useState(true);
   const [pred, setPred] = useState<HistoryPredictions | null>(null);
   const [predLoading, setPredLoading] = useState(false);
+  /* 失败态：与 /story 页一致，失败必须给出口 —— 之前这里失败只是静默留白 */
+  const [drawsErr, setDrawsErr] = useState<string | null>(null);
+  const [predErr, setPredErr] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const retry = () => setTick((t) => t + 1);
 
   useEffect(() => {
     setPage(1);
@@ -28,25 +34,27 @@ export default function History() {
 
   useEffect(() => {
     setLoading(true);
+    setDrawsErr(null);
     api
       .history(key, page, PAGE_SIZE)
       .then((r) => {
         setDraws(r.draws);
         setTotal(r.total);
       })
-      .catch(() => {})
+      .catch((e) => setDrawsErr(errText(e)))
       .finally(() => setLoading(false));
-  }, [key, page]);
+  }, [key, page, tick]);
 
   // 算法对照数据：翻页/换彩种时拉取（默认 tab 即 matrix）
   useEffect(() => {
     setPredLoading(true);
+    setPredErr(null);
     api
       .historyPredictions(key, page, PAGE_SIZE)
       .then(setPred)
-      .catch(() => {})
+      .catch((e) => setPredErr(errText(e)))
       .finally(() => setPredLoading(false));
-  }, [key, page]);
+  }, [key, page, tick]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const meta = lotteries.find((l) => l.key === key);
@@ -65,8 +73,10 @@ export default function History() {
       <Reveal className="mt-6">
         <div className="glass overflow-hidden rounded-3xl shadow-card">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-paper-100 px-5 py-3">
-            <div className="flex gap-1 rounded-xl bg-paper-100 p-1">
+            <div className="flex gap-1 rounded-xl bg-paper-100 p-1" role="tablist" aria-label="历史开奖视图">
               <button
+                role="tab"
+                aria-selected={tab === "matrix"}
                 onClick={() => setTab("matrix")}
                 className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition ${
                   tab === "matrix"
@@ -78,6 +88,8 @@ export default function History() {
                 算法对照
               </button>
               <button
+                role="tab"
+                aria-selected={tab === "draws"}
                 onClick={() => setTab("draws")}
                 className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition ${
                   tab === "draws"
@@ -116,7 +128,13 @@ export default function History() {
                           </td>
                         </tr>
                       ))
-                    : draws.map((d) => (
+                    : drawsErr ? (
+                        <tr>
+                          <td colSpan={4} className="px-5 py-4">
+                            <ErrorBlock message={drawsErr} onRetry={retry} />
+                          </td>
+                        </tr>
+                      ) : draws.map((d) => (
                         <tr key={d.issue} className="border-b border-paper-100 transition hover:bg-paper-100">
                           <td className="px-5 py-3 font-semibold text-paper-900">{d.issue}</td>
                           <td className="px-5 py-3 text-paper-700">{d.date}</td>
@@ -147,6 +165,8 @@ export default function History() {
                     <div key={i} className="shimmer h-40 w-full animate-shimmer rounded-2xl" />
                   ))}
                 </div>
+              ) : predErr ? (
+                <ErrorBlock message={`算法对照数据加载失败：${predErr}`} onRetry={retry} />
               ) : pred && meta ? (
                 <PredictionMatrix
                   items={pred.items}
@@ -155,7 +175,7 @@ export default function History() {
                 />
               ) : (
                 <div className="py-12 text-center text-sm text-paper-500">
-                  数据加载失败，请稍后重试
+                  本期暂无算法对照数据
                 </div>
               )}
             </div>

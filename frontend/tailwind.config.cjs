@@ -78,7 +78,11 @@ module.exports = {
       },
       animation: {
         floaty: "floaty 6s ease-in-out infinite",
-        rise: "rise 0.7s cubic-bezier(0.22,1,0.36,1) both",
+        /* ⚠️ fill-mode 用 backwards 而非 both：rise 的 to 值（translateY(0)）等于元素
+           自然态，保留它没有任何视觉收益，却会让元素永久带着一个非 none 的 transform
+           → 成为 position:fixed 后代的**包含块**（与 index.css 中 .anim-* 同一坑）。
+           用 backwards 同样能在 animationDelay 期间保持 from 态、避免闪烁。 */
+        rise: "rise 0.7s cubic-bezier(0.22,1,0.36,1) backwards",
         shimmer: "shimmer 3s linear infinite",
         pulseRing: "pulseRing 2.4s cubic-bezier(0.4,0,0.2,1) infinite",
         indeterminate: "indeterminate 1.8s ease-in-out infinite",

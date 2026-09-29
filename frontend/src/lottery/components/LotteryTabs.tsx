@@ -16,6 +16,7 @@ export default function LotteryTabs({ lotteries, value, onChange }: TabsProps) {
           <button
             key={l.key}
             onClick={() => onChange(l.key)}
+            aria-pressed={active}
             className={`relative rounded-lg px-4 py-2 text-sm font-semibold transition ${
               active
                 ? isRed

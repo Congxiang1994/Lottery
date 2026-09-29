@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
+import { errText } from "../common/State";
 
 interface Song {
   id: string;
@@ -176,9 +177,15 @@ export default function BabySong() {
       })
       .catch((e) => {
         /* 静默刷新失败保留现有列表；仅首次加载失败才提示 error */
-        if (report) setError(e?.message || "加载失败");
+        if (report) setError(errText(e));
       });
   }, []);
+
+  /* 失败重试：与全站一致，错误提示必须带出口 */
+  const retryLoad = () => {
+    setLoading(true);
+    fetchList(true).finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     fetchList(true).finally(() => setLoading(false));
@@ -558,7 +565,7 @@ export default function BabySong() {
             onClick={openRandom}
             disabled={!filtered.length && !songs.some((s) => s.local)}
             title="优先从已下载本地的歌里随机选一首，站内播放"
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-5 py-3 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-5 py-3 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
           >
             <Shuffle size={16} /> 随机来一首
           </button>
@@ -635,8 +642,15 @@ export default function BabySong() {
             ))}
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-paper-200 bg-paper-50 px-5 py-16 text-center text-sm text-paper-700">
-            儿歌列表加载失败：{error}
+          <div className="rounded-2xl border border-paper-200 bg-paper-50 px-5 py-16 text-center">
+            <p className="text-sm text-paper-700">儿歌列表加载失败：{error}</p>
+            <button
+              onClick={retryLoad}
+              className="press mt-4 inline-flex items-center gap-1.5 rounded-full border border-brand-red/40 px-4 py-1.5 text-xs font-medium text-brand-red transition hover:bg-brand-red hover:text-white"
+            >
+              <RotateCcw size={12} />
+              重试
+            </button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl border border-paper-200 bg-paper-50 px-5 py-16 text-center">
@@ -911,7 +925,7 @@ export default function BabySong() {
                 <button
                   onClick={closeLocalModal}
                   title="关闭"
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-paper-200 text-paper-600 transition hover:border-brand-red hover:text-brand-red active:scale-95"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-paper-200 text-paper-600 transition hover:border-brand-red hover:text-brand-red"
                 >
                   <X size={16} />
                 </button>

@@ -9,6 +9,7 @@ import LotteryTabs from "../components/LotteryTabs";
 import Heatmap from "../components/Heatmap";
 import TrendChart from "../components/TrendChart";
 import Reveal from "../components/Reveal";
+import { ErrorBlock, errText } from "../../common/State";
 
 export default function Home() {
   const { lotteries, key, setKey } = useLottery();
@@ -16,16 +17,22 @@ export default function Home() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [combined, setCombined] = useState<SavedCombined | null>(null);
+  /* 失败态：原先 catch 全静默，接口挂掉时页面会**永远停在骨架屏**上 ——
+     用户看不出是在加载还是已经失败。现在失败给一句人话 + 重试出口。 */
+  const [err, setErr] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const retry = () => setTick((t) => t + 1);
 
   useEffect(() => {
     setSummary(null);
     setStats(null);
     setCombined(null);
-    api.summary(key).then(setSummary).catch(() => {});
-    api.stats(key).then(setStats).catch(() => {});
-    // 共识推荐来自每日跑批缓存，不触发实时计算
+    setErr(null);
+    api.summary(key).then(setSummary).catch((e) => setErr(errText(e)));
+    api.stats(key).then(setStats).catch((e) => setErr(errText(e)));
+    // 共识推荐来自每日跑批缓存，不触发实时计算 —— 拿不到只是「暂无数据」，不算故障
     api.savedCombined(key).then(setCombined).catch(() => {});
-  }, [key]);
+  }, [key, tick]);
 
   const meta = lotteries.find((l) => l.key === key);
   const hot = stats?.hot_cold.red.hot[0];
@@ -52,6 +59,15 @@ export default function Home() {
           <LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />
         </div>
       </section>
+
+      {/* 加载失败：一条提示 + 重试，取代「永远转的骨架屏」 */}
+      {err && (
+        <ErrorBlock
+          message={`开奖数据加载失败：${err}`}
+          onRetry={retry}
+          className="mt-8"
+        />
+      )}
 
       {/* 最新开奖 */}
       <Reveal className="mt-10">
@@ -83,7 +99,7 @@ export default function Home() {
                 ))}
               </div>
             </div>
-          ) : (
+          ) : err ? null : (
             <div className="shimmer h-32 animate-shimmer rounded-2xl" />
           )}
         </div>
@@ -149,7 +165,7 @@ export default function Home() {
               redMax={summary?.red_max ?? (key === "dlt" ? 35 : 33)}
               blueMax={summary?.blue_max ?? (key === "dlt" ? 12 : 16)}
             />
-          ) : (
+          ) : err ? null : (
             <div className="shimmer h-[340px] animate-shimmer rounded-2xl" />
           )}
         </Reveal>
@@ -161,7 +177,7 @@ export default function Home() {
               <Heatmap items={stats.frequency.red.map((f) => ({ number: f.number, count: f.count }))} kind="red" title={`${meta?.red_label}（1-${summary?.red_max}）`} />
               <Heatmap items={stats.frequency.blue.map((f) => ({ number: f.number, count: f.count }))} kind="blue" title={`${meta?.blue_label}（1-${summary?.blue_max}）`} />
             </div>
-          ) : (
+          ) : err ? null : (
             <div className="shimmer h-48 animate-shimmer rounded-2xl" />
           )}
         </Reveal>
@@ -179,7 +195,7 @@ export default function Home() {
               <ColdHotRow title="热号" items={stats.hot_cold.red.hot} kind="red" hot />
               <ColdHotRow title="冷号" items={stats.hot_cold.red.cold} kind="red" />
             </div>
-          ) : (
+          ) : err ? null : (
             <div className="shimmer h-24 animate-shimmer rounded-2xl" />
           )}
           <button

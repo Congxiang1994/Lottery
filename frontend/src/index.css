@@ -20,6 +20,80 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ============================================================================
+   全站交互基线（2026-09-29）—— 以「睡前故事」页的手感为基准统一到所有页面。
+   三件事：① 所有可点元素默认具备 0.97 下压反馈
+          ② 过渡时长 / 缓动曲线统一
+          ③ 键盘焦点统一可见
+
+   ⚠️ 按压用 CSS `scale` 独立属性，**不是** `transform: scale()`。
+   很多元素已经用 transform 承担定位职责（例如绝对定位关闭按钮上的
+   `top-1/2 -translate-y-1/2`）。`transform: scale(.97)` 会把那条 translate
+   一起覆盖掉 —— 按下的那一瞬间按钮会跳位。`scale` 与 `transform` 是两个独立
+   属性，浏览器把它们相乘叠加，互不干扰。
+
+   ⚠️ 本块位置有讲究，挪动它会同时破坏两件事：
+   · 必须在 `@tailwind utilities` 之后 —— 才能盖掉 .transition / .duration-* 等
+     工具的 transition-property 列表，把 scale 塞进过渡（否则按下是瞬间跳变）；
+   · 必须写在下方的 .glass / .card-hover **之前** —— 卡片才能按自己的慢节奏覆盖
+     （悬停抬升仍是 250ms，不受这里 130ms 影响）。
+
+   过渡属性列表 = Tailwind `transition` 工具的全集 + scale。
+   ⚠️ 日后再往这里加属性，记得同步 .press 与 .card-hover 的列表。
+   已核对：现有带 `duration-*` / `transition-[...]` 的元素全是 div/span/img，
+   不在这几个选择器命中范围内，所以不会被这里的 130ms 覆盖。 */
+:root {
+  /* 下压反馈偏快 —— 按下去要「跟手」。睡前故事页实测手感是 120ms，取整 130ms */
+  --dur-press: 130ms;
+  /* = Tailwind `transition` 工具的默认缓动 cubic-bezier(0.4, 0, 0.2, 1) */
+  --ease-interact: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href],
+[role="link"],
+summary {
+  transition-property: color, background-color, border-color, text-decoration-color,
+    fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter, scale;
+  transition-timing-function: var(--ease-interact);
+  transition-duration: var(--dur-press);
+  /* 用自绘下压反馈替掉 iOS 的灰色点击块 */
+  -webkit-tap-highlight-color: transparent;
+}
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active,
+a[href]:active,
+[role="link"]:active,
+summary:active {
+  scale: 0.97;
+}
+
+/* .press：显式声明「此元素要下压反馈」。上面两组规则已覆盖 button / a[href] /
+   [role="button"] / [role="link"] / summary，这里是为「用别的标签 + onClick 实现的
+   可点元素」兜底（比如忘了加 role 的 div）。取值与上面完全一致 —— 同时命中不会叠成
+   双重缩放。 */
+.press {
+  transition-property: color, background-color, border-color, text-decoration-color,
+    fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter, scale;
+  transition-timing-function: var(--ease-interact);
+  transition-duration: var(--dur-press);
+  -webkit-tap-highlight-color: transparent;
+}
+.press:active {
+  scale: 0.97;
+}
+
+/* 键盘焦点：统一品牌金描边。`.press:active` 同样走 scale，故禁用态只需拦 :disabled。
+   :where() 权重为 0 → 组件自己写的 `focus-visible:ring-*` / `outline-none` 随时可覆盖。 */
+:where(button, a[href], [role="button"], [role="link"], summary, input, textarea, select):focus-visible {
+  outline: 2px solid rgba(201, 134, 0, 0.72);
+  outline-offset: 2px;
+}
+.site-night :where(button, a[href], [role="button"], [role="link"], summary, input, textarea, select):focus-visible {
+  outline-color: rgba(232, 195, 122, 0.8);
+}
+
 /* 全局背景光晕（柔和暖色） */
 .bg-aurora {
   background:
@@ -68,8 +142,15 @@ body {
   color: transparent;
 }
 
+/* 卡片悬停抬升。位置**必须**在全站交互基线之后（同权重靠后来者胜），
+   否则会被基线的 130ms 过渡盖掉，抬升变急躁。
+   逐项对应 transition-property：悬停 250ms 保持原有慢节奏，按压 scale 走
+   全站统一的 --dur-press —— 一个属性一条时长，互不干扰。
+   ⚠️ 增删属性要同步增删 duration / timing-function 的值。 */
 .card-hover {
-  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s, border-color 0.25s;
+  transition-property: transform, box-shadow, border-color, scale;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1), ease, ease, ease;
+  transition-duration: 250ms, 250ms, 250ms, var(--dur-press);
 }
 .card-hover:hover {
   transform: translateY(-4px);
@@ -131,21 +212,11 @@ body {
   background-size: 400% 100%;
 }
 
-/* ---------- 汉字课：轻量动画 ---------- */
-@keyframes hanzi-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes hanzi-scale-in {
-  from { opacity: 0; transform: scale(0.96) translateY(8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
-.animate-hanzi-fade-in { animation: hanzi-fade-in 0.18s ease-out both; }
-.animate-hanzi-scale-in { animation: hanzi-scale-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
-
 /* ---------- 全站统一动效 token ----------
    页面入场 / 弹窗 / 按压反馈共用一条缓动曲线（与 rise / Reveal 一致）。
-   遵循 prefers-reduced-motion：用户关闭动效时全部退化。 */
+   遵循 prefers-reduced-motion：用户关闭动效时全部退化。
+   ⚠️ 原「汉字课：轻量动画」的 hanzi-fade-in / hanzi-scale-in 已删除：
+     两个类在全仓 0 引用（已 grep 核实），且用的是危险 fill-mode: both。 */
 @keyframes page-in {
   from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: translateY(0); }
@@ -170,13 +241,8 @@ body {
 .anim-overlay { animation: overlay-in 0.2s ease-out backwards; }
 .anim-panel { animation: panel-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 
-/* 统一按压反馈：作用于按钮 / 可点卡片 */
-.press {
-  transition: transform 0.12s ease;
-}
-.press:active {
-  transform: scale(0.97);
-}
+/* ⚠️ 按压反馈已上移到文件顶部的「全站交互基线」段（必须在 .card-hover 之前才能
+   让卡片的悬停抬升按自己的 250ms 生效）。此处不再重复定义 .press。 */
 
 @media (prefers-reduced-motion: reduce) {
   .anim-page-in,
@@ -185,10 +251,22 @@ body {
   .animate-rise {
     animation: none;
   }
+  /* 关掉按压缩放，保留颜色 / 阴影这类非位移反馈 */
   .press,
-  .press:active {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  [role="link"],
+  summary {
     transition: none;
-    transform: none;
+  }
+  .press:active,
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  a[href]:active,
+  [role="link"]:active,
+  summary:active {
+    scale: none;
   }
 }
 

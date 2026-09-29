@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Grid3X3,
   Loader2,
   Play,
+  RefreshCw,
   Search,
   Shuffle,
   X,
@@ -19,6 +20,7 @@ import {
 import { loadCachedList, saveCachedList } from "./listCache";
 import { Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
+import { errText } from "../common/State";
 
 interface VideoItem {
   id: number | null;
@@ -62,14 +64,17 @@ export default function HanziPlayer() {
   const lastSaveRef = useRef(0);
   const resumedNumRef = useRef<number | null>(null);
 
-  /* 加载视频列表：当天缓存优先，跨天刷新，每天最多请求一次后端 */
-  useEffect(() => {
-    const cached = loadCachedList<VideoItem>();
+  /* 加载视频列表：当天缓存优先，跨天刷新，每天最多请求一次后端。
+     force=true 时跳过当日缓存（失败后「重试」用，否则会命中当天那份坏缓存）。 */
+  const loadList = useCallback((force = false) => {
+    const cached = force ? null : loadCachedList<VideoItem>();
     if (cached) {
       setVideos(cached);
       setLoading(false);
       return;
     }
+    setLoading(true);
+    setError("");
     fetch("/api/hanzi/list")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d) => {
@@ -81,10 +86,14 @@ export default function HanziPlayer() {
         /* 请求失败：降级用任意旧缓存，避免页面空白 */
         const stale = loadCachedList<VideoItem>({ allowStale: true });
         if (stale) setVideos(stale);
-        else setError(e?.message || "加载失败");
+        else setError(errText(e));
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadList();
+  }, [loadList]);
 
   /* 窗口重新聚焦 / 页面可见时刷新观看进度 */
   useEffect(() => {
@@ -297,7 +306,7 @@ export default function HanziPlayer() {
           <button
             onClick={goRandom}
             disabled={!filtered.length}
-            className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#b93a3a]/50 bg-white/80 px-5 py-2 text-sm font-medium text-[#b93a3a] shadow-sm transition hover:bg-[#b93a3a] hover:text-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+            className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#b93a3a]/50 bg-white/80 px-5 py-2 text-sm font-medium text-[#b93a3a] shadow-sm transition hover:bg-[#b93a3a] hover:text-white disabled:pointer-events-none disabled:opacity-40"
           >
             <Shuffle size={15} />
             随机学一个
@@ -377,8 +386,15 @@ export default function HanziPlayer() {
             <Loader2 size={28} className="animate-spin" />
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-[#d4c4a8] bg-paper-50 px-5 py-16 text-center text-sm text-[#8b7355]">
-            视频列表加载失败：{error}
+          <div className="rounded-2xl border border-[#d4c4a8] bg-paper-50 px-5 py-16 text-center">
+            <p className="text-sm text-[#8b7355]">视频列表加载失败：{error}</p>
+            <button
+              onClick={() => loadList(true)}
+              className="press mt-4 inline-flex items-center gap-1.5 rounded-full border border-[#b93a3a]/50 px-4 py-1.5 text-xs font-medium text-[#b93a3a] transition hover:bg-[#b93a3a] hover:text-white"
+            >
+              <RefreshCw size={12} />
+              重试
+            </button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl border border-[#d4c4a8] bg-paper-50 px-5 py-16 text-center">
@@ -408,7 +424,7 @@ export default function HanziPlayer() {
                 <button
                   key={v.url}
                   onClick={() => openModal(v.num)}
-                  className={`group relative flex flex-col items-center overflow-hidden rounded-xl border bg-paper-50 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg active:scale-[0.97] ${
+                  className={`group relative flex flex-col items-center overflow-hidden rounded-xl border bg-paper-50 py-4 text-center transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg ${
                     isActive
                       ? "border-[#b93a3a] ring-2 ring-[#b93a3a]/50"
                       : "border-[#d4c4a8]/60"
@@ -480,11 +496,11 @@ export default function HanziPlayer() {
       {activeNum != null && (
         <Modal>
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/50 p-4 backdrop-blur-md"
+            className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/50 p-4 backdrop-blur-md"
             onClick={closeModal}
           >
             <div
-              className="w-full max-w-3xl overflow-hidden rounded-2xl border border-[#d4c4a8] bg-white shadow-2xl"
+              className="anim-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-[#d4c4a8] bg-white shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               {!current ? (
@@ -521,7 +537,7 @@ export default function HanziPlayer() {
                       <button
                         onClick={toggleAutoplay}
                         title={autoplay ? "关闭自动连播" : "开启自动连播"}
-                        className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition active:scale-95 ${
+                        className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                           autoplay
                             ? "border-[#b93a3a]/50 bg-[#b93a3a]/10 text-[#b93a3a]"
                             : "border-[#d4c4a8] text-[#a89078]"
@@ -543,7 +559,7 @@ export default function HanziPlayer() {
                       <button
                         onClick={closeModal}
                         title="关闭"
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a] active:scale-95"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a]"
                       >
                         <X size={16} />
                       </button>
@@ -655,7 +671,7 @@ export default function HanziPlayer() {
                 <button
                   onClick={() => setShowPicker(false)}
                   title="关闭"
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a] active:scale-95"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a]"
                 >
                   <X size={15} />
                 </button>
@@ -668,7 +684,7 @@ export default function HanziPlayer() {
                     <button
                       key={v.num}
                       onClick={() => pickVideo(v.num)}
-                      className={`relative rounded-lg py-2 text-sm font-medium tabular-nums transition active:scale-95 ${
+                      className={`relative rounded-lg py-2 text-sm font-medium tabular-nums transition ${
                         active
                           ? "bg-[#b93a3a] text-white shadow-md"
                           : p?.done

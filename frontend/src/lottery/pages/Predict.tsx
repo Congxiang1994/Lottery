@@ -5,6 +5,7 @@ import { BacktestResult, SavedAlgorithmsLatest, SavedCombined } from "../types";
 import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
 import Reveal from "../components/Reveal";
+import { ErrorBlock, errText } from "../../common/State";
 import { Sparkles, ShieldAlert, Calendar, ChevronDown, ChevronUp, Trophy } from "lucide-react";
 
 const CAT_NAMES: Record<string, string> = {
@@ -22,14 +23,19 @@ export default function Predict() {
   const [combined, setCombined] = useState<SavedCombined | null>(null);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  /* 失败态：原先三个请求都 catch 成 null，于是「失败」与「暂无数据」不可区分 ——
+     saved 为 null 时页面**永远停在骨架屏**上。现在单独记失败原因并给重试出口。 */
+  const [err, setErr] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const retry = () => setTick((t) => t + 1);
 
   useEffect(() => {
-    setSaved(null); setCombined(null); setBacktest(null); setOpenId(null);
-    api.savedLatest(key).catch(() => null).then(setSaved);
+    setSaved(null); setCombined(null); setBacktest(null); setOpenId(null); setErr(null);
+    api.savedLatest(key).catch((e) => { setErr(errText(e)); return null; }).then(setSaved);
     api.savedCombined(key).catch(() => null).then(setCombined);
     // 回测榜（全量，sqlite 缓存秒开）
     api.backtest(key, 5, 4).catch(() => null).then(setBacktest);
-  }, [key]);
+  }, [key, tick]);
 
   // 回测 Top10：榜上前 10 的算法 → 从跑批缓存取推荐号码
   const top10 = useMemo(() => {
@@ -46,11 +52,20 @@ export default function Predict() {
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">智能推荐</h1>
           <p className="mt-1 text-sm text-paper-700">
-            {combined ? `每日 ${combined.run_date} 跑批 · 第 ${combined.issue_base} 期` : "加载中"}
+            {combined ? `每日 ${combined.run_date} 跑批 · 第 ${combined.issue_base} 期` : err ? "加载失败" : "加载中"}
           </p>
         </div>
         <LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />
       </div>
+
+      {/* 加载失败：一条提示 + 重试，取代「永远转的骨架屏」 */}
+      {err && (
+        <ErrorBlock
+          message={`推荐数据加载失败：${err}`}
+          onRetry={retry}
+          className="mt-6"
+        />
+      )}
 
       <Reveal className="mt-6">
         <div className="glass relative overflow-hidden rounded-3xl p-6 shadow-card">
@@ -182,7 +197,7 @@ export default function Predict() {
                 );
               })}
             </div>
-          ) : (
+          ) : err ? null : (
             <div className="mt-6 space-y-2">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="shimmer h-14 animate-shimmer rounded-xl" />
