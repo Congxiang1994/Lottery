@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Modal } from "../common/Modal";
 import {
   BookOpen,
   Eye,
@@ -129,32 +130,34 @@ function ConfirmModal({
   onConfirm: () => void;
 }) {
   return (
-    <div
-      className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-      onClick={onCancel}
-    >
+    <Modal>
       <div
-        className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
-        onClick={(e) => e.stopPropagation()}
+        className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+        onClick={onCancel}
       >
-        <h3 className="text-base font-bold text-paper-900">{title}</h3>
-        <p className="mt-2 text-xs leading-relaxed text-paper-700">{message}</p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100"
-          >
-            取消
-          </button>
-          <button
-            onClick={onConfirm}
-            className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
-          >
-            删除
-          </button>
+        <div
+          className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="text-base font-bold text-paper-900">{title}</h3>
+          <p className="mt-2 text-xs leading-relaxed text-paper-700">{message}</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              onClick={onCancel}
+              className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100"
+            >
+              取消
+            </button>
+            <button
+              onClick={onConfirm}
+              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+            >
+              删除
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -235,140 +238,142 @@ function StoryModal({
   };
 
   return (
-    <div
-      className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-      onClick={() => !saving && onClose()}
-    >
+    <Modal>
       <div
-        className="anim-panel glass max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl p-6 shadow-card"
-        onClick={(e) => e.stopPropagation()}
+        className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+        onClick={() => !saving && onClose()}
       >
-        <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
-          <BookOpen size={16} className="text-brand-gold" />
-          {editing ? "编辑故事" : "新建故事"}
-        </h3>
-        <div className="mt-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
-            <div>
-              <label className="text-xs font-medium text-paper-700">标题 *</label>
-              <input
-                className={`mt-1 ${inputCls}`}
-                value={form.title}
-                onChange={(e) => set("title", e.target.value)}
-                placeholder="小熊和月亮"
-              />
+        <div
+          className="anim-panel glass max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl p-6 shadow-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
+            <BookOpen size={16} className="text-brand-gold" />
+            {editing ? "编辑故事" : "新建故事"}
+          </h3>
+          <div className="mt-4 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
+              <div>
+                <label className="text-xs font-medium text-paper-700">标题 *</label>
+                <input
+                  className={`mt-1 ${inputCls}`}
+                  value={form.title}
+                  onChange={(e) => set("title", e.target.value)}
+                  placeholder="小熊和月亮"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-paper-700">故事日期</label>
+                <input
+                  className={`mt-1 ${inputCls}`}
+                  type="date"
+                  value={form.story_date}
+                  onChange={(e) => set("story_date", e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium text-paper-700">摘要</label>
+                <input
+                  className={`mt-1 ${inputCls}`}
+                  value={form.summary}
+                  onChange={(e) => set("summary", e.target.value)}
+                  placeholder="一句话概括，列表里显示"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-paper-700">标签</label>
+                <input
+                  className={`mt-1 ${inputCls}`}
+                  value={form.tags}
+                  onChange={(e) => set("tags", e.target.value)}
+                  placeholder="动物,勇气"
+                />
+              </div>
             </div>
             <div>
-              <label className="text-xs font-medium text-paper-700">故事日期</label>
-              <input
-                className={`mt-1 ${inputCls}`}
-                type="date"
-                value={form.story_date}
-                onChange={(e) => set("story_date", e.target.value)}
+              <label className="text-xs font-medium text-paper-700">
+                正文 * <span className="text-paper-500">（保留换行）</span>
+              </label>
+              <textarea
+                className={`mt-1 min-h-[260px] ${inputCls} leading-relaxed`}
+                value={form.content}
+                onChange={(e) => set("content", e.target.value)}
+                placeholder="从前有一只小熊……"
               />
+              <p className="mt-1 text-[11px] text-paper-500">
+                {form.content.length} 字
+              </p>
             </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="text-xs font-medium text-paper-700">摘要</label>
+
+            <details className="rounded-xl border border-paper-200 px-3 py-2">
+              <summary className="cursor-pointer text-xs text-paper-700">
+                预留字段（音频 / 封面链接）
+              </summary>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs font-medium text-paper-700">音频链接</label>
+                  <input
+                    className={`mt-1 ${inputCls}`}
+                    value={form.audio_url}
+                    onChange={(e) => set("audio_url", e.target.value)}
+                    placeholder="https://…"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-paper-700">封面链接</label>
+                  <input
+                    className={`mt-1 ${inputCls}`}
+                    value={form.cover_url}
+                    onChange={(e) => set("cover_url", e.target.value)}
+                    placeholder="https://…"
+                  />
+                </div>
+              </div>
+            </details>
+
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-paper-800">
               <input
-                className={`mt-1 ${inputCls}`}
-                value={form.summary}
-                onChange={(e) => set("summary", e.target.value)}
-                placeholder="一句话概括，列表里显示"
+                type="checkbox"
+                checked={form.published}
+                onChange={(e) => set("published", e.target.checked)}
+                className="h-4 w-4 accent-brand-gold"
               />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-paper-700">标签</label>
-              <input
-                className={`mt-1 ${inputCls}`}
-                value={form.tags}
-                onChange={(e) => set("tags", e.target.value)}
-                placeholder="动物,勇气"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-paper-700">
-              正文 * <span className="text-paper-500">（保留换行）</span>
+              立即发布（取消则保存为草稿，公开页看不到）
             </label>
-            <textarea
-              className={`mt-1 min-h-[260px] ${inputCls} leading-relaxed`}
-              value={form.content}
-              onChange={(e) => set("content", e.target.value)}
-              placeholder="从前有一只小熊……"
-            />
-            <p className="mt-1 text-[11px] text-paper-500">
-              {form.content.length} 字
-            </p>
           </div>
 
-          <details className="rounded-xl border border-paper-200 px-3 py-2">
-            <summary className="cursor-pointer text-xs text-paper-700">
-              预留字段（音频 / 封面链接）
-            </summary>
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-medium text-paper-700">音频链接</label>
-                <input
-                  className={`mt-1 ${inputCls}`}
-                  value={form.audio_url}
-                  onChange={(e) => set("audio_url", e.target.value)}
-                  placeholder="https://…"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-paper-700">封面链接</label>
-                <input
-                  className={`mt-1 ${inputCls}`}
-                  value={form.cover_url}
-                  onChange={(e) => set("cover_url", e.target.value)}
-                  placeholder="https://…"
-                />
-              </div>
+          {err && (
+            <div className="mt-3 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              {err}
             </div>
-          </details>
-
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-paper-800">
-            <input
-              type="checkbox"
-              checked={form.published}
-              onChange={(e) => set("published", e.target.checked)}
-              className="h-4 w-4 accent-brand-gold"
-            />
-            立即发布（取消则保存为草稿，公开页看不到）
-          </label>
-        </div>
-
-        {err && (
-          <div className="mt-3 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-            {err}
+          )}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              disabled={saving}
+              className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
+            >
+              取消
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
+            >
+              {saving ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" /> 保存中…
+                </>
+              ) : (
+                "保存"
+              )}
+            </button>
           </div>
-        )}
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
-          >
-            取消
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
-          >
-            {saving ? (
-              <>
-                <Loader2 size={14} className="animate-spin" /> 保存中…
-              </>
-            ) : (
-              "保存"
-            )}
-          </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

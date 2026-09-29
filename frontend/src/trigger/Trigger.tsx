@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Modal } from "../common/Modal";
 import {
   AlarmClock,
   CheckCircle2,
@@ -226,88 +227,90 @@ function TaskModal({
     "w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2 text-sm text-paper-900 outline-none focus:border-brand-gold/50";
 
   return (
-    <div
-      className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-      onClick={() => !saving && onClose()}
-    >
+    <Modal>
       <div
-        className="anim-panel glass max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl p-6 shadow-card"
-        onClick={(e) => e.stopPropagation()}
+        className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+        onClick={() => !saving && onClose()}
       >
-        <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
-          <AlarmClock size={16} className="text-brand-gold" />
-          {editing ? "编辑任务" : "新建任务"}
-        </h3>
-        <div className="mt-4 space-y-3">
-          <div>
-            <label className="text-xs font-medium text-paper-700">任务名称 *</label>
-            <input className={`mt-1 ${field}`} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="如：早窗口（11:30 重置）" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+        <div
+          className="anim-panel glass max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl p-6 shadow-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
+            <AlarmClock size={16} className="text-brand-gold" />
+            {editing ? "编辑任务" : "新建任务"}
+          </h3>
+          <div className="mt-4 space-y-3">
             <div>
-              <label className="text-xs font-medium text-paper-700">触发时刻 (HH:MM) *</label>
-              <input className={`mt-1 ${field}`} type="time" value={form.time} onChange={(e) => set("time", e.target.value)} />
+              <label className="text-xs font-medium text-paper-700">任务名称 *</label>
+              <input className={`mt-1 ${field}`} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="如：早窗口（11:30 重置）" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-paper-700">触发时刻 (HH:MM) *</label>
+                <input className={`mt-1 ${field}`} type="time" value={form.time} onChange={(e) => set("time", e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-paper-700">模型名</label>
+                <input className={`mt-1 ${field}`} value={form.model} onChange={(e) => set("model", e.target.value)} placeholder="如 gpt-4o" />
+              </div>
             </div>
             <div>
-              <label className="text-xs font-medium text-paper-700">模型名</label>
-              <input className={`mt-1 ${field}`} value={form.model} onChange={(e) => set("model", e.target.value)} placeholder="如 gpt-4o" />
+              <label className="text-xs font-medium text-paper-700">API Base URL *</label>
+              <input className={`mt-1 ${field}`} value={form.base_url} onChange={(e) => set("base_url", e.target.value)} placeholder="https://ark.cn-beijing.volces.com/api/coding/v3" />
+              <p className="mt-1 text-[11px] leading-relaxed text-paper-700">
+                样例：https://ark.cn-beijing.volces.com/api/coding/v3（须以 https:// 开头，勿带末尾斜杠）· 实际请求 {form.base_url || "{base_url}"}/chat/completions
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-paper-700">
+                api-key {editing && <span className="text-paper-600">（留空保留原值）</span>}
+              </label>
+              <input className={`mt-1 ${field}`} type="password" value={form.api_key} onChange={(e) => set("api_key", e.target.value)} placeholder={editing ? editing.api_key_masked : "ark-…"} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-paper-700">备注</label>
+              <input className={`mt-1 ${field}`} value={form.note} onChange={(e) => set("note", e.target.value)} placeholder="可选" />
             </div>
           </div>
-          <div>
-            <label className="text-xs font-medium text-paper-700">API Base URL *</label>
-            <input className={`mt-1 ${field}`} value={form.base_url} onChange={(e) => set("base_url", e.target.value)} placeholder="https://ark.cn-beijing.volces.com/api/coding/v3" />
-            <p className="mt-1 text-[11px] leading-relaxed text-paper-700">
-              样例：https://ark.cn-beijing.volces.com/api/coding/v3（须以 https:// 开头，勿带末尾斜杠）· 实际请求 {form.base_url || "{base_url}"}/chat/completions
-            </p>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-paper-700">
-              api-key {editing && <span className="text-paper-600">（留空保留原值）</span>}
-            </label>
-            <input className={`mt-1 ${field}`} type="password" value={form.api_key} onChange={(e) => set("api_key", e.target.value)} placeholder={editing ? editing.api_key_masked : "ark-…"} />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-paper-700">备注</label>
-            <input className={`mt-1 ${field}`} value={form.note} onChange={(e) => set("note", e.target.value)} placeholder="可选" />
-          </div>
-        </div>
-        {err && (
-          <div className="mt-3 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">{err}</div>
-        )}
-        {testResult && (
-          <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${testResult.ok ? "border-emerald-600/25 bg-emerald-50 text-emerald-700" : "border-rose-600/25 bg-rose-50 text-rose-700"}`}>
-            {testResult.ok ? <CheckCircle2 size={14} className="mt-0.5 shrink-0" /> : <XCircle size={14} className="mt-0.5 shrink-0" />}
-            <span className="break-all leading-relaxed">{testResult.msg}</span>
-          </div>
-        )}
-        <div className="mt-5 flex items-center justify-between gap-2">
-          <button
-            onClick={testConnection}
-            disabled={testing || saving}
-            className="flex items-center gap-1.5 rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
-            title="用当前 Base URL 与 api-key 发一次最小请求验证连通"
-          >
-            {testing ? (
-              <>
-                <Loader2 size={14} className="animate-spin" /> 测试中…
-              </>
-            ) : (
-              <>
-                <PlugZap size={14} /> 测试连接
-              </>
-            )}
-          </button>
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} disabled={saving || testing} className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40">
-              取消
+          {err && (
+            <div className="mt-3 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">{err}</div>
+          )}
+          {testResult && (
+            <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${testResult.ok ? "border-emerald-600/25 bg-emerald-50 text-emerald-700" : "border-rose-600/25 bg-rose-50 text-rose-700"}`}>
+              {testResult.ok ? <CheckCircle2 size={14} className="mt-0.5 shrink-0" /> : <XCircle size={14} className="mt-0.5 shrink-0" />}
+              <span className="break-all leading-relaxed">{testResult.msg}</span>
+            </div>
+          )}
+          <div className="mt-5 flex items-center justify-between gap-2">
+            <button
+              onClick={testConnection}
+              disabled={testing || saving}
+              className="flex items-center gap-1.5 rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
+              title="用当前 Base URL 与 api-key 发一次最小请求验证连通"
+            >
+              {testing ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" /> 测试中…
+                </>
+              ) : (
+                <>
+                  <PlugZap size={14} /> 测试连接
+                </>
+              )}
             </button>
-            <button onClick={save} disabled={saving || testing} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40">
-              {saving ? <><Loader2 size={14} className="animate-spin" /> 保存中…</> : "保存"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={onClose} disabled={saving || testing} className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40">
+                取消
+              </button>
+              <button onClick={save} disabled={saving || testing} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40">
+                {saving ? <><Loader2 size={14} className="animate-spin" /> 保存中…</> : "保存"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -317,16 +320,18 @@ function ConfirmModal({ title, message, onCancel, onConfirm }: {
   title: string; message: string; onCancel: () => void; onConfirm: () => void;
 }) {
   return (
-    <div className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={onCancel}>
-      <div className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-base font-bold text-paper-900">{title}</h3>
-        <p className="mt-2 text-xs leading-relaxed text-paper-700">{message}</p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onCancel} className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100">取消</button>
-          <button onClick={onConfirm} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700">删除</button>
+    <Modal>
+      <div className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={onCancel}>
+        <div className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
+          <h3 className="text-base font-bold text-paper-900">{title}</h3>
+          <p className="mt-2 text-xs leading-relaxed text-paper-700">{message}</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button onClick={onCancel} className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100">取消</button>
+            <button onClick={onConfirm} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700">删除</button>
+          </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

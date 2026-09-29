@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -8,6 +8,7 @@ import {
   X,
 } from "lucide-react";
 import { Story, storyApi } from "./api";
+import { useModalHistory } from "../common/useModalHistory";
 import {
   Cover,
   FONT_KEY,
@@ -162,13 +163,9 @@ export default function StoryPage() {
   const [readIds, setReadIds] = useState<number[]>(loadReadIds);
   const night = useNightMode();
 
-  /* 弹框历史栈：打开时压入一条历史记录，浏览器返回（含手机侧滑）只关弹框、不离开页面。
-     与 /hanzi、/babysong 两个弹框页同一模式；modalPushedRef 防止重复压栈。 */
-  const modalPushedRef = useRef(false);
-  /* 标记「下一个 popstate 是我自己发起的」：主动关闭时先 back()，
-     而 back() 到 popstate 派发之间是异步的 —— 若这期间用户又点开了另一篇，
-     那次迟到的 popstate 会误关新弹窗。用标记把它吃掉。 */
-  const selfPopRef = useRef(false);
+  /* 弹框历史栈：打开时压一条历史记录，浏览器返回（含手机侧滑）只关弹框、不离开页面。
+     push / pop 与 selfPop 竞态防护都收在 common/useModalHistory.ts，/hanzi、/babysong 共用。 */
+  const modalHistory = useModalHistory("storyModal", () => setActive(null));
 
   const [font, setFont] = useState<FontKey>(() => {
     const v = localStorage.getItem(FONT_KEY);
@@ -200,44 +197,21 @@ export default function StoryPage() {
     });
   }, []);
 
-  /* 打开弹框：压入一条历史记录，让「返回」优先命中弹框而不是离开页面 */
+  /* 打开弹框：压一条历史记录，让「返回」优先命中弹框而不是离开页面 */
   const openModal = useCallback(
     (s: Story) => {
       setActive(s);
       markRead(s.id);
-      if (!modalPushedRef.current) {
-        modalPushedRef.current = true;
-        window.history.pushState({ storyModal: true }, "");
-      }
+      modalHistory.push();
     },
-    [markRead],
+    [markRead, modalHistory],
   );
 
-  /* 关闭弹框：先置空状态，再弹掉自己压入的那条历史记录（保持历史干净）。
-     该次 back 引发的 popstate 由 selfPopRef 标记吃掉，不重复处理。 */
+  /* 关闭弹框：先置空状态，再弹掉自己压入的那条历史记录（保持历史干净） */
   const closeModal = useCallback(() => {
     setActive(null);
-    if (modalPushedRef.current) {
-      modalPushedRef.current = false;
-      selfPopRef.current = true;
-      window.history.back();
-    }
-  }, []);
-
-  /* 浏览器返回键 / 手机侧滑返回：弹框开着时仅关弹框，不离开列表页 */
-  useEffect(() => {
-    const onPop = () => {
-      if (selfPopRef.current) {
-        selfPopRef.current = false; // 自己发起的 back，忽略
-        return;
-      }
-      if (!modalPushedRef.current) return;
-      modalPushedRef.current = false;
-      setActive(null);
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
+    modalHistory.pop();
+  }, [modalHistory]);
 
   // 弹窗内的键盘操作：Esc 关闭，← 翻更早，→ 翻更新
   useEffect(() => {
