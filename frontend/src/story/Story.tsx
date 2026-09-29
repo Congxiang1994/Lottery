@@ -27,6 +27,7 @@ import {
   useNightMode,
   weekdayOf,
 } from "./parts";
+import { ExitPresence } from "../common/Modal";
 import StoryModal from "./StoryModal";
 
 /**
@@ -515,18 +516,20 @@ export default function StoryPage() {
         </section>
       ))}
 
-      {active && (
-        <StoryModal
-          story={active}
-          night={night}
-          font={font}
-          setFont={setFont}
-          older={older}
-          newer={newer}
-          onGo={openModal}
-          onClose={closeModal}
-        />
-      )}
+      <ExitPresence open={!!active}>
+        {active && (
+          <StoryModal
+            story={active}
+            night={night}
+            font={font}
+            setFont={setFont}
+            older={older}
+            newer={newer}
+            onGo={openModal}
+            onClose={closeModal}
+          />
+        )}
+      </ExitPresence>
     </div>
   );
 }

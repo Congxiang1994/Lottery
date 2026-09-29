@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Modal } from "../common/Modal";
+import { ExitPresence, Modal } from "../common/Modal";
 import {
   BookOpen,
   Eye,
@@ -625,26 +625,30 @@ export default function StoryAdmin() {
         </div>
       )}
 
-      {modal.open && (
-        <StoryModal
-          editing={modal.editing}
-          onClose={() => setModal({ open: false, editing: null })}
-          onSaved={reload}
-        />
-      )}
+      <ExitPresence open={modal.open}>
+        {modal.open && (
+          <StoryModal
+            editing={modal.editing}
+            onClose={() => setModal({ open: false, editing: null })}
+            onSaved={reload}
+          />
+        )}
+      </ExitPresence>
 
-      {confirmDel && (
-        <ConfirmModal
-          title="删除故事"
-          message={`确定删除「${confirmDel.title}」吗？删除后不可恢复。`}
-          onCancel={() => setConfirmDel(null)}
-          onConfirm={() => {
-            const id = confirmDel.id;
-            setConfirmDel(null);
-            withBusy(id, () => storyApi.deleteStory(id));
-          }}
-        />
-      )}
+      <ExitPresence open={!!confirmDel}>
+        {confirmDel && (
+          <ConfirmModal
+            title="删除故事"
+            message={`确定删除「${confirmDel.title}」吗？删除后不可恢复。`}
+            onCancel={() => setConfirmDel(null)}
+            onConfirm={() => {
+              const id = confirmDel.id;
+              setConfirmDel(null);
+              withBusy(id, () => storyApi.deleteStory(id));
+            }}
+          />
+        )}
+      </ExitPresence>
     </div>
   );
 }

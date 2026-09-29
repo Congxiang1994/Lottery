@@ -14,7 +14,7 @@ import {
   HardDrive,
   Repeat,
 } from "lucide-react";
-import { Modal } from "../common/Modal";
+import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import { errText } from "../common/State";
 
@@ -873,137 +873,139 @@ export default function BabySong() {
       )}
 
       {/* ====== 本地播放弹窗（参考「汉字是画出来的」播放器样式） ====== */}
-      {activeId && current && current.local_url && (
-        <Modal>
-          <div
-            className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-paper-900/50 p-4 backdrop-blur-md"
-            onClick={closeLocalModal}
-          >
+      <ExitPresence open={!!(activeId && current && current.local_url)}>
+        {activeId && current && current.local_url && (
+          <Modal>
             <div
-              className="anim-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-paper-200 bg-white shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
+              className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-paper-900/50 p-4 backdrop-blur-md"
+              onClick={closeLocalModal}
             >
-              {/* 顶部信息栏 */}
-              <div className="flex items-center justify-between px-4 py-3 sm:px-5">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
-                    <Music size={17} />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="truncate text-base font-bold text-paper-900" title={current.title}>
-                      {current.title}
-                    </div>
-                    <div className="text-[11px] text-paper-500">
-                      #{current.seq} · 本地播放 · 本地共 {localSongs.length} 首
+              <div
+                className="anim-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-paper-200 bg-white shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* 顶部信息栏 */}
+                <div className="flex items-center justify-between px-4 py-3 sm:px-5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+                      <Music size={17} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-bold text-paper-900" title={current.title}>
+                        {current.title}
+                      </div>
+                      <div className="text-[11px] text-paper-500">
+                        #{current.seq} · 本地播放 · 本地共 {localSongs.length} 首
+                      </div>
                     </div>
                   </div>
-                </div>
-                <button
-                  onClick={toggleLoop}
-                  title={loopOn ? "连播开启：播完自动播放下一首并循环" : "连播关闭：播完即停"}
-                  aria-pressed={loopOn}
-                  className={`mr-1 flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition ${
-                    loopOn
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                      : "border-paper-200 text-paper-600 hover:border-brand-red/40"
-                  }`}
-                >
-                  <Repeat size={15} />
-                  连播
-                  <span
-                    className={`relative ml-0.5 inline-flex h-4 w-7 items-center rounded-full transition ${
-                      loopOn ? "bg-emerald-500" : "bg-paper-300"
+                  <button
+                    onClick={toggleLoop}
+                    title={loopOn ? "连播开启：播完自动播放下一首并循环" : "连播关闭：播完即停"}
+                    aria-pressed={loopOn}
+                    className={`mr-1 flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition ${
+                      loopOn
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                        : "border-paper-200 text-paper-600 hover:border-brand-red/40"
                     }`}
                   >
+                    <Repeat size={15} />
+                    连播
                     <span
-                      className={`absolute h-3 w-3 rounded-full bg-white transition-all ${
-                        loopOn ? "left-3.5" : "left-0.5"
+                      className={`relative ml-0.5 inline-flex h-4 w-7 items-center rounded-full transition ${
+                        loopOn ? "bg-emerald-500" : "bg-paper-300"
                       }`}
-                    />
-                  </span>
-                </button>
-                <button
-                  onClick={closeLocalModal}
-                  title="关闭"
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-paper-200 text-paper-600 transition hover:border-brand-red hover:text-brand-red"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              {/* 视频 */}
-              <div className="relative bg-black">
-                <video
-                  ref={videoRef}
-                  src={current.local_url}
-                  className="w-full"
-                  controls
-                  autoPlay
-                  playsInline
-                  preload="auto"
-                  onEnded={handleEnded}
-                />
-                {/* 后台/息屏续播用：视频在移动端后台会被暂停，改用同一地址的音频继续出声 */}
-                <audio
-                  ref={audioRef}
-                  preload="auto"
-                  onEnded={handleEnded}
-                  className="hidden"
-                />
-              </div>
-
-              {/* 底部导航（仅在有本地文件的歌之间切换） */}
-              <div className="flex items-stretch border-t border-paper-100">
-                {prevLocal ? (
-                  <button
-                    onClick={() => setActiveId(prevLocal.id)}
-                    className="flex flex-1 items-center gap-2 px-4 py-3 text-left transition hover:bg-paper-50 active:bg-paper-100 sm:px-5"
-                  >
-                    <ChevronLeft size={18} className="shrink-0 text-paper-500" />
-                    <div className="min-w-0">
-                      <span className="block text-[10px] text-paper-500">上一首</span>
-                      <span className="block truncate text-sm font-bold text-paper-900">
-                        {prevLocal.title}
-                      </span>
-                    </div>
+                    >
+                      <span
+                        className={`absolute h-3 w-3 rounded-full bg-white transition-all ${
+                          loopOn ? "left-3.5" : "left-0.5"
+                        }`}
+                      />
+                    </span>
                   </button>
-                ) : (
-                  <div className="flex flex-1 cursor-not-allowed items-center gap-2 px-4 py-3 text-left opacity-40 sm:px-5">
-                    <ChevronLeft size={18} className="shrink-0 text-paper-500" />
-                    <div className="min-w-0">
-                      <span className="block text-[10px] text-paper-500">上一首</span>
-                      <span className="block truncate text-sm font-bold text-paper-900">已是第一首</span>
-                    </div>
-                  </div>
-                )}
-                <div className="w-px bg-paper-100" />
-                {nextLocal ? (
                   <button
-                    onClick={() => setActiveId(nextLocal.id)}
-                    className="flex flex-1 items-center justify-end gap-2 px-4 py-3 text-right transition hover:bg-paper-50 active:bg-paper-100 sm:px-5"
+                    onClick={closeLocalModal}
+                    title="关闭"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-paper-200 text-paper-600 transition hover:border-brand-red hover:text-brand-red"
                   >
-                    <div className="min-w-0">
-                      <span className="block text-[10px] text-paper-500">下一首</span>
-                      <span className="block truncate text-sm font-bold text-paper-900">
-                        {nextLocal.title}
-                      </span>
-                    </div>
-                    <ChevronRight size={18} className="shrink-0 text-paper-500" />
+                    <X size={16} />
                   </button>
-                ) : (
-                  <div className="flex flex-1 cursor-not-allowed items-center justify-end gap-2 px-4 py-3 text-right opacity-40 sm:px-5">
-                    <div className="min-w-0">
-                      <span className="block text-[10px] text-paper-500">下一首</span>
-                      <span className="block truncate text-sm font-bold text-paper-900">已是最后一首</span>
+                </div>
+
+                {/* 视频 */}
+                <div className="relative bg-black">
+                  <video
+                    ref={videoRef}
+                    src={current.local_url}
+                    className="w-full"
+                    controls
+                    autoPlay
+                    playsInline
+                    preload="auto"
+                    onEnded={handleEnded}
+                  />
+                  {/* 后台/息屏续播用：视频在移动端后台会被暂停，改用同一地址的音频继续出声 */}
+                  <audio
+                    ref={audioRef}
+                    preload="auto"
+                    onEnded={handleEnded}
+                    className="hidden"
+                  />
+                </div>
+
+                {/* 底部导航（仅在有本地文件的歌之间切换） */}
+                <div className="flex items-stretch border-t border-paper-100">
+                  {prevLocal ? (
+                    <button
+                      onClick={() => setActiveId(prevLocal.id)}
+                      className="flex flex-1 items-center gap-2 px-4 py-3 text-left transition hover:bg-paper-50 active:bg-paper-100 sm:px-5"
+                    >
+                      <ChevronLeft size={18} className="shrink-0 text-paper-500" />
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-paper-500">上一首</span>
+                        <span className="block truncate text-sm font-bold text-paper-900">
+                          {prevLocal.title}
+                        </span>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="flex flex-1 cursor-not-allowed items-center gap-2 px-4 py-3 text-left opacity-40 sm:px-5">
+                      <ChevronLeft size={18} className="shrink-0 text-paper-500" />
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-paper-500">上一首</span>
+                        <span className="block truncate text-sm font-bold text-paper-900">已是第一首</span>
+                      </div>
                     </div>
-                    <ChevronRight size={18} className="shrink-0 text-paper-500" />
-                  </div>
-                )}
+                  )}
+                  <div className="w-px bg-paper-100" />
+                  {nextLocal ? (
+                    <button
+                      onClick={() => setActiveId(nextLocal.id)}
+                      className="flex flex-1 items-center justify-end gap-2 px-4 py-3 text-right transition hover:bg-paper-50 active:bg-paper-100 sm:px-5"
+                    >
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-paper-500">下一首</span>
+                        <span className="block truncate text-sm font-bold text-paper-900">
+                          {nextLocal.title}
+                        </span>
+                      </div>
+                      <ChevronRight size={18} className="shrink-0 text-paper-500" />
+                    </button>
+                  ) : (
+                    <div className="flex flex-1 cursor-not-allowed items-center justify-end gap-2 px-4 py-3 text-right opacity-40 sm:px-5">
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-paper-500">下一首</span>
+                        <span className="block truncate text-sm font-bold text-paper-900">已是最后一首</span>
+                      </div>
+                      <ChevronRight size={18} className="shrink-0 text-paper-500" />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        )}
+      </ExitPresence>
     </div>
   );
 }

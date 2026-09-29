@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Modal } from "../common/Modal";
+import { ExitPresence, Modal } from "../common/Modal";
 import {
   AlarmClock,
   CheckCircle2,
@@ -436,14 +436,16 @@ function TaskTable({ tasks, reload, onEdit }: {
           </table>
         </div>
       </div>
-      {confirmDel && (
-        <ConfirmModal
-          title="删除任务"
-          message={`确定删除「${confirmDel.name}」吗？执行历史会保留。`}
-          onCancel={() => setConfirmDel(null)}
-          onConfirm={() => { const id = confirmDel.id; setConfirmDel(null); withBusy(id, () => triggerApi.deleteTask(id)); }}
-        />
-      )}
+      <ExitPresence open={!!confirmDel}>
+        {confirmDel && (
+          <ConfirmModal
+            title="删除任务"
+            message={`确定删除「${confirmDel.name}」吗？执行历史会保留。`}
+            onCancel={() => setConfirmDel(null)}
+            onConfirm={() => { const id = confirmDel.id; setConfirmDel(null); withBusy(id, () => triggerApi.deleteTask(id)); }}
+          />
+        )}
+      </ExitPresence>
     </div>
   );
 }
@@ -657,13 +659,15 @@ export default function Trigger() {
         </>
       )}
 
-      {modal.open && (
-        <TaskModal
-          editing={modal.editing}
-          onClose={() => setModal({ open: false, editing: null })}
-          onSaved={reload}
-        />
-      )}
+      <ExitPresence open={modal.open}>
+        {modal.open && (
+          <TaskModal
+            editing={modal.editing}
+            onClose={() => setModal({ open: false, editing: null })}
+            onSaved={reload}
+          />
+        )}
+      </ExitPresence>
     </div>
   );
 }

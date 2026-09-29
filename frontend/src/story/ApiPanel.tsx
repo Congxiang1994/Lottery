@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Modal } from "../common/Modal";
+import { ExitPresence, Modal } from "../common/Modal";
 import {
   Activity,
   BookText,
@@ -730,53 +730,57 @@ export default function ApiPanel() {
         </div>
       )}
 
-      {modal.open && (
-        <KeyModal
-          editing={modal.editing}
-          onClose={() => setModal({ open: false, editing: null })}
-          onSaved={(created) => {
-            if (created) setRevealed((r) => ({ ...r, [created.id]: true }));
-            reload();
-          }}
-        />
-      )}
+      <ExitPresence open={modal.open}>
+        {modal.open && (
+          <KeyModal
+            editing={modal.editing}
+            onClose={() => setModal({ open: false, editing: null })}
+            onSaved={(created) => {
+              if (created) setRevealed((r) => ({ ...r, [created.id]: true }));
+              reload();
+            }}
+          />
+        )}
+      </ExitPresence>
 
-      {confirmDel && (
-        <Modal>
-          <div
-            className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-            onClick={() => setConfirmDel(null)}
-          >
+      <ExitPresence open={!!confirmDel}>
+        {confirmDel && (
+          <Modal>
             <div
-              className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
-              onClick={(e) => e.stopPropagation()}
+              className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+              onClick={() => setConfirmDel(null)}
             >
-              <h3 className="text-base font-bold text-paper-900">删除密钥</h3>
-              <p className="mt-2 text-xs leading-relaxed text-paper-700">
-                确定删除「{confirmDel.name}」吗？删除后该密钥立即失效，调用日志会保留。
-              </p>
-              <div className="mt-5 flex justify-end gap-2">
-                <button
-                  onClick={() => setConfirmDel(null)}
-                  className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => {
-                    const id = confirmDel.id;
-                    setConfirmDel(null);
-                    withBusy(id, () => storyApi.deleteKey(id));
-                  }}
-                  className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
-                >
-                  删除
-                </button>
+              <div
+                className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="text-base font-bold text-paper-900">删除密钥</h3>
+                <p className="mt-2 text-xs leading-relaxed text-paper-700">
+                  确定删除「{confirmDel.name}」吗？删除后该密钥立即失效，调用日志会保留。
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    onClick={() => setConfirmDel(null)}
+                    className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={() => {
+                      const id = confirmDel.id;
+                      setConfirmDel(null);
+                      withBusy(id, () => storyApi.deleteKey(id));
+                    }}
+                    className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+                  >
+                    删除
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        )}
+      </ExitPresence>
     </div>
   );
 }

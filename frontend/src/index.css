@@ -229,6 +229,19 @@ summary:active {
   from { opacity: 0; transform: scale(0.96) translateY(8px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
+/* 出场关键帧（2026-09-29 补）。沿用入场的位移方向，只是反过来：
+   进来是「从下方 8px 放大到原位」，出去就「缩回 0.97 沉下去 4px」，
+   幅度比入场略小 —— 退场不该比登场更抢戏。
+   曲线用加速型（ease-in / cubic-bezier(0.4,0,1,1)）：入场是减速（起步快、收尾稳），
+   出场要加速（起步慢、迅速消失），两者方向相反才符合「进慢出快」的手感。 */
+@keyframes overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes panel-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.97) translateY(4px); }
+}
 /* ⚠️ fill-mode 必须用 backwards，**不能用 both**：
    both = forwards + backwards，动画结束后永久保留 to 关键帧的 transform
    （page-in 的 to 是 translateY(0)，computed 为 matrix(...)，**不是 none**）。
@@ -241,6 +254,30 @@ summary:active {
 .anim-overlay { animation: overlay-in 0.2s ease-out backwards; }
 .anim-panel { animation: panel-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 
+/* ---------- 弹窗出场（由 common/Modal.tsx 的 ExitPresence 驱动） ----------
+   `ExitPresence` 在弹窗关闭时先给内容套上 `data-closing`，200ms 后才真正卸载。
+   `.modal-host` 是 Portal 到 body 的 0 高度空壳，靠子孙选择器命中遮罩与面板，
+   这样 11 处弹窗不必各自维护一套出场类名。
+
+   ⚠️ 权重 (0,3,0) 高于上面的 `.anim-overlay` (0,1,0) —— 必须如此，
+   否则出场的 animation 简写盖不过入场的 `backwards`，会「出场时又播一遍入场」。
+   ⚠️ 用 `forwards` 保留终态（元素停在全透明），不能省：
+   不写的话动画结束会弹回 `from`（全不透明），退场瞬间闪一下又亮起来。
+   这里不怕 `forwards` 的包含块副作用 —— 元素 200ms 后就被卸载了。
+   ⚠️ `pointer-events: none` 是必须的：退场的 200ms 里遮罩还在屏幕上，
+   若不放开事件，用户紧接着点「下一篇 / 下一首」会被这层残影吃掉。
+   ⚠️ 时长（180 / 200ms）必须与 Modal.tsx 的 MODAL_EXIT_MS(200) 对齐。 */
+.modal-host[data-closing] {
+  pointer-events: none;
+}
+.modal-host[data-closing] .anim-overlay {
+  animation: overlay-out 0.18s ease-in forwards;
+  pointer-events: none;
+}
+.modal-host[data-closing] .anim-panel {
+  animation: panel-out 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
 /* ⚠️ 按压反馈已上移到文件顶部的「全站交互基线」段（必须在 .card-hover 之前才能
    让卡片的悬停抬升按自己的 250ms 生效）。此处不再重复定义 .press。 */
 
@@ -248,7 +285,12 @@ summary:active {
   .anim-page-in,
   .anim-overlay,
   .anim-panel,
-  .animate-rise {
+  .animate-rise,
+  /* 出场动画同样关掉。⚠️ 光关 CSS 不够 —— 关掉后元素不会自己消失，
+     还需 Modal.tsx 在 reduced-motion 下把卸载延时设为 0（立即卸载），
+     否则会看到一个「静止不动的弹窗」白挂 200ms。两边缺一不可。 */
+  .modal-host[data-closing] .anim-overlay,
+  .modal-host[data-closing] .anim-panel {
     animation: none;
   }
   /* 关掉按压缩放，保留颜色 / 阴影这类非位移反馈 */

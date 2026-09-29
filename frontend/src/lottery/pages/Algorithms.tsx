@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Modal } from "../../common/Modal";
+import { ExitPresence, Modal } from "../../common/Modal";
 import { useLottery } from "../context";
 import { api } from "../api";
 import {
@@ -206,53 +206,55 @@ export default function Algorithms() {
       </div>
 
       {/* 密码弹框 */}
-      {pwdOpen && (
-        <Modal>
-          <div className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={() => { if (!pwdLoading) setPwdOpen(false); }}>
-            <div
-              className="anim-panel glass w-full max-w-sm rounded-3xl p-6 shadow-card"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
-                <Lock size={16} className="text-brand-gold" /> 运行全部算法
-              </h3>
-              <p className="mt-1 text-xs text-paper-700">
-                需验证操作密码后执行（双色球 + 大乐透 · 预测 + 回测，约 5 分钟）
-              </p>
-              <input
-                type="password"
-                value={pwd}
-                onChange={(e) => setPwd(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") submitPassword(); }}
-                placeholder="请输入操作密码"
-                autoFocus
-                className="mt-4 w-full rounded-xl border border-paper-200 bg-paper-100 px-3 py-2.5 text-sm text-paper-900 placeholder-white/30 outline-none focus:border-brand-gold/50"
-              />
-              {pwdErr && (
-                <div className="mt-2 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                  {pwdErr}
+      <ExitPresence open={pwdOpen}>
+        {pwdOpen && (
+          <Modal>
+            <div className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={() => { if (!pwdLoading) setPwdOpen(false); }}>
+              <div
+                className="anim-panel glass w-full max-w-sm rounded-3xl p-6 shadow-card"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
+                  <Lock size={16} className="text-brand-gold" /> 运行全部算法
+                </h3>
+                <p className="mt-1 text-xs text-paper-700">
+                  需验证操作密码后执行（双色球 + 大乐透 · 预测 + 回测，约 5 分钟）
+                </p>
+                <input
+                  type="password"
+                  value={pwd}
+                  onChange={(e) => setPwd(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") submitPassword(); }}
+                  placeholder="请输入操作密码"
+                  autoFocus
+                  className="mt-4 w-full rounded-xl border border-paper-200 bg-paper-100 px-3 py-2.5 text-sm text-paper-900 placeholder-white/30 outline-none focus:border-brand-gold/50"
+                />
+                {pwdErr && (
+                  <div className="mt-2 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                    {pwdErr}
+                  </div>
+                )}
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    onClick={() => setPwdOpen(false)}
+                    disabled={pwdLoading}
+                    className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={submitPassword}
+                    disabled={pwdLoading || !pwd}
+                    className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
+                  >
+                    {pwdLoading ? <><Loader2 size={14} className="animate-spin" /> 校验中…</> : "确认运行"}
+                  </button>
                 </div>
-              )}
-              <div className="mt-5 flex justify-end gap-2">
-                <button
-                  onClick={() => setPwdOpen(false)}
-                  disabled={pwdLoading}
-                  className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={submitPassword}
-                  disabled={pwdLoading || !pwd}
-                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
-                >
-                  {pwdLoading ? <><Loader2 size={14} className="animate-spin" /> 校验中…</> : "确认运行"}
-                </button>
               </div>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        )}
+      </ExitPresence>
 
       {/* 全量运行进度条（双色球+大乐透 × 预测+回测） */}
       {runStatus?.running && (

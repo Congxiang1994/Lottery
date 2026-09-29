@@ -18,7 +18,7 @@ import {
   HanziProgressMap,
 } from "./progress";
 import { loadCachedList, saveCachedList } from "./listCache";
-import { Modal } from "../common/Modal";
+import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import { errText } from "../common/State";
 
@@ -493,217 +493,221 @@ export default function HanziPlayer() {
       {/* ================================================================
           弹出式播放器 Modal
       ================================================================ */}
-      {activeNum != null && (
-        <Modal>
-          <div
-            className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/50 p-4 backdrop-blur-md"
-            onClick={closeModal}
-          >
+      <ExitPresence open={activeNum != null}>
+        {activeNum != null && (
+          <Modal>
             <div
-              className="anim-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-[#d4c4a8] bg-white shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
+              className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/50 p-4 backdrop-blur-md"
+              onClick={closeModal}
             >
-              {!current ? (
-                <div className="px-5 py-16 text-center text-sm text-[#8b7355]">
-                  未找到编号「{activeNum}」的汉字
-                </div>
-              ) : (
-                <>
-                  {/* 顶部信息栏 */}
-                  <div className="flex items-center justify-between px-4 py-3 sm:px-5">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className="text-3xl font-bold text-[#3d2b1f] sm:text-4xl"
-                        style={KAI}
-                      >
-                        {current.title}
-                      </span>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-[#8b7355]">
-                          {current.pinyin}
-                        </span>
-                        <button
-                          onClick={() => setShowPicker(true)}
-                          className="inline-flex items-center gap-1 text-[11px] text-[#a89078] transition hover:text-[#b93a3a]"
+              <div
+                className="anim-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-[#d4c4a8] bg-white shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {!current ? (
+                  <div className="px-5 py-16 text-center text-sm text-[#8b7355]">
+                    未找到编号「{activeNum}」的汉字
+                  </div>
+                ) : (
+                  <>
+                    {/* 顶部信息栏 */}
+                    <div className="flex items-center justify-between px-4 py-3 sm:px-5">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="text-3xl font-bold text-[#3d2b1f] sm:text-4xl"
+                          style={KAI}
                         >
-                          <Grid3X3 size={11} />
-                          第 {pad(current.num)} 个 · 共 {videos.length} 个
+                          {current.title}
+                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-[#8b7355]">
+                            {current.pinyin}
+                          </span>
+                          <button
+                            onClick={() => setShowPicker(true)}
+                            className="inline-flex items-center gap-1 text-[11px] text-[#a89078] transition hover:text-[#b93a3a]"
+                          >
+                            <Grid3X3 size={11} />
+                            第 {pad(current.num)} 个 · 共 {videos.length} 个
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* 连播开关 */}
+                        <button
+                          onClick={toggleAutoplay}
+                          title={autoplay ? "关闭自动连播" : "开启自动连播"}
+                          className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                            autoplay
+                              ? "border-[#b93a3a]/50 bg-[#b93a3a]/10 text-[#b93a3a]"
+                              : "border-[#d4c4a8] text-[#a89078]"
+                          }`}
+                        >
+                          <span
+                            className={`relative h-3.5 w-6 rounded-full transition ${
+                              autoplay ? "bg-[#b93a3a]" : "bg-[#d4c4a8]"
+                            }`}
+                          >
+                            <span
+                              className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow transition-all ${
+                                autoplay ? "left-3" : "left-0.5"
+                              }`}
+                            />
+                          </span>
+                          连播
+                        </button>
+                        <button
+                          onClick={closeModal}
+                          title="关闭"
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a]"
+                        >
+                          <X size={16} />
                         </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {/* 连播开关 */}
-                      <button
-                        onClick={toggleAutoplay}
-                        title={autoplay ? "关闭自动连播" : "开启自动连播"}
-                        className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
-                          autoplay
-                            ? "border-[#b93a3a]/50 bg-[#b93a3a]/10 text-[#b93a3a]"
-                            : "border-[#d4c4a8] text-[#a89078]"
-                        }`}
-                      >
-                        <span
-                          className={`relative h-3.5 w-6 rounded-full transition ${
-                            autoplay ? "bg-[#b93a3a]" : "bg-[#d4c4a8]"
-                          }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow transition-all ${
-                              autoplay ? "left-3" : "left-0.5"
-                            }`}
-                          />
-                        </span>
-                        连播
-                      </button>
-                      <button
-                        onClick={closeModal}
-                        title="关闭"
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a]"
-                      >
-                        <X size={16} />
-                      </button>
+                    {/* 视频 */}
+                    <div className="relative bg-black">
+                      <video
+                        ref={videoRef}
+                        src={current.url}
+                        className="w-full"
+                        controls
+                        playsInline
+                        preload="auto"
+                        onTimeUpdate={onTime}
+                        onEnded={onEnded}
+                      />
                     </div>
-                  </div>
 
-                  {/* 视频 */}
-                  <div className="relative bg-black">
-                    <video
-                      ref={videoRef}
-                      src={current.url}
-                      className="w-full"
-                      controls
-                      playsInline
-                      preload="auto"
-                      onTimeUpdate={onTime}
-                      onEnded={onEnded}
-                    />
-                  </div>
+                    {/* 底部导航 */}
+                    <div className="flex items-stretch border-t border-[#d4c4a8]/40">
+                      {prevVideo ? (
+                        <button
+                          onClick={() => setActiveNum(prevVideo.num)}
+                          className="flex flex-1 items-center gap-2 px-4 py-3 text-left transition hover:bg-[#faf6f1] active:bg-[#f5efe6] sm:px-5"
+                        >
+                          <ChevronLeft size={18} className="shrink-0 text-[#a89078]" />
+                          <div className="min-w-0">
+                            <span className="block text-[10px] text-[#a89078]">上一个</span>
+                            <span
+                              className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
+                              style={KAI}
+                            >
+                              {prevVideo.title}
+                            </span>
+                          </div>
+                        </button>
+                      ) : (
+                        <div className="flex flex-1 cursor-not-allowed items-center gap-2 px-4 py-3 text-left opacity-40 sm:px-5">
+                          <ChevronLeft size={18} className="shrink-0 text-[#a89078]" />
+                          <div className="min-w-0">
+                            <span className="block text-[10px] text-[#a89078]">上一个</span>
+                            <span
+                              className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
+                              style={KAI}
+                            >
+                              已是第一集
+                            </span>
+                          </div>
+                        </div>
+                      )}
 
-                  {/* 底部导航 */}
-                  <div className="flex items-stretch border-t border-[#d4c4a8]/40">
-                    {prevVideo ? (
-                      <button
-                        onClick={() => setActiveNum(prevVideo.num)}
-                        className="flex flex-1 items-center gap-2 px-4 py-3 text-left transition hover:bg-[#faf6f1] active:bg-[#f5efe6] sm:px-5"
-                      >
-                        <ChevronLeft size={18} className="shrink-0 text-[#a89078]" />
-                        <div className="min-w-0">
-                          <span className="block text-[10px] text-[#a89078]">上一个</span>
-                          <span
-                            className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
-                            style={KAI}
-                          >
-                            {prevVideo.title}
-                          </span>
-                        </div>
-                      </button>
-                    ) : (
-                      <div className="flex flex-1 cursor-not-allowed items-center gap-2 px-4 py-3 text-left opacity-40 sm:px-5">
-                        <ChevronLeft size={18} className="shrink-0 text-[#a89078]" />
-                        <div className="min-w-0">
-                          <span className="block text-[10px] text-[#a89078]">上一个</span>
-                          <span
-                            className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
-                            style={KAI}
-                          >
-                            已是第一集
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                      <div className="w-px bg-[#d4c4a8]/40" />
 
-                    <div className="w-px bg-[#d4c4a8]/40" />
-
-                    {nextVideo ? (
-                      <button
-                        onClick={() => setActiveNum(nextVideo.num)}
-                        className="flex flex-1 items-center justify-end gap-2 px-4 py-3 text-right transition hover:bg-[#faf6f1] active:bg-[#f5efe6] sm:px-5"
-                      >
-                        <div className="min-w-0">
-                          <span className="block text-[10px] text-[#a89078]">下一个</span>
-                          <span
-                            className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
-                            style={KAI}
-                          >
-                            {nextVideo.title}
-                          </span>
+                      {nextVideo ? (
+                        <button
+                          onClick={() => setActiveNum(nextVideo.num)}
+                          className="flex flex-1 items-center justify-end gap-2 px-4 py-3 text-right transition hover:bg-[#faf6f1] active:bg-[#f5efe6] sm:px-5"
+                        >
+                          <div className="min-w-0">
+                            <span className="block text-[10px] text-[#a89078]">下一个</span>
+                            <span
+                              className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
+                              style={KAI}
+                            >
+                              {nextVideo.title}
+                            </span>
+                          </div>
+                          <ChevronRight size={18} className="shrink-0 text-[#a89078]" />
+                        </button>
+                      ) : (
+                        <div className="flex flex-1 cursor-not-allowed items-center justify-end gap-2 px-4 py-3 text-right opacity-40 sm:px-5">
+                          <div className="min-w-0">
+                            <span className="block text-[10px] text-[#a89078]">下一个</span>
+                            <span
+                              className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
+                              style={KAI}
+                            >
+                              已是最后一集
+                            </span>
+                          </div>
+                          <ChevronRight size={18} className="shrink-0 text-[#a89078]" />
                         </div>
-                        <ChevronRight size={18} className="shrink-0 text-[#a89078]" />
-                      </button>
-                    ) : (
-                      <div className="flex flex-1 cursor-not-allowed items-center justify-end gap-2 px-4 py-3 text-right opacity-40 sm:px-5">
-                        <div className="min-w-0">
-                          <span className="block text-[10px] text-[#a89078]">下一个</span>
-                          <span
-                            className="block truncate text-base font-bold text-[#3d2b1f] sm:text-lg"
-                            style={KAI}
-                          >
-                            已是最后一集
-                          </span>
-                        </div>
-                        <ChevronRight size={18} className="shrink-0 text-[#a89078]" />
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        )}
+      </ExitPresence>
 
       {/* ====== 选集面板（嵌套在播放器 z-index 之上） ====== */}
-      {showPicker && (
-        <Modal>
-          <div
-            className="anim-overlay fixed inset-0 z-[60] flex items-center justify-center bg-[#3d2b1f]/40 p-4 backdrop-blur-sm"
-            onClick={() => setShowPicker(false)}
-          >
+      <ExitPresence open={showPicker}>
+        {showPicker && (
+          <Modal>
             <div
-              className="anim-panel w-full max-w-2xl rounded-2xl border border-[#d4c4a8] bg-[#faf6f1] p-5 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
+              className="anim-overlay fixed inset-0 z-[60] flex items-center justify-center bg-[#3d2b1f]/40 p-4 backdrop-blur-sm"
+              onClick={() => setShowPicker(false)}
             >
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-bold text-[#3d2b1f]" style={KAI}>
-                  选集 · 共 {videos.length} 个
-                </h3>
-                <button
-                  onClick={() => setShowPicker(false)}
-                  title="关闭"
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a]"
-                >
-                  <X size={15} />
-                </button>
-              </div>
-              <div className="grid max-h-[60vh] grid-cols-6 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-9">
-                {videos.map((v) => {
-                  const p = pickerProgress[String(v.num)];
-                  const active = v.num === current?.num;
-                  return (
-                    <button
-                      key={v.num}
-                      onClick={() => pickVideo(v.num)}
-                      className={`relative rounded-lg py-2 text-sm font-medium tabular-nums transition ${
-                        active
-                          ? "bg-[#b93a3a] text-white shadow-md"
-                          : p?.done
-                            ? "bg-[#b93a3a]/10 text-[#b93a3a] hover:bg-[#b93a3a]/20"
-                            : "bg-white text-[#3d2b1f] hover:bg-[#f5efe6]"
-                      }`}
-                    >
-                      {v.num}
-                      {p?.done && !active && (
-                        <span className="absolute right-1 top-0.5 text-[9px] leading-none">✓</span>
-                      )}
-                    </button>
-                  );
-                })}
+              <div
+                className="anim-panel w-full max-w-2xl rounded-2xl border border-[#d4c4a8] bg-[#faf6f1] p-5 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-[#3d2b1f]" style={KAI}>
+                    选集 · 共 {videos.length} 个
+                  </h3>
+                  <button
+                    onClick={() => setShowPicker(false)}
+                    title="关闭"
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d4c4a8] text-[#8b7355] transition hover:border-[#b93a3a] hover:text-[#b93a3a]"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+                <div className="grid max-h-[60vh] grid-cols-6 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-9">
+                  {videos.map((v) => {
+                    const p = pickerProgress[String(v.num)];
+                    const active = v.num === current?.num;
+                    return (
+                      <button
+                        key={v.num}
+                        onClick={() => pickVideo(v.num)}
+                        className={`relative rounded-lg py-2 text-sm font-medium tabular-nums transition ${
+                          active
+                            ? "bg-[#b93a3a] text-white shadow-md"
+                            : p?.done
+                              ? "bg-[#b93a3a]/10 text-[#b93a3a] hover:bg-[#b93a3a]/20"
+                              : "bg-white text-[#3d2b1f] hover:bg-[#f5efe6]"
+                        }`}
+                      >
+                        {v.num}
+                        {p?.done && !active && (
+                          <span className="absolute right-1 top-0.5 text-[9px] leading-none">✓</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        )}
+      </ExitPresence>
     </div>
   );
 }
