@@ -56,11 +56,18 @@ export interface GeoStatus {
   loaded_at: string;
 }
 
+/** 全站累计口径（与左上角 Nav 同库 visit_stats.db，数字保证一致） */
+export interface SiteTotals {
+  total: number; // 累计人次（每会话 +1）
+  visitors: number; // 累计人数（localStorage UUID 去重）
+}
+
 export interface Summary {
   days: number;
   today: string;
   window: Kpi;
   today_stats: Kpi;
+  site_totals: SiteTotals;
   p50_ms: number | null;
   p95_ms: number | null;
   probe_hits: number;

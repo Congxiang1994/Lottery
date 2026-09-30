@@ -28,6 +28,7 @@ from typing import Any
 
 from app.access import config, geo
 from app.common.db import get_conn
+from app.stats.router import snapshot_totals
 
 log = logging.getLogger("access.store")
 
@@ -423,6 +424,10 @@ def summary(days: int = 7, include_auto: Any = 0) -> dict[str, Any]:
         "today": today,
         "window": window,
         "today_stats": today_s,
+        # 与左上角 Nav 同库同源的全站累计（visit_stats.db）——
+        # 让「左上角的人数/次数」在访问管理里有直接锚点，两处数字永远一致。
+        # 窗口内口径（独立访客）与累计口径是两回事，前端并列展示并注明。
+        "site_totals": snapshot_totals(),
         "p50_ms": p50,
         "p95_ms": p95,
         "probe_hits": int(row[0]),

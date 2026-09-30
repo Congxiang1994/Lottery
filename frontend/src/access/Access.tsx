@@ -470,15 +470,15 @@ function OverviewTab({
         </div>
       )}
 
-      {/* KPI */}
+      {/* KPI（前 6 张是「近 N 天」窗口口径；第 7 张全站累计与左上角同源同数） */}
       {w && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
           <Kpi label={`近 ${days} 天请求`} value={fmtNum(w.requests)} sub={`今日 ${fmtNum(s?.today_stats.requests ?? 0)}`} />
           <Kpi label="独立 IP" value={fmtNum(w.ips)} sub={`今日 ${fmtNum(s?.today_stats.ips ?? 0)}`} />
           <Kpi
             label="独立访客"
             value={fmtNum(w.visitors)}
-            sub={`跨 IP 归并 · 今日 ${fmtNum(s?.today_stats.visitors ?? 0)}`}
+            sub={`近 ${days} 天去重 · 今日 ${fmtNum(s?.today_stats.visitors ?? 0)}`}
           />
           <Kpi label="页面浏览" value={fmtNum(w.pages)} sub={`今日 ${fmtNum(s?.today_stats.pages ?? 0)}`} />
           <Kpi
@@ -491,6 +491,11 @@ function OverviewTab({
             label="P95 耗时"
             value={s?.p95_ms != null ? `${s.p95_ms}ms` : "—"}
             sub={s?.p50_ms != null ? `P50 ${s.p50_ms}ms` : "无接口样本"}
+          />
+          <Kpi
+            label="全站累计 · 同左上角"
+            value={`${fmtNum(s?.site_totals?.visitors ?? 0)} 人`}
+            sub={`累计 ${fmtNum(s?.site_totals?.total ?? 0)} 次访问`}
           />
         </div>
       )}

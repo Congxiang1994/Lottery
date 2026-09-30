@@ -87,6 +87,22 @@ def _snapshot(con) -> dict:
     }
 
 
+def snapshot_totals() -> dict:
+    """供访问管理 summary 复用：与左上角 Nav 同库同源的全站累计快照。
+
+    库文件还没建（从未有人访问）时直接给 0；任何异常都降级为 0，
+    不允许这里拖垮访问管理的概览接口。
+    """
+    try:
+        if not DB_PATH.exists():
+            return {"total": 0, "visitors": 0}
+        with get_conn(DB_PATH) as con:
+            _init_table_locked(con)
+            return _snapshot(con)
+    except Exception:
+        return {"total": 0, "visitors": 0}
+
+
 @router.get("/visit")
 def get_visits():
     """读取当前累计（不计数）。返回 total=人次，visitors=去重人数。"""
