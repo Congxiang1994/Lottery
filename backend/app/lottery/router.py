@@ -278,7 +278,7 @@ def history_predictions(
 
     meta = LOTTERIES[lottery]
     import numpy as np
-    from app.lottery.algorithms.base import pick_top
+    from app.lottery.algorithms.base import CATEGORIES, pick_top
     from app.lottery.prizes import prize_level
 
     # 1) 逐期定位预测批次（run_date <= 开奖日期 的最近一次）
@@ -340,6 +340,12 @@ def history_predictions(
             hb = len(ab & set(int(x) for x in r["blue"]))
             algos.append({
                 "id": r["id"], "name": r["name"], "category": r["category"],
+                # 分类**显示名**由后端给（CATEGORIES 是唯一真源）。
+                # ⚠️ 前端曾自己维护一张 CAT_NAMES 表，结果两边漂移：
+                # key 对不上（前端 signal_img / 后端 signal）导致界面直接显示英文 key，
+                # 名字也有两套（后端「统计与概率」/ 前端「统计」）——
+                # 同一分类在算法广场与历史对照页长得不一样。
+                "category_name": CATEGORIES.get(r["category"], {}).get("name", r["category"]),
                 "red": r["red"], "blue": r["blue"],
                 "red_hit": hr, "blue_hit": hb,
                 "prize": prize_level(lottery, hr, hb),

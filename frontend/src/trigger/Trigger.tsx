@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ExitPresence, Modal } from "../common/Modal";
+import { useModalHistory } from "../common/useModalHistory";
+import { useEscapeClose } from "../common/useEscapeClose";
 import {
   AlarmClock,
   CheckCircle2,
@@ -226,6 +228,11 @@ function TaskModal({
   const field =
     "w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2 text-sm text-paper-900 outline-none focus:border-brand-gold/50";
 
+  /* Esc 关闭（与遮罩点击同一条守卫：保存中不许关） */
+  useEscapeClose(true, () => {
+    if (!saving) onClose();
+  });
+
   return (
     <Modal>
       <div
@@ -319,6 +326,7 @@ function TaskModal({
 function ConfirmModal({ title, message, onCancel, onConfirm }: {
   title: string; message: string; onCancel: () => void; onConfirm: () => void;
 }) {
+  useEscapeClose(true, onCancel);
   return (
     <Modal>
       <div className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={onCancel}>
@@ -345,6 +353,20 @@ function TaskTable({ tasks, reload, onEdit }: {
   const [busy, setBusy] = useState<number | null>(null);
   const [confirmDel, setConfirmDel] = useState<TriggerTask | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
+
+  /* 确认框的历史栈：打开压一条、关闭弹掉（浏览器返回 / 手机侧滑只关弹框） */
+  const confirmHistory = useModalHistory(
+    "triggerConfirmDel",
+    useCallback(() => setConfirmDel(null), []),
+  );
+  const openConfirm = (t: TriggerTask) => {
+    setConfirmDel(t);
+    confirmHistory.push();
+  };
+  const closeConfirm = () => {
+    setConfirmDel(null);
+    confirmHistory.pop();
+  };
 
   const withBusy = (id: number, fn: () => Promise<unknown>) => {
     setBusy(id);
@@ -425,7 +447,7 @@ function TaskTable({ tasks, reload, onEdit }: {
                       <IconBtn title="编辑" onClick={() => onEdit(t)}>
                         <Pencil size={14} />
                       </IconBtn>
-                      <IconBtn title="删除" onClick={() => setConfirmDel(t)} danger>
+                      <IconBtn title="删除" onClick={() => openConfirm(t)} danger>
                         <Trash2 size={14} />
                       </IconBtn>
                     </div>
@@ -441,8 +463,8 @@ function TaskTable({ tasks, reload, onEdit }: {
           <ConfirmModal
             title="删除任务"
             message={`确定删除「${confirmDel.name}」吗？执行历史会保留。`}
-            onCancel={() => setConfirmDel(null)}
-            onConfirm={() => { const id = confirmDel.id; setConfirmDel(null); withBusy(id, () => triggerApi.deleteTask(id)); }}
+            onCancel={closeConfirm}
+            onConfirm={() => { const id = confirmDel.id; closeConfirm(); withBusy(id, () => triggerApi.deleteTask(id)); }}
           />
         )}
       </ExitPresence>
@@ -548,6 +570,25 @@ export default function Trigger() {
   const [modal, setModal] = useState<{ open: boolean; editing: TriggerTask | null }>({ open: false, editing: null });
   const [historyExpanded, setHistoryExpanded] = useState(false);
 
+  /* 任务表单弹框的历史栈：打开压一条、关闭弹掉。
+     与 Access.tsx 的 ipModal / visitorModal 同一套写法 —— push/pop 与 selfPop
+     竞态防护都收在 common/useModalHistory.ts，别在这里手写 popstate。 */
+  const taskModal = useModalHistory(
+    "triggerTask",
+    useCallback(() => setModal({ open: false, editing: null }), []),
+  );
+  const openTask = useCallback(
+    (editing: TriggerTask | null) => {
+      setModal({ open: true, editing });
+      taskModal.push();
+    },
+    [taskModal],
+  );
+  const closeTask = useCallback(() => {
+    setModal({ open: false, editing: null });
+    taskModal.pop();
+  }, [taskModal]);
+
   const reload = useCallback(() => {
     setLoading(true);
     Promise.all([triggerApi.tasks(), triggerApi.status(), triggerApi.history(100)])
@@ -592,7 +633,7 @@ export default function Trigger() {
         <div className="flex items-center gap-2">
           {tab === "tasks" && (
             <button
-              onClick={() => setModal({ open: true, editing: null })}
+              onClick={() => openTask(null)}
               className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90"
             >
               <Plus size={15} /> 新建任务
@@ -641,7 +682,7 @@ export default function Trigger() {
         <TaskTable
           tasks={tasks}
           reload={reload}
-          onEdit={(t) => setModal({ open: true, editing: t })}
+          onEdit={(t) => openTask(t)}
         />
       ) : (
         <>
@@ -663,7 +704,7 @@ export default function Trigger() {
         {modal.open && (
           <TaskModal
             editing={modal.editing}
-            onClose={() => setModal({ open: false, editing: null })}
+            onClose={closeTask}
             onSaved={reload}
           />
         )}

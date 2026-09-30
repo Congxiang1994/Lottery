@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ExitPresence, Modal } from "../common/Modal";
+import { useModalHistory } from "../common/useModalHistory";
+import { useEscapeClose } from "../common/useEscapeClose";
 import {
   Activity,
   BookText,
@@ -120,6 +122,11 @@ function KeyModal({
     );
   }, [editing]);
 
+  /* Esc 关闭（与遮罩点击同一条守卫：保存中不许关） */
+  useEscapeClose(true, () => {
+    if (!saving) onClose();
+  });
+
   const save = () => {
     if (!form.name.trim()) {
       setErr("请填写密钥名称");
@@ -233,6 +240,54 @@ function KeyModal({
   );
 }
 
+/* ---------------- 删除密钥确认 ---------------- */
+
+/* 抽成组件而不是内联 JSX：Esc 统一走 common/useEscapeClose（hook 只能在
+   组件顶层调用，内联在父组件 return 里就挂不上了）。 */
+function DelKeyConfirm({
+  name,
+  onCancel,
+  onConfirm,
+}: {
+  name: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEscapeClose(true, onCancel);
+  return (
+    <Modal>
+      <div
+        className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
+        onClick={onCancel}
+      >
+        <div
+          className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="text-base font-bold text-paper-900">删除密钥</h3>
+          <p className="mt-2 text-xs leading-relaxed text-paper-700">
+            确定删除「{name}」吗？删除后该密钥立即失效，调用日志会保留。
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              onClick={onCancel}
+              className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100"
+            >
+              取消
+            </button>
+            <button
+              onClick={onConfirm}
+              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+            >
+              删除
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /* ---------------- 汇总卡 ---------------- */
 
 function SummaryCards({ s }: { s: CallsSummary | null }) {
@@ -278,6 +333,37 @@ export default function ApiPanel() {
   const [sampleIdx, setSampleIdx] = useState(0);
   const [logKeyId, setLogKeyId] = useState<number | "">("");
   const [loading, setLoading] = useState(false);
+
+  /* 密钥表单 / 删除确认各自一条历史栈：浏览器返回只关弹框，不离开管理页。
+     push / pop 与 selfPop 竞态防护收在 common/useModalHistory.ts。 */
+  const keyModal = useModalHistory(
+    "storyKey",
+    useCallback(() => setModal({ open: false, editing: null }), []),
+  );
+  const openKey = useCallback(
+    (editing: StoryKey | null) => {
+      setModal({ open: true, editing });
+      keyModal.push();
+    },
+    [keyModal],
+  );
+  const closeKey = useCallback(() => {
+    setModal({ open: false, editing: null });
+    keyModal.pop();
+  }, [keyModal]);
+
+  const confirmHistory = useModalHistory(
+    "storyKeyConfirmDel",
+    useCallback(() => setConfirmDel(null), []),
+  );
+  const openConfirm = (k: StoryKey) => {
+    setConfirmDel(k);
+    confirmHistory.push();
+  };
+  const closeConfirm = () => {
+    setConfirmDel(null);
+    confirmHistory.pop();
+  };
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -355,7 +441,7 @@ export default function ApiPanel() {
             </span>
           </div>
           <button
-            onClick={() => setModal({ open: true, editing: null })}
+            onClick={() => openKey(null)}
             className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-3.5 py-2 text-xs font-semibold text-white shadow-glow press transition hover:opacity-90"
           >
             <Plus size={14} /> 新建密钥
@@ -476,7 +562,7 @@ export default function ApiPanel() {
                           </IconBtn>
                           <IconBtn
                             title="编辑"
-                            onClick={() => setModal({ open: true, editing: k })}
+                            onClick={() => openKey(k)}
                           >
                             <Pencil size={14} />
                           </IconBtn>
@@ -734,7 +820,7 @@ export default function ApiPanel() {
         {modal.open && (
           <KeyModal
             editing={modal.editing}
-            onClose={() => setModal({ open: false, editing: null })}
+            onClose={closeKey}
             onSaved={(created) => {
               if (created) setRevealed((r) => ({ ...r, [created.id]: true }));
               reload();
@@ -745,40 +831,15 @@ export default function ApiPanel() {
 
       <ExitPresence open={!!confirmDel}>
         {confirmDel && (
-          <Modal>
-            <div
-              className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-              onClick={() => setConfirmDel(null)}
-            >
-              <div
-                className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h3 className="text-base font-bold text-paper-900">删除密钥</h3>
-                <p className="mt-2 text-xs leading-relaxed text-paper-700">
-                  确定删除「{confirmDel.name}」吗？删除后该密钥立即失效，调用日志会保留。
-                </p>
-                <div className="mt-5 flex justify-end gap-2">
-                  <button
-                    onClick={() => setConfirmDel(null)}
-                    className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100"
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={() => {
-                      const id = confirmDel.id;
-                      setConfirmDel(null);
-                      withBusy(id, () => storyApi.deleteKey(id));
-                    }}
-                    className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-            </div>
-          </Modal>
+          <DelKeyConfirm
+            name={confirmDel.name}
+            onCancel={closeConfirm}
+            onConfirm={() => {
+              const id = confirmDel.id;
+              closeConfirm();
+              withBusy(id, () => storyApi.deleteKey(id));
+            }}
+          />
         )}
       </ExitPresence>
     </div>

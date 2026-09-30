@@ -20,6 +20,7 @@ import {
 import { loadCachedList, saveCachedList } from "./listCache";
 import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
+import { useEscapeClose } from "../common/useEscapeClose";
 import { errText } from "../common/State";
 
 interface VideoItem {
@@ -196,14 +197,11 @@ export default function HanziPlayer() {
     return () => { document.head.removeChild(link); };
   }, [nextVideo]);
 
-  /* 键盘快捷键 */
+  /* 键盘快捷键（上下切集）。Esc 走全站统一的 useEscapeClose，不再在这里手写。 */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (activeNum == null) return;
-      if (e.key === "Escape") {
-        if (showPicker) setShowPicker(false);
-        else closeModal();
-      } else if (e.key === "ArrowUp") {
+      if (e.key === "ArrowUp") {
         e.preventDefault();
         if (prevVideo) setActiveNum(prevVideo.num);
       } else if (e.key === "ArrowDown") {
@@ -213,7 +211,7 @@ export default function HanziPlayer() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [prevVideo, nextVideo, showPicker, activeNum]);
+  }, [prevVideo, nextVideo, activeNum]);
 
   /* 关闭播放器：先把播放进度落盘，再清状态。返回键（popstate）与主动关闭共用这一份，
      避免两处逻辑漂移（重构前 popstate 分支就漏了 showPicker 之外的清理细节）。 */
@@ -240,6 +238,13 @@ export default function HanziPlayer() {
     /* 弹框是压栈打开的，用 back 弹出，保持浏览器历史干净 */
     modalHistory.pop();
   };
+
+  /* Esc 两级：开着选集面板时先关面板，再按才关播放器。
+     走全站统一 hook（common/useEscapeClose.ts），别在这里手写 keydown 监听。 */
+  useEscapeClose(activeNum != null, () => {
+    if (showPicker) setShowPicker(false);
+    else closeModal();
+  });
 
   const toggleAutoplay = () => {
     const next = !autoplay;
@@ -272,7 +277,7 @@ export default function HanziPlayer() {
   const pad = (n: number | null) => String(n ?? "").padStart(3, "0");
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--hanzi-bg, #faf6f1)" }}>
+    <div className="hanzi-page min-h-screen" style={{ background: "var(--hanzi-bg, #faf6f1)" }}>
       {/* ====== 顶部 Hero 区 ====== */}
       <div className="relative overflow-hidden px-4 pb-10 pt-12 sm:pt-16">
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 opacity-30">

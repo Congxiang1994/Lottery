@@ -13,12 +13,11 @@ import { CheckCircle2, Filter, XCircle } from "lucide-react";
 const PRIZE_ORDER = ["一等奖", "二等奖", "三等奖", "四等奖", "五等奖", "六等奖",
   "七等奖", "八等奖", "九等奖"];
 
-const CAT_NAMES: Record<string, string> = {
-  statistical: "统计", ml: "机器学习", deeplearning: "深度学习",
-  timeseries: "时序", similarity: "相似", quantum: "量子",
-  physics: "物理", symbolic: "符号", metaphysics: "玄学",
-  signal_img: "信号", seeds: "种子", ensemble: "集成",
-};
+/* 分类显示名一律取后端下发的 category_name（CATEGORIES 是唯一真源）。
+   这里**不再**维护手抄的 key→中文名映射表：曾经存在的那张表两边已经漂移过 ——
+   key 写成 signal_img 而后端是 signal，界面直接把英文 key 显示出来；
+   名字也有两套（后端「统计与概率」/ 前端「统计」），同一分类在算法广场
+   与历史对照页长得不一样。 */
 
 function MiniBall({
   n, kind, hit,
@@ -79,8 +78,11 @@ function Column({
     <div
       className={`flex w-[86px] shrink-0 flex-col items-center gap-1.5 rounded-xl border px-1.5 py-2 transition ${
         won
-          ? "border-emerald-200 bg-emerald-50/60"
-          : "border-paper-100 bg-paper-50/50"
+          /* ⚠️ 必须是**不透明**底色：共识列是 sticky 的，半透明底色会让横向滚动时
+             后面的算法列从它里面透上来（`/60`、`/50` 已实测透底）。同时
+             `bg-paper-50/50` 这种半透明语义色在暗色下没有对应映射，会变成亮块。 */
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-paper-100 bg-paper-50"
       }`}
     >
       <div
@@ -114,13 +116,17 @@ export default function PredictionMatrix({
   const [onlyWin, setOnlyWin] = useState(true);
   const [cat, setCat] = useState<string>("all");
 
-  // 分类选项：仅从数据中出现过的分类取，保证切换有意义
+  // 分类选项：仅从数据中出现过的分类取，保证切换有意义。
+  // 显示名用后端下发的 category_name（取不到才退回 key —— 至少不会显示错名字）
   const cats = useMemo(() => {
-    const s = new Set<string>();
+    const m = new Map<string, string>();
     for (const it of items) {
-      for (const a of it.predictions?.algos ?? []) s.add(a.category ?? "");
+      for (const a of it.predictions?.algos ?? []) {
+        const k = a.category;
+        if (k && !m.has(k)) m.set(k, a.category_name || k);
+      }
     }
-    return [...s].filter(Boolean).sort();
+    return [...m.entries()].sort((x, y) => x[0].localeCompare(y[0]));
   }, [items]);
 
   const rows = useMemo(
@@ -162,17 +168,17 @@ export default function PredictionMatrix({
           >
             全部分类
           </button>
-          {cats.map((c) => (
+          {cats.map(([key, name]) => (
             <button
-              key={c}
-              onClick={() => setCat(c)}
+              key={key}
+              onClick={() => setCat(key)}
               className={`rounded-full border px-2.5 py-1 text-xs transition ${
-                cat === c
+                cat === key
                   ? "border-brand-red/50 bg-brand-red/15 text-brand-red"
                   : "border-paper-200 bg-paper-100 text-paper-700 hover:bg-paper-200"
               }`}
             >
-              {CAT_NAMES[c] ?? c}
+              {name}
             </button>
           ))}
         </div>

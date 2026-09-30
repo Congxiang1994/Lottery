@@ -4,7 +4,7 @@
  * 图表用 recharts（已在依赖里），配色随日/夜切换；
  * 排行 / 分布 / 状态码用自绘 div 横条 —— 比再塞三个图表库更紧凑、更好读。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -95,7 +95,9 @@ export function statusTone(s: number): string {
 export function chartTheme(night: boolean) {
   return {
     grid: night ? "#332a24" : "#efe6d7",
-    axis: night ? "#8a7866" : "#8a7866",
+    /* ⚠️ 轴标签色本来日夜写的是**同一个值**（一眼就是复制粘贴漏改）。
+       日间的 #8a7866 压暖黑只有 ~3.8:1，偏暗；夜间提亮一档。 */
+    axis: night ? "#a6907c" : "#8a7866",
     line: night ? "#e8c37a" : "#c98600",
     fill: night ? "rgba(232,195,122,0.16)" : "rgba(201,134,0,0.14)",
     pie: night
@@ -413,17 +415,40 @@ export function SearchInput({
   value,
   onChange,
   placeholder,
+  delay = 300,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
+  /** 防抖时长（ms）。输入框每敲一个字都会触发筛选 → 请求，必须防抖。 */
+  delay?: number;
 }) {
+  /* 本地镜像 + 防抖上抛。
+     没有这层的话「搜 IP」每敲一个字符就发一次请求（后端还要全表 LIKE），
+     并且每次都要回到第 1 页。 */
+  const [text, setText] = useState(value);
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+
+  // 外部改值（如重置筛选）时同步回输入框；自己触发的那次值相同，不会打断输入
+  useEffect(() => {
+    setText(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (text === value) return; // 已同步，无需上抛
+    const t = window.setTimeout(() => onChangeRef.current(text), delay);
+    return () => window.clearTimeout(t);
+  }, [text, value, delay]);
+
   return (
     <div className="relative">
       <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-paper-500" />
       <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
         placeholder={placeholder}
         className="w-full rounded-lg border border-paper-200 bg-white/60 py-1.5 pl-8 pr-2.5 text-xs text-paper-900 outline-none transition focus:border-brand-gold/50"
       />

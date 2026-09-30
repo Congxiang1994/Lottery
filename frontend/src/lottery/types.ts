@@ -245,6 +245,8 @@ export interface PredictionColumn {
   id?: string;
   name: string;
   category?: string;
+  /** 分类显示名，由后端 CATEGORIES 下发（唯一真源）。共识列没有 category，故为可选。 */
+  category_name?: string;
   red: number[];
   blue: number[];
   red_hit: number;

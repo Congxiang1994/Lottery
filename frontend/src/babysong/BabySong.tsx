@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
+import { useEscapeClose } from "../common/useEscapeClose";
 import { errText } from "../common/State";
 
 interface Song {
@@ -366,16 +367,18 @@ export default function BabySong() {
     }
   }, [current]);
 
+  /* 左右切歌。Esc 走全站统一的 useEscapeClose，不在这里手写。 */
   useEffect(() => {
     if (!activeId) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeLocalModal();
-      else if (e.key === "ArrowLeft" && prevLocal) setActiveId(prevLocal.id);
+      if (e.key === "ArrowLeft" && prevLocal) setActiveId(prevLocal.id);
       else if (e.key === "ArrowRight" && nextLocal) setActiveId(nextLocal.id);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeId, prevLocal, nextLocal, closeLocalModal]);
+  }, [activeId, prevLocal, nextLocal]);
+
+  useEscapeClose(activeId != null, closeLocalModal);
 
   /* 预取下一首本地视频 */
   useEffect(() => {

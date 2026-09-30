@@ -597,6 +597,17 @@ summary:active {
 .site-night .bg-paper-50 {
   background-color: #221b17;
 }
+/* ⚠️ `bg-paper-50/xx` 是**另一个 class**（Tailwind 生成 `bg-paper-50\/50`），
+   上面那条精确匹配**命中不到**它。此前整套漏映射，暗色下
+   `rgba(253,251,247,.5~.7)` 原样生效 → 表格行 hover、矩阵列头、算法列
+   全变成亮斑（就是「新增半透明色必须补映射」那条规则说的坑）。
+   这里统一落成「比面板亮一档」的极淡白，与 bg-white\/70 的处理保持一致。 */
+.site-night .bg-paper-50\/50,
+.site-night .bg-paper-50\/60,
+.site-night .bg-paper-50\/70,
+.site-night .hover\:bg-paper-50\/60:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
 .site-night .bg-\[\#faf6f1\] {
   background-color: #1e1815;
 }
@@ -605,7 +616,12 @@ summary:active {
 .site-night .focus\:bg-white:focus {
   background-color: #221b17;
 }
-.site-night .bg-white\/80 {
+/* 汉字课 hero 的「随机学一个」：印章红描边幽灵按钮，暗色下补一层淡红底与描边呼应。
+   ⚠️ 必须**限定在汉字课页面内**。原先写成全局的 `.site-night .bg-white\/80`，
+   等于劫持了**通用**面板类 —— 任何地方再用 bg-white/80 都会意外变红，
+   而且它与上方第 384 行那条通用映射同权重、同选择器，后者直接被覆盖成死代码。
+   加 `.hanzi-page`（根容器上的标记类）后两者各归其位。 */
+.site-night .hanzi-page .bg-white\/80 {
   background-color: rgba(233, 112, 112, 0.12);
 }
 /* hover 残留的浅色态 */
@@ -644,12 +660,23 @@ summary:active {
    ⚠️② **必须只在切换瞬间挂、不能常驻**。常驻会让暗色用户刷新时看到
         「亮→暗」渐入，等于把 index.html 的首屏防闪烁废掉；且 hover 手感变钝。
 
-   ⚠️③ **必须排除 `.glass`**。儿歌页 48 个 `backdrop-filter: blur(14px)` 卡片
-        每帧都要重采样背后内容，纳入过渡实测 32fps / 17 次卡帧（排除后 61fps / 0）。
-        而且 .glass 背景是渐变，**本来就不可插值** —— 让它参与是花大钱做无用功。
+   ⚠️③ **`.glass` 自身 + 它内部的矢量/媒体元素**要排除，其余后代必须放开。
+        · 排除自身：`.glass` 背景是 `background-image` 渐变、本来就不可插值，
+          参与过渡是花大钱做无用功（儿歌页 48 个 backdrop-filter 卡片
+          自身纳入实测 32fps / 17 卡帧，排除后 61fps / 0）。
+        · 排除内部矢量/媒体：图标 `<svg>` 子树（`path` / `circle`）的 fill/stroke
+          过渡**每帧都要重绘整棵 SVG**，是儿歌页掉帧的真正大头。
+        · 🔴 但**不能**写 `.glass *`（把 div / 文字一起踢掉）：全站几乎所有
+          标题 / 正文都在 `.glass` 卡片里，那等于「亮暗切换时卡片里的字全都硬跳」，
+          实测门户页 38/38 个会变色的文字元素全部中招 —— 这正是
+          「只有个别页面标题有过渡、其它都没有」的根因。
+        实测数据与取舍明细见规则处注释（含「合成玻璃卡压力测试为什么会给出错误结论」）。
 
    ⚠️④ **选择器必须限定、不能用 `*`**。通配符在最重页面（1470 元素）
         实测 30fps / 22 次卡帧；限定后 61fps / 0 卡帧。
+        ⚠️ 限定 = 逐个列标签，**漏一个标签就是一类元素永远硬跳**。
+        `b` / `summary` / `tr` / `option` 都曾漏过（实测门户页「理性购彩声明」
+        这类 <b> 标题就是硬跳）。日后新增冷门标签记得回这里补。
 
    ⚠️⑤ 时长改动要同步 `useTheme.ts` 的 `THEME_ANIM_MS`。 */
 :root {
@@ -672,38 +699,124 @@ html.theme-anim h1,
 html.theme-anim h2,
 html.theme-anim h3,
 html.theme-anim h4,
+html.theme-anim h5,
+html.theme-anim h6,
 html.theme-anim p,
 html.theme-anim span,
 html.theme-anim a,
 html.theme-anim li,
 html.theme-anim ul,
 html.theme-anim ol,
+html.theme-anim dl,
+html.theme-anim dt,
+html.theme-anim dd,
 html.theme-anim label,
 html.theme-anim strong,
+html.theme-anim b,
 html.theme-anim em,
+html.theme-anim i,
+html.theme-anim u,
+html.theme-anim s,
+html.theme-anim mark,
 html.theme-anim small,
+html.theme-anim time,
+html.theme-anim abbr,
+html.theme-anim cite,
+html.theme-anim q,
+html.theme-anim sub,
+html.theme-anim sup,
+html.theme-anim kbd,
+html.theme-anim samp,
+html.theme-anim var,
 html.theme-anim code,
 html.theme-anim pre,
 html.theme-anim blockquote,
+html.theme-anim address,
+html.theme-anim figcaption,
+html.theme-anim caption,
+html.theme-anim legend,
+html.theme-anim option,
+html.theme-anim optgroup,
 html.theme-anim table,
+html.theme-anim thead,
+html.theme-anim tbody,
+html.theme-anim tfoot,
+html.theme-anim tr,
 html.theme-anim th,
 html.theme-anim td,
+html.theme-anim details,
+html.theme-anim summary,
+html.theme-anim form,
 html.theme-anim button,
+html.theme-anim video,
+html.theme-anim audio,
+html.theme-anim canvas,
+html.theme-anim img,
 html.theme-anim svg,
 html.theme-anim path,
+html.theme-anim circle,
+html.theme-anim rect,
+html.theme-anim line,
+html.theme-anim stop,
 html.theme-anim input,
 html.theme-anim textarea,
 html.theme-anim select {
   transition-property: color, background-color, border-color, fill, stroke, scale !important;
-  transition-duration: var(--dur-theme) !important;
+  /* ⚠️ `scale` 是**按压反馈**（全站交互基线，--dur-press = 130ms），不是主题过渡的
+     一部分 —— 主题切换永远不改 scale。之前它跟着 color 一起走 320ms，
+     于是切换后 420ms 窗口内点任何按钮都是「慢慢缩」的钝手感。
+     一条属性一条时长，互不干扰（与 .card-hover 的写法同源）。 */
+  transition-duration: var(--dur-theme), var(--dur-theme), var(--dur-theme),
+    var(--dur-theme), var(--dur-theme), var(--dur-press) !important;
   transition-timing-function: var(--ease-theme) !important;
-  /* 分层错峰的实际取值：见下方「分层错峰」段。未分层处回落 0ms。 */
-  transition-delay: var(--stagger-theme, 0ms) !important;
+  /* 分层错峰只作用于颜色属性；scale 的延迟必须归零，否则按压也要跟着错峰。
+     分层错峰的实际取值：见下方「分层错峰」段。未分层处回落 0ms。 */
+  transition-delay: var(--stagger-theme, 0ms), var(--stagger-theme, 0ms),
+    var(--stagger-theme, 0ms), var(--stagger-theme, 0ms), var(--stagger-theme, 0ms),
+    0ms !important;
 }
 
-/* 毛玻璃面板（导航栏 + 卡片）：见上方 ⚠️③，让它们保持瞬时切换 */
-html.theme-anim .glass,
-html.theme-anim .glass * {
+/* 毛玻璃面板**自身**保持瞬时。
+   · 为什么排自身：`.glass` 背景是 `background-image` 渐变，本来就不可插值；
+     它是全站唯一一批 backdrop-filter 元素，自身参与过渡时合成器每帧都得
+     重新栅格化那个模糊层，是最贵的一项（儿歌页 48 个：32fps / 17 卡帧 → 61fps / 0）。
+   · 🔴 为什么**不能**写 `html.theme-anim .glass *`：那会把卡片**里面**的文字
+     全部踢出过渡 —— 而全站几乎所有标题 / 正文都在 `.glass` 卡片内，
+     等于「亮暗切换时卡片里的字全都硬跳」。实测门户页 38/38 个会变色的文字元素
+     全部中招，正是「只有个别页面标题有过渡、其它都没有」的根因。 */
+html.theme-anim .glass {
+  transition-property: none !important;
+}
+
+/* `.glass` **内部**的矢量 / 媒体元素也不参与过渡（2026-09-30 实测补）。
+   · 起因：把 `.glass` 后代整体放开后，儿歌页（48 张玻璃卡 / 1296 个后代 /
+     共 1481 元素）从 60fps 掉到 **37fps / 9~11 卡帧**。
+   · 归因（on-prod 注入 CSS 逐项隔离，两轮复现）：
+       现状（全放开）        1423 个元素参与 → 38fps / 9 卡帧
+       只排 `.glass` 内矢量   655 个参与      → **58fps / 1 卡帧**
+       只排 `.glass` 内 div  1087 个参与      → 51fps / 1 卡帧
+       只放行文字类标签       271 个参与      → 59fps / 0 卡帧
+     即：**大头是 `<svg>` 子树**（每卡 4 个图标 ×(1 svg + 4 path + 2 circle)），
+     图标 fill/stroke 每帧重绘整棵 SVG；div 那部分只值 ~10fps，可以留。
+   · ⚠️ 试过但**无效**的两条路（别重复走）：
+       a) 过渡期间给 `.glass` 关掉 `backdrop-filter` → 仍 38fps，说明掉帧
+          **不是** backdrop-filter 重采样造成的（虽然排自身仍然必要）。
+       b) 让 svg 子树只跑 `color`（指望 currentColor 图标还能淡入）→ 仍 38fps：
+          图标色经继承变化，照样每帧触发整棵 SVG 重绘。
+   · ⚠️ 为什么不能用「合成玻璃卡压力测试」下结论：合成卡里没有 SVG 后代，
+     所以当时测出「48 张放开后代仍 58~60fps」。**压力测试的卡片必须
+     与被测页面同构**，否则会把最贵的那类后代整类漏掉（本轮就是这么踩的）。
+   · 代价：`.glass` 内的图标在切换时会硬跳（占位小、线条细，可接受）；
+     文字与容器 div（儿歌页歌曲标题就是 `div.font-semibold`）照常淡入。 */
+html.theme-anim .glass svg,
+html.theme-anim .glass svg *,
+html.theme-anim .glass img,
+html.theme-anim .glass canvas,
+html.theme-anim .glass video,
+html.theme-anim .glass audio,
+html.theme-anim .glass iframe,
+html.theme-anim .glass object,
+html.theme-anim .glass embed {
   transition-property: none !important;
 }
 

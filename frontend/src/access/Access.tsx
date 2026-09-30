@@ -8,7 +8,7 @@
  *   · 后端中间件 → 接口维度（含状态码 / 耗时 / 真实 IP / 地区）
  *   · 前端埋点   → 页面维度（SPA 路由，中间件分不清）
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpDown,
   Download,
@@ -347,6 +347,31 @@ function PasswordGate({ onPass }: { onPass: () => void }) {
 
 /* ============================== 概览 ============================== */
 
+/**
+ * 筛选条件变化 → 回到第 1 页，**在 render 阶段同步重置**。
+ *
+ * ⚠️ 不能写成 `useEffect(() => setPage(1), [filters])`。effect 要等本次渲染**提交
+ * 之后**才跑，而 useLoad 也是个 effect，两者按声明顺序执行 ——
+ * 于是先用「新筛选 + 旧页码」发一次请求，白跑一趟（翻到第 5 页再改筛选时尤其明显），
+ * 列表还会先闪一帧第 5 页的结果。
+ *
+ * render 阶段同步改 state 是 React 官方支持的「随 props 调整 state」模式：
+ * React 会立刻用新页码重渲染本次组件，那个中间态根本不会被提交，effect 也就
+ * 只按第 1 页跑一次。
+ *
+ * @param key  把「会影响结果集的筛选条件」拼成一个字符串
+ * @returns    可直接用于 offset 的页码（改动的这一帧就已经是 1）
+ */
+function useResetPageOn(key: string, page: number, setPage: (n: number) => void): number {
+  const prev = useRef(key);
+  if (prev.current !== key) {
+    prev.current = key;
+    setPage(1);
+    return 1;
+  }
+  return page;
+}
+
 function useLoad<T>(fn: () => Promise<T>, deps: unknown[], onUnauth: () => void) {
   const [data, setData] = useState<T | null>(null);
   const [err, setErr] = useState("");
@@ -438,7 +463,9 @@ function OverviewTab({
       {s && !s.geo.v4_loaded && !s.geo.v6_loaded && (
         <div className="rounded-2xl border border-amber-600/25 bg-amber-50 px-4 py-3 text-xs text-amber-700">
           离线 IP 库未加载 —— 地区字段会留空。在服务器执行
-          <code className="mx-1 rounded bg-black/5 px-1 font-mono">python tools/geo_update.py</code>
+          <code className="mx-1 rounded bg-black/5 px-1 font-mono">
+            cd /opt/lottery &amp;&amp; ./backend/.venv/bin/python tools/geo_update.py
+          </code>
           下载后即恢复（不影响其他统计）。
         </div>
       )}
@@ -608,6 +635,10 @@ function LogsTab({
   const [page, setPage] = useState(1);
   const size = 50;
 
+  // 筛选 / 时间窗一变就回到第 1 页（同步重置，见 useResetPageOn 的 ⚠️）
+  const curPage = useResetPageOn(
+    `${days}|${includeAuto}|${kind}|${feature}|${status}|${path}`, page, setPage);
+
   const params = useMemo(
     () => ({
       days,
@@ -617,15 +648,12 @@ function LogsTab({
       path,
       include_auto: includeAuto ? 1 : 0,
       limit: size,
-      offset: (page - 1) * size,
+      offset: (curPage - 1) * size,
     }),
-    [days, kind, feature, status, path, includeAuto, page],
+    [days, kind, feature, status, path, includeAuto, curPage],
   );
 
   const q = useLoad(() => accessApi.logs(params), [params], onUnauth);
-
-  // 筛选条件变化时回到第 1 页
-  useEffect(() => setPage(1), [days, kind, feature, status, path, includeAuto]);
 
   const th = "px-2.5 py-2 text-left text-[11px] font-semibold text-paper-600 whitespace-nowrap";
   const td = "px-2.5 py-1.5 text-[12px] whitespace-nowrap";
@@ -802,12 +830,13 @@ function IpsTab({
   const [page, setPage] = useState(1);
   const size = 30;
 
+  const curPage = useResetPageOn(`${days}|${includeAuto}|${sort}|${q}`, page, setPage);
+
   const params = useMemo(
-    () => ({ days, sort, q, limit: size, offset: (page - 1) * size, includeAuto }),
-    [days, sort, q, page, includeAuto],
+    () => ({ days, sort, q, limit: size, offset: (curPage - 1) * size, includeAuto }),
+    [days, sort, q, curPage, includeAuto],
   );
   const data = useLoad(() => accessApi.ips(params), [params], onUnauth);
-  useEffect(() => setPage(1), [days, sort, q, includeAuto]);
 
   const th = "px-2.5 py-2 text-left text-[11px] font-semibold text-paper-600 whitespace-nowrap";
   const td = "px-2.5 py-1.5 text-[12px] whitespace-nowrap";
@@ -924,12 +953,12 @@ function VisitorsTab({
   const [sort, setSort] = useState<"requests" | "last_seen">("requests");
   const [page, setPage] = useState(1);
   const size = 30;
+  const curPage = useResetPageOn(`${days}|${includeAuto}|${sort}`, page, setPage);
   const params = useMemo(
-    () => ({ days, sort, limit: size, offset: (page - 1) * size, includeAuto }),
-    [days, sort, page, includeAuto],
+    () => ({ days, sort, limit: size, offset: (curPage - 1) * size, includeAuto }),
+    [days, sort, curPage, includeAuto],
   );
   const data = useLoad(() => accessApi.visitors(params), [params], onUnauth);
-  useEffect(() => setPage(1), [days, sort, includeAuto]);
 
   const th = "px-2.5 py-2 text-left text-[11px] font-semibold text-paper-600 whitespace-nowrap";
   const td = "px-2.5 py-1.5 text-[12px] whitespace-nowrap";
@@ -1168,7 +1197,9 @@ function OpsTab({ onUnauth }: { onUnauth: () => void }) {
           )}
           <p className="mt-3 text-[11px] leading-relaxed text-paper-600">
             更新：在服务器执行
-            <code className="mx-1 rounded bg-black/5 px-1 font-mono">python tools/geo_update.py</code>
+            <code className="mx-1 rounded bg-black/5 px-1 font-mono">
+              cd /opt/lottery &amp;&amp; ./backend/.venv/bin/python tools/geo_update.py
+            </code>
             下载新库（原子替换，失败不影响在跑的进程），然后点右侧「回填历史记录」。
           </p>
           <button

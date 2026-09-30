@@ -234,11 +234,33 @@ def _write_batch(rows: list[dict[str, Any]]) -> None:
         log.warning("access 批量写入失败（%d 行已丢弃）：%s", len(rows), e)
 
 
+def _agg_cutoff(minutes: list[str], fallback: str) -> str:
+    """聚合状态的清理水位 = 本批**最早**行的分钟 − ``AGG_GRACE_MINUTES`` 分钟。
+
+    🔴 绝不能改用「墙上时钟」。`_agg` 的 key 里存的是**行自身**的分钟，而
+    ``now[:16]`` 是**写入时刻**的分钟。队列积压或分钟边界那一秒，行的 ts 会早于
+    now，按写入时刻清理就会把仍在写入的那一分钟的状态清掉 ——
+    后果是同一分钟被拆成多条聚合行，而且普通行因为计数从头开始、
+    再也够不到 ``SAME_PATH_PER_MINUTE``，本该公司聚的 60 行会变成 60 条普通行。
+    （2026-09-30 实测：同分钟两批 ts 落后 1 分钟 → 聚合行变 2 条 + 多出 60 条普通行。）
+
+    取**本批最早**而不是本批最大：批次内部跨分钟时，若用最大分钟做水位，
+    本批里较早的分钟会在处理前就被清掉，自己就把自己拆开了。
+    """
+    try:
+        oldest = min(minutes)
+        dt = datetime.strptime(oldest, "%Y-%m-%d %H:%M") - timedelta(
+            minutes=config.AGG_GRACE_MINUTES)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except ValueError:  # ts 格式异常时退化为「不清理」，宁可多占内存也不拆行
+        return fallback
+
+
 def _write_rows(con: sqlite3.Connection, rows: list[dict[str, Any]]) -> None:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cur_minute = now[:16]
-    # 清理上一分钟之前的聚合状态
-    for k in [k for k in _agg if k[2] < cur_minute]:
+    # 清理过期的聚合状态（水位见 _agg_cutoff 的 🔴 说明）
+    cutoff = _agg_cutoff([(r.get("ts") or now)[:16] for r in rows], now[:16])
+    for k in [k for k in _agg if k[2] < cutoff]:
         _agg.pop(k, None)
 
     plain: list[tuple] = []
@@ -559,6 +581,14 @@ def list_ips(days: int = 7, limit: int = 50, offset: int = 0, sort: str = "reque
         where += " AND (ip LIKE ? OR region LIKE ? OR city LIKE ? OR isp LIKE ?)"
         like = f"%{q}%"
         params += [like, like, like, like]
+    # ⚠️ tag 必须进 SQL，且 total 与 items 共用同一个 where。
+    # 旧实现在 rows 取完（LIMIT / OFFSET 已生效）之后才用 Python 过一遍 tag，
+    # 而 total 又不带 tag 条件 —— 结果是「共 N 个 IP」但列表少几个；
+    # 该页恰好不含命中行时更糟：total=2 / items=0（界面说有两个、列表全空），
+    # 翻页也一并失真。（2026-09-30 实测 total=2 / items=1。）
+    if tag:
+        where += " AND ip IN (SELECT ip FROM ip_profile WHERE tag = ?)"
+        params += [tag]
 
     with get_conn(config.DB_PATH) as con:
         total = int(con.execute(f"SELECT COUNT(DISTINCT ip) FROM access_logs WHERE {where}",
@@ -578,8 +608,6 @@ def list_ips(days: int = 7, limit: int = 50, offset: int = 0, sort: str = "reque
         ))
         _attach_profiles(con, rows)
         _attach_feature_mix(con, rows, days, include_auto)
-        if tag:
-            rows = [r for r in rows if (r.get("tag") or "") == tag]
     return {"total": total, "items": rows}
 
 
@@ -930,7 +958,19 @@ def maintenance() -> dict[str, Any]:
 
 
 def purge(before: str) -> dict[str, Any]:
-    """按天删除明细（分批 1000 行/次，避免长事务锁库）。**不自动 VACUUM**。"""
+    """按天删除**明细**（分批 1000 行/次，避免长事务锁库）。**不自动 VACUUM**。
+
+    ⚠️ 只动 access_logs，**不动** ip_profile / visitor_profile。
+    两张档案表存的正是明细算不出来的东西：**首次出现时间**（明细清掉就永远丢了）
+    与**人工标注**（访客名字 / 备注）。界面对用户的承诺写在 Access.tsx 的
+    「数据分布」卡片上 ——「明细保留 N 天，IP / 访客档案永久保留」，
+    档案表又比明细表小几个数量级，留着的成本可以忽略。
+    真正的隐私出口是 `purge_all()`（明细 + 两张档案一起清）。
+
+    旧实现在这里跟了一条 DELETE visitor_profile（按「明细里已不存在」清孤儿），
+    会把用户手写的访客名字一并抹掉，与界面文案直接矛盾
+    （2026-09-30 实测：purge 前 visitor_profile=1 → purge 后 =0，而 ip_profile 保持 1）。
+    """
     if not before or len(before) != 10:
         raise ValueError("before 必须是 YYYY-MM-DD")
     removed = 0
@@ -943,8 +983,6 @@ def purge(before: str) -> dict[str, Any]:
             removed += n
             if n < 1000:
                 break
-        con.execute("DELETE FROM visitor_profile WHERE visitor NOT IN "
-                    "(SELECT DISTINCT visitor FROM access_logs WHERE visitor != '')")
     return {"removed": removed, "before": before}
 
 

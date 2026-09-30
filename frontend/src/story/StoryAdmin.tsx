@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ExitPresence, Modal } from "../common/Modal";
+import { useModalHistory } from "../common/useModalHistory";
+import { useEscapeClose } from "../common/useEscapeClose";
 import {
   BookOpen,
   Eye,
@@ -129,6 +131,7 @@ function ConfirmModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  useEscapeClose(true, onCancel);
   return (
     <Modal>
       <div
@@ -217,6 +220,11 @@ function StoryModal({
           },
     );
   }, [editing]);
+
+  /* Esc 关闭（与遮罩点击同一条守卫：保存中不许关） */
+  useEscapeClose(true, () => {
+    if (!saving) onClose();
+  });
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -392,6 +400,37 @@ export default function StoryAdmin() {
   });
   const [confirmDel, setConfirmDel] = useState<Story | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
+
+  /* 两个弹框各自的历史栈（浏览器返回 / 手机侧滑只关弹框，不离开管理页）。
+     收发都在 common/useModalHistory.ts，别手写 popstate。 */
+  const storyModal = useModalHistory(
+    "storyAdminEdit",
+    useCallback(() => setModal({ open: false, editing: null }), []),
+  );
+  const openStory = useCallback(
+    (editing: Story | null) => {
+      setModal({ open: true, editing });
+      storyModal.push();
+    },
+    [storyModal],
+  );
+  const closeStory = useCallback(() => {
+    setModal({ open: false, editing: null });
+    storyModal.pop();
+  }, [storyModal]);
+
+  const confirmHistory = useModalHistory(
+    "storyAdminConfirmDel",
+    useCallback(() => setConfirmDel(null), []),
+  );
+  const openConfirm = (s: Story) => {
+    setConfirmDel(s);
+    confirmHistory.push();
+  };
+  const closeConfirm = () => {
+    setConfirmDel(null);
+    confirmHistory.pop();
+  };
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -604,13 +643,13 @@ export default function StoryAdmin() {
                       <div className="flex items-center justify-end gap-1">
                         <IconBtn
                           title="编辑"
-                          onClick={() => setModal({ open: true, editing: s })}
+                          onClick={() => openStory(s)}
                         >
                           <Pencil size={14} />
                         </IconBtn>
                         <IconBtn
                           title="删除"
-                          onClick={() => setConfirmDel(s)}
+                          onClick={() => openConfirm(s)}
                           danger
                         >
                           <Trash2 size={14} />
@@ -629,7 +668,7 @@ export default function StoryAdmin() {
         {modal.open && (
           <StoryModal
             editing={modal.editing}
-            onClose={() => setModal({ open: false, editing: null })}
+            onClose={closeStory}
             onSaved={reload}
           />
         )}
@@ -640,10 +679,10 @@ export default function StoryAdmin() {
           <ConfirmModal
             title="删除故事"
             message={`确定删除「${confirmDel.title}」吗？删除后不可恢复。`}
-            onCancel={() => setConfirmDel(null)}
+            onCancel={closeConfirm}
             onConfirm={() => {
               const id = confirmDel.id;
-              setConfirmDel(null);
+              closeConfirm();
               withBusy(id, () => storyApi.deleteStory(id));
             }}
           />

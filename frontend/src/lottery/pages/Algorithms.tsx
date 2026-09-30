@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExitPresence, Modal } from "../../common/Modal";
+import { useModalHistory } from "../../common/useModalHistory";
+import { useEscapeClose } from "../../common/useEscapeClose";
 import { useLottery } from "../context";
 import { api } from "../api";
 import {
@@ -120,6 +122,25 @@ export default function Algorithms() {
   const [pwdErr, setPwdErr] = useState<string | null>(null);
   const [pwdLoading, setPwdLoading] = useState(false);
 
+  /* 密码弹框的历史栈：打开压一条、关闭弹掉 —— 浏览器返回只关弹框、不离开算法广场。
+     push / pop 与 selfPop 竞态防护收在 common/useModalHistory.ts。 */
+  const pwdModal = useModalHistory("algoRunAll", useCallback(() => setPwdOpen(false), []));
+  const openPwd = () => {
+    setPwdErr(null);
+    setPwd("");
+    setPwdOpen(true);
+    pwdModal.push();
+  };
+  const closePwd = useCallback(() => {
+    setPwdOpen(false);
+    pwdModal.pop();
+  }, [pwdModal]);
+
+  /* Esc 关闭（与遮罩点击同一条守卫：校验中不许关） */
+  useEscapeClose(pwdOpen, () => {
+    if (!pwdLoading) closePwd();
+  });
+
   const runAll = (pwd: string) =>
     api.runAll(pwd).then(() => {
       setRunStatus({
@@ -137,7 +158,7 @@ export default function Algorithms() {
     setPwdErr(null);
     runAll(pwd)
       .then(() => {
-        setPwdOpen(false);
+        closePwd();
         setPwd("");
       })
       .catch((e) => setPwdErr(String(e)))
@@ -194,7 +215,7 @@ export default function Algorithms() {
         <div className="flex flex-wrap items-center gap-3">
           <LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />
           <button
-            onClick={() => { setPwdErr(null); setPwd(""); setPwdOpen(true); }}
+            onClick={openPwd}
             disabled={runStatus?.running}
             className="flex items-center gap-1.5 rounded-xl border border-paper-200 bg-paper-100 px-3 py-2 text-sm text-paper-900 transition hover:bg-paper-200 disabled:opacity-40"
           >
@@ -209,7 +230,7 @@ export default function Algorithms() {
       <ExitPresence open={pwdOpen}>
         {pwdOpen && (
           <Modal>
-            <div className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={() => { if (!pwdLoading) setPwdOpen(false); }}>
+            <div className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm" onClick={() => { if (!pwdLoading) closePwd(); }}>
               <div
                 className="anim-panel glass w-full max-w-sm rounded-3xl p-6 shadow-card"
                 onClick={(e) => e.stopPropagation()}
@@ -236,7 +257,7 @@ export default function Algorithms() {
                 )}
                 <div className="mt-5 flex justify-end gap-2">
                   <button
-                    onClick={() => setPwdOpen(false)}
+                    onClick={closePwd}
                     disabled={pwdLoading}
                     className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
                   >

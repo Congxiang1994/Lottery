@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Story, storyApi } from "./api";
 import { useModalHistory } from "../common/useModalHistory";
+import { useEscapeClose } from "../common/useEscapeClose";
 import {
   Cover,
   FONT_KEY,
@@ -214,7 +215,7 @@ export default function StoryPage() {
     modalHistory.pop();
   }, [modalHistory]);
 
-  // 弹窗内的键盘操作：Esc 关闭，← 翻更早，→ 翻更新
+  // 弹窗内的键盘操作：← 翻更早，→ 翻更新。Esc 交给全站统一的 useEscapeClose。
   useEffect(() => {
     const step = (cur: Story, delta: 1 | -1): Story | null => {
       const i = stories.findIndex((s) => s.id === cur.id);
@@ -222,13 +223,16 @@ export default function StoryPage() {
       return j >= 0 && j < stories.length ? stories[j] : null;
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeModal();
-      else if (e.key === "ArrowLeft") setActive((a) => (a ? step(a, 1) : a));
+      if (e.key === "ArrowLeft") setActive((a) => (a ? step(a, 1) : a));
       else if (e.key === "ArrowRight") setActive((a) => (a ? step(a, -1) : a));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stories, closeModal]);
+  }, [stories]);
+
+  /* Esc 关闭弹窗。⚠️ 必须只在弹窗打开时注册 —— 旧写法是无条件挂 keydown，
+     列表页（没有弹窗）按 Esc 也会去调一次 closeModal()，语义是错的。 */
+  useEscapeClose(active !== null, closeModal);
 
   /* 弹框打开时锁住背景滚动（否则手机上会「穿透」到背后的列表一起滚），
      并补偿滚动条消失带来的宽度 —— 不补的话桌面居中容器会整体横移 5px。 */
