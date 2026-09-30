@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
   RefreshCw,
   Search,
   Shuffle,
@@ -37,7 +39,8 @@ import StoryModal from "./StoryModal";
  * 公开页：按故事日期倒序展示（只展示已发布），点击卡片打开全文弹窗。
  * 版式：内容宽度与顶部导航同宽（max-w-6xl），左右边界对齐；
  *   首屏一张「最近一篇」重点卡，其余按日期分组、桌面双列排布。
- * 交互：关键词搜索 + 主题标签筛选 + 随机一篇（优先未读）+ 已读标记。
+ * 交互：关键词搜索 + 主题标签筛选 + 随机一篇（优先未读）+ 已读标记 + 本地分页
+ *   （每页 10 篇，页码/上一页/下一页在列表底部，筛选变化自动回第 1 页）。
  * 弹窗：书页化排版（见 StoryModal）。
  * 夜间模式跟随全站全局开关（Nav 右上角，useTheme），页内不再单独切换。
  */
@@ -153,6 +156,84 @@ function SkeletonCards({ night }: { night: boolean }) {
   );
 }
 
+/* ------------------------------ 分页 ------------------------------ */
+
+/** 每页卡片数（前端本地分页，后端仍一次性拉全量） */
+const PAGE_SIZE = 10;
+
+/** 生成页码序列：总页数少时全列出，多时用 … 截断（首尾 + 当前页前后各 1 页） */
+function pageWindow(page: number, total: number): (number | "…")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const mid = [page - 1, page, page + 1].filter((n) => n >= 2 && n <= total - 1);
+  const nums = [...new Set([1, total, ...mid])].sort((a, b) => a - b);
+  const out: (number | "…")[] = [];
+  for (let i = 0; i < nums.length; i++) {
+    if (i > 0 && nums[i] - nums[i - 1] > 1) out.push("…");
+    out.push(nums[i]);
+  }
+  return out;
+}
+
+function Pagination({
+  page, total, night, onGo,
+}: { page: number; total: number; night: boolean; onGo: (p: number) => void }) {
+  if (total <= 1) return null;
+  const arrow =
+    "press inline-flex h-9 items-center gap-1 rounded-lg border px-3 text-sm font-medium transition disabled:cursor-default disabled:opacity-40";
+  const num = (active: boolean) =>
+    `press grid h-9 min-w-9 place-items-center rounded-lg border px-2 text-sm font-medium tabular-nums transition ${
+      active
+        ? night
+          ? "border-[#5a4636] bg-[#2a221d] text-[#e8c37a]"
+          : "border-brand-gold/50 bg-brand-gold/15 text-[#8a5a10]"
+        : night
+          ? "border-[#3a2f28] text-[#8a7866] hover:text-[#b5a18c]"
+          : "border-paper-200 text-paper-700 hover:bg-paper-100"
+    }`;
+  return (
+    <nav className="mt-9 flex flex-wrap items-center justify-center gap-1.5" aria-label="分页">
+      <button
+        type="button"
+        onClick={() => onGo(page - 1)}
+        disabled={page <= 1}
+        aria-label="上一页"
+        className={`${arrow} ${night ? "border-[#3a2f28] text-[#b5a18c]" : "border-paper-200 text-paper-800"}`}
+      >
+        <ChevronLeft size={15} />
+        上一页
+      </button>
+      {pageWindow(page, total).map((n, i) =>
+        n === "…" ? (
+          <span key={`e${i}`} className="px-1 text-sm" style={{ color: night ? "#6e5f51" : "#a89a86" }}>
+            …
+          </span>
+        ) : (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onGo(n)}
+            aria-current={n === page ? "page" : undefined}
+            aria-label={`第 ${n} 页`}
+            className={num(n === page)}
+          >
+            {n}
+          </button>
+        ),
+      )}
+      <button
+        type="button"
+        onClick={() => onGo(page + 1)}
+        disabled={page >= total}
+        aria-label="下一页"
+        className={`${arrow} ${night ? "border-[#3a2f28] text-[#b5a18c]" : "border-paper-200 text-paper-800"}`}
+      >
+        下一页
+        <ChevronRight size={15} />
+      </button>
+    </nav>
+  );
+}
+
 /* ------------------------------ 页面 ------------------------------ */
 
 export default function StoryPage() {
@@ -162,8 +243,10 @@ export default function StoryPage() {
   const [active, setActive] = useState<Story | null>(null);
   const [q, setQ] = useState("");
   const [tag, setTag] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const [readIds, setReadIds] = useState<number[]>(loadReadIds);
   const night = useNightMode();
+  const listTopRef = useRef<HTMLDivElement>(null);
 
   /* 弹框历史栈：打开时压一条历史记录，浏览器返回（含手机侧滑）只关弹框、不离开页面。
      push / pop 与 selfPop 竞态防护都收在 common/useModalHistory.ts，/hanzi、/babysong 共用。 */
@@ -189,6 +272,11 @@ export default function StoryPage() {
   useEffect(() => {
     localStorage.setItem(FONT_KEY, font);
   }, [font]);
+
+  /* 搜索 / 标签变化时回到第 1 页，避免停留在超出结果范围的页码上 */
+  useEffect(() => {
+    setPage(1);
+  }, [q, tag]);
 
   const markRead = useCallback((id: number) => {
     setReadIds((prev) => {
@@ -274,16 +362,36 @@ export default function StoryPage() {
   /* 重点卡只在「未筛选」时出现；筛选后平铺展示全部命中项，避免歧义 */
   const hero = filtering ? null : filtered[0] ?? null;
 
+  /* ---------------------------- 分页 ---------------------------- */
+
+  /* 分页对象 = 重点卡之外的列表（hero 不占名额，仅在筛选关闭时附加在第 1 页顶部） */
+  const list = useMemo(() => (hero ? filtered.slice(1) : filtered), [filtered, hero]);
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  const cur = Math.min(page, totalPages);
+  const pageItems = useMemo(
+    () => list.slice((cur - 1) * PAGE_SIZE, cur * PAGE_SIZE),
+    [list, cur],
+  );
+
   const groups = useMemo(() => {
-    const rest = hero ? filtered.slice(1) : filtered;
     const out: { date: string; items: Story[] }[] = [];
-    for (const s of rest) {
+    for (const s of pageItems) {
       const last = out[out.length - 1];
       if (last && last.date === s.story_date) last.items.push(s);
       else out.push({ date: s.story_date, items: [s] });
     }
     return out;
-  }, [filtered, hero]);
+  }, [pageItems]);
+
+  const gotoPage = useCallback(
+    (p: number) => {
+      if (p < 1 || p > totalPages || p === cur) return;
+      setPage(p);
+      // 翻页后回到列表顶部，避免停在底部看「下一页」的半截
+      listTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+    [cur, totalPages],
+  );
 
   const t = storyTheme(night);
   const readSet = useMemo(() => new Set(readIds), [readIds]);
@@ -441,8 +549,11 @@ export default function StoryPage() {
         </p>
       )}
 
-      {/* 最近一篇 */}
-      {hero && heroParts && (
+      {/* 列表锚点：翻页后滚回这里 */}
+      <div ref={listTopRef} style={{ scrollMarginTop: 88 }} />
+
+      {/* 最近一篇（只在第 1 页、未筛选时显示） */}
+      {cur === 1 && hero && heroParts && (
         <button
           type="button"
           onClick={() => openModal(hero)}
@@ -488,7 +599,7 @@ export default function StoryPage() {
         </button>
       )}
 
-      {/* 历史列表：按日期分组，桌面双列 */}
+      {/* 历史列表：按日期分组，桌面双列（分页切片后） */}
       {groups.map((g) => (
         <section key={g.date} className="mt-7">
           <div className="mb-3 flex items-center gap-3">
@@ -519,6 +630,11 @@ export default function StoryPage() {
           </div>
         </section>
       ))}
+
+      {/* 分页 */}
+      {!loading && !err && list.length > 0 && (
+        <Pagination page={cur} total={totalPages} night={night} onGo={gotoPage} />
+      )}
 
       <ExitPresence open={!!active}>
         {active && (
