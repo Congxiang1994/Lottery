@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
+  Check,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
@@ -47,6 +48,23 @@ import StoryModal from "./StoryModal";
 
 /* ------------------------------ 卡片 ------------------------------ */
 
+/** 「已读」徽章：样式对齐 /hanzi 的「已学」红章思路，配色沿用本页金色主题 */
+function ReadBadge({ night, className = "" }: { night: boolean; className?: string }) {
+  return (
+    <span
+      title="这篇已经读过啦"
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-px text-[10px] font-semibold leading-[1.6] ${
+        night
+          ? "border-[#5a4636] bg-[#2a221d] text-[#e8c37a]"
+          : "border-brand-gold/50 bg-brand-gold/15 text-[#8a5a10]"
+      } ${className}`}
+    >
+      <Check size={9} strokeWidth={3.5} aria-hidden />
+      已读
+    </span>
+  );
+}
+
 function StoryCard({
   s, night, read, onOpen,
 }: { s: Story; night: boolean; read: boolean; onOpen: (s: Story) => void }) {
@@ -76,15 +94,7 @@ function StoryCard({
           >
             {text}
           </h3>
-          {read && (
-            <span
-              title="已读过"
-              aria-hidden
-              className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${
-                night ? "bg-[#5a4d41]" : "bg-paper-300"
-              }`}
-            />
-          )}
+          {read && <ReadBadge night={night} className="mt-0.5" />}
         </div>
         {s.summary && (
           <p className="mt-1 line-clamp-2 text-xs leading-relaxed" style={{ color: t.dim }}>
@@ -576,6 +586,7 @@ export default function StoryPage() {
                   ? `今晚的故事 · ${formatDate(hero.story_date)}`
                   : `最近更新 · ${heroRel} · ${shortDate(hero.story_date)}`}
               </span>
+              {readSet.has(hero.id) && <ReadBadge night={night} className="ml-1.5 align-middle" />}
               <h2
                 className="mt-3 text-[21px] font-bold leading-snug sm:text-[25px]"
                 style={{ color: t.strong }}
