@@ -489,6 +489,37 @@ summary:active {
   background-color: rgba(201, 134, 0, 0.18);
 }
 
+/* ---------- 访问管理（/access）新增色 ----------
+   ⚠️ 本段是**白名单式**映射：源码里出现新的半透明底色 / 语义色，必须回这里补一条，
+   否则夜间就是一个亮块（此前 emerald/rose 全套漏映射过，已踩）。 */
+.site-night .border-amber-600\/25 {
+  border-color: rgba(201, 134, 0, 0.38);
+}
+/* paper-100 的半透明变体（筛选条容器 / 面板小格）——`.bg-paper-100` 那条盖不住它们 */
+.site-night .bg-paper-100\/60 {
+  background-color: rgba(34, 27, 23, 0.6);
+}
+.site-night .bg-paper-100\/70 {
+  background-color: rgba(34, 27, 23, 0.7);
+}
+/* 状态码 / 功能分布里的中性色块 */
+.site-night .bg-paper-400 {
+  background-color: #5a4d41;
+}
+/* 品牌金的半透明底与描边（Chip 选中态 / 标签徽章） */
+.site-night .bg-brand-gold\/10,
+.site-night .bg-brand-gold\/15 {
+  background-color: rgba(232, 195, 122, 0.14);
+}
+.site-night .border-brand-gold\/40,
+.site-night .border-brand-gold\/60 {
+  border-color: rgba(232, 195, 122, 0.45);
+}
+/* 正文色链接（表格里的 IP / 访客按钮） */
+.site-night .text-brand-red2 {
+  color: #f2807a;
+}
+
 /* 成功 / 危险语义色（emerald / rose）：全站大量用于状态徽章、错误提示、复制成功态。
    此前**完全没有映射** → 夜间会闪出亮粉 / 亮绿块。按暖黑底重配一档。 */
 .site-night .bg-rose-50,

@@ -13,10 +13,12 @@ import BabySong from "./babysong/BabySong";
 import BabySongAdmin from "./babysong/BabySongAdmin";
 import StoryPage from "./story/Story";
 import StoryAdmin from "./story/StoryAdmin";
+import Access from "./access/Access";
 import { api } from "./lottery/api";
 import { LotteryInfo } from "./lottery/types";
 import { LotteryCtx } from "./lottery/context";
 import { ThemeCtx, useThemeState } from "./common/useTheme";
+import { usePageTrack } from "./common/usePageTrack";
 
 export default function App() {
   const [lotteries, setLotteries] = useState<LotteryInfo[]>([]);
@@ -25,6 +27,8 @@ export default function App() {
   // 路由切换时 key 变化 → 内容容器重挂载，统一播放页面入场动画
   const location = useLocation();
   const pageKey = location.pathname;
+  // 页面级访问埋点（访问管理 /access 的数据来源之一；自动化环境自动跳过）
+  usePageTrack();
 
   useEffect(() => {
     api.lotteries().then(setLotteries).catch(() => {
@@ -54,6 +58,7 @@ export default function App() {
               <Route path="/babysong-admin" element={<BabySongAdmin />} />
               <Route path="/story" element={<StoryPage />} />
               <Route path="/story-admin" element={<StoryAdmin />} />
+              <Route path="/access" element={<Access />} />
               {/* 兼容旧链接：/ 原为彩票首页，现统一指向聚合门户 */}
               <Route path="*" element={<Portal />} />
               </Routes>

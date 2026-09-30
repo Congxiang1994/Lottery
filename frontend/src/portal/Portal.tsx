@@ -10,6 +10,7 @@ import {
   Lock,
   BookOpen,
   BookMarked,
+  Radar,
   type LucideIcon,
 } from "lucide-react";
 
@@ -88,6 +89,17 @@ const APPS: {
     icon: Zap,
     tags: ["定时任务", "私有"],
     href: "/trigger",
+    status: "live",
+    isPrivate: true,
+    tint: "amber",
+  },
+  {
+    id: "access",
+    title: "访问管理",
+    desc: "私有工具：记录访客、接口与地区访问明细，支持按 IP / 访客聚合、图表分析与 CSV 导出。",
+    icon: Radar,
+    tags: ["访问审计", "私有"],
+    href: "/access",
     status: "live",
     isPrivate: true,
     tint: "amber",

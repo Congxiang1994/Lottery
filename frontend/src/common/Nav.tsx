@@ -17,12 +17,13 @@ const lotteryLinks = [
 
 function useNavLinks() {
   const { pathname } = useLocation();
-  // 根路径是聚合门户；/hanzi、/trigger、/babysong、/story 是独立产品 —— 均仅保留首页入口。
+  // 根路径是聚合门户；/hanzi、/trigger、/babysong、/story、/access 是独立产品 —— 均仅保留首页入口。
   if (pathname === "/") return portalLinks;
   if (pathname.startsWith("/hanzi")) return portalLinks;
   if (pathname.startsWith("/trigger")) return portalLinks;
   if (pathname.startsWith("/babysong")) return portalLinks;
   if (pathname.startsWith("/story")) return portalLinks;
+  if (pathname.startsWith("/access")) return portalLinks;
   return lotteryLinks;
 }
 

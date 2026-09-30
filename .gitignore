@@ -17,6 +17,9 @@ __pycache__/
 backend/app/lottery/data/
 *.db
 
+# 离线 IP 库（ip2region xdb，10.6 MB + 35.5 MB）—— 由 tools/geo_update.py 下载
+backend/.geo/
+
 # 构建产物
 frontend/dist/
 
