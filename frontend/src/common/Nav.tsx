@@ -89,7 +89,7 @@ export default function Nav() {
 
           <button
             onClick={toggle}
-            title={night ? "切换到日间模式" : "切换到夜间模式"}
+            title={night ? "切换到亮色" : "切换到暗色"}
             className="ml-1 grid h-9 w-9 place-items-center rounded-lg border border-paper-200 text-paper-700 transition hover:border-brand-gold/50 hover:bg-brand-gold/10 hover:text-paper-900"
           >
             {night ? <Sun size={15} /> : <Moon size={15} />}
