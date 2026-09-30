@@ -1,8 +1,9 @@
 # 亮/暗切换过渡 · 方案与实施记录
 
-> 状态：**已实施并上线（2026-09-30）**。产物 `index-oHQmV0_m.js` / `index-Db_1pB5i.css`。
+> 状态：**已实施并上线（2026-09-30）**，含**分层错峰**（§6）。产物 `index-DDgRG558.js` / `index-B01-dnGl.css`。
 > 需求：「亮色和暗色模式切换的时候，感觉过渡有点生硬，有办法让切换过程更加优雅吗？」
-> 结论：**做了，成本很低**（前端 2 个文件、约 45 行）。生产实测 **24/25 通过**，唯一非满分项（汉字页 47fps）是**既有基线**、非本次回归，见 §10。
+> 结论：**做了，成本很低**（前端 2 个文件）。生产实测 **错峰专项 28/28 + 回归 24/25**，唯一非满分项（汉字页帧率）是**既有基线**、非本次回归，见 §10。
+> **分层错峰已实施**，用可继承 CSS 变量实现（不是 `X *` 后代选择器），详见 §6。
 
 > ⚠️ **实施时对原方案做了两处改良**，见 §2.3：
 > ① 过渡包裹点从 `toggle()` 上移到「应用 class 的 effect」→ **自动时段切换也获得过渡**
@@ -230,18 +231,65 @@ t=234ms  rgb(57, 52, 49)
 
 ---
 
-## 6. 可选加分项：分层错峰
+## 6. 分层错峰 —— ✅ 已实施
 
-给不同层级加 0–60ms 的微小延迟，产生「色温从背景向内容流动」的呼吸感：
+给不同层级加 0–40ms 的微小延迟，产生「色温从背景向内容流动」的呼吸感。
+
+### 6.1 ⭐ 关键设计：用**可继承的 CSS 变量**，不用 `X *` 后代选择器
+
+直觉写法是给容器直接设延迟：
 
 ```css
-html.theme-anim body                             { transition-delay: 0ms !important; }
-html.theme-anim header, html.theme-anim nav      { transition-delay: 20ms !important; }
-html.theme-anim article, html.theme-anim aside,
-html.theme-anim .card-hover                      { transition-delay: 40ms !important; }
+/* ❌ 无效：颜色变化几乎都发生在 div / p / span 上，只给 <main> 本身设延迟等于没做 */
+html.theme-anim main { transition-delay: 40ms !important; }
 ```
 
-⚠️ 总时长会变成 `320 + 40 = 360ms`，`THEME_ANIM_MS` 要同步。延迟 >80ms 会显得拖沓散乱，**建议 ≤60ms**。
+那就得写 `html.theme-anim main *` —— 但这会在最重页面（1481 元素）上引入一层后代匹配成本，而 §4 已经证明选择器成本在这个站上是**真实约束**（通配符 `*` 直接掉到 30fps）。
+
+**解法：`--stagger-theme` 是可继承的自定义属性。容器上一设，整棵子树自动跟随**，既不需要后代选择器，也天然按 DOM 层级生效：
+
+```css
+/* 主列表里把固定的 0ms 换成变量读取 */
+html.theme-anim, html.theme-anim body, html.theme-anim div, /* …所有标签… */ {
+  transition-delay: var(--stagger-theme, 0ms) !important;
+}
+
+/* 分层：变量向下继承 */
+html.theme-anim header,
+html.theme-anim nav      { --stagger-theme: 20ms; }
+html.theme-anim main,
+html.theme-anim footer   { --stagger-theme: 40ms; }
+```
+
+结构（`App.tsx`）：`<div.bg-aurora>`（0ms，回落 fallback）→ `<header>` + `<main>` + `<footer>`。
+
+摘除 `.theme-anim` 时变量随之消失 → 所有 `transition-delay` 回落 0ms，**无残留**。
+
+### 6.2 生命周期必须同步延长
+
+最晚开始的一层是 40ms，所以 `.theme-anim` 的保留时长 = `320 + 40 + 60 = 420ms`（不是原来的 380ms）。
+
+⚠️ **漏加错峰时长会让最底层元素的过渡被中途掐断** —— 表现为「内容区没过渡完就硬停了」。
+已在 `useTheme.ts` 里显式拆成 `THEME_ANIM_MS` / `THEME_STAGGER_MS` / `ANIM_HOLD_MS` 三个常量，改一个必须同步另一个。
+
+⚠️ **`prefers-reduced-motion` 下 delay 也要归零**。只把 `duration` 设 0 的话，40ms 延迟还在 → 变成「先干等 40ms、再瞬间跳」，**比不加更糟**。
+
+### 6.3 生产实测
+
+| 层 | `transition-delay` | 覆盖率 | 同一时刻 (t=220ms) 的过渡进度 |
+|---|---|---|---|
+| `body` | **0s** | — | **0.677** |
+| `header` 子树 | **0.02s** | 3/3 = **100%** | **0.615** |
+| `main` 子树 | **0.04s** | **34/34 = 100%** | **0.552** |
+| `footer` 子树 | **0.04s** | 1/1 = **100%** | — |
+
+进度差折算 `(0.677 − 0.552) × 320ms` = **40ms**，与设计的层间差精确吻合。
+
+三条断言全部通过：同一时刻 `body > header > main` 的进度严格递减。
+
+> **测量方法备注**：进度要用 Web Animations API 的 `a.currentTime` **一次性快照**后自己算，不能用 `getComputedTiming().progress` 逐元素读 —— 后者每次调用都按「当前时间」重算，三次读数之间的毫秒级间隔会把 40ms 的层间差压缩成 ~29ms（本轮实测踩过这个坑）。
+
+延迟 40ms 已到「能感知但不拖沓」的上限；>80ms 会显得散乱，**不建议再加层**。
 
 ---
 
@@ -305,13 +353,26 @@ document.startViewTransition(() => {
 
 | 文件 | 改了什么 |
 |---|---|
-| `frontend/src/index.css` | 文件末尾新增 `:root { --dur-theme, --ease-theme }` + `html.theme-anim` 段（含 `.glass` 排除、滚动条、`prefers-reduced-motion` 降级），约 100 行含注释 |
-| `frontend/src/common/useTheme.ts` | 新增 `THEME_ANIM_MS` / `ANIM_CLASS` / `animTimer` / `withThemeAnim()`；class 应用 effect 改为「首屏直应用、之后走过渡」 |
+| `frontend/src/index.css` | 文件末尾新增 `:root { --dur-theme, --ease-theme }` + `html.theme-anim` 段（含 `.glass` 排除、滚动条、`prefers-reduced-motion` 降级）+ **分层错峰的 `--stagger-theme` 变量声明**（§6） |
+| `frontend/src/common/useTheme.ts` | 新增 `THEME_ANIM_MS` / `THEME_STAGGER_MS` / `ANIM_HOLD_MS` / `ANIM_CLASS` / `animTimer` / `withThemeAnim()`；class 应用 effect 改为「首屏直应用、之后走过渡」 |
 | `frontend/index.html`、`backend/`、`deploy/` | **零改动** |
 
 选择器相比原方案补了 `ul / ol / table / th / td / strong / em / code / pre / blockquote`（常见文字容器，成本极低）。
 
-### 生产端到端验证：**24 通过 / 1 非满分**
+### 生产端到端验证：错峰专项 **28/28** + 回归 **24/25**
+
+**错峰专项（`verify-stagger.mjs`）：28 通过 / 0 失败**
+
+| # | 场景 | 结果 |
+|---|---|---|
+| 1 | 分层取值：`html`/`body` = `0s`、`header` = `0.02s`、`main`/`footer` = `0.04s` | ✅ |
+| 2 | 生命周期：340ms / 400ms 仍在过渡，500ms / 800ms 已摘除（=420ms） | ✅ |
+| 3 | 覆盖率：`main` 子树 **34/34** 带背景色元素拿到 `0.04s`；`header` 3/3；`footer` 1/1 | ✅ |
+| 3b | 同一时刻 (t=220ms) 进度 `body 0.677 > header 0.615 > main 0.552`，折算差 **40ms** | ✅ |
+| 4 | reduced-motion 下三层延迟**全部归零**（避免「干等 40ms 再跳」） | ✅ |
+| 5 | 帧率无回归 | ✅ |
+
+**回归（`verify-transition.mjs`，上一轮的全部断言）：24 通过 / 1 非满分**
 
 | # | 场景 | 结果 |
 |---|---|---|
@@ -322,29 +383,29 @@ document.startViewTransition(() => {
 | 5 | 过渡窗口内 `.glass` 的 `transition-property = none`，窗口外恢复 | ✅ |
 | 6 | `prefers-reduced-motion: reduce` → 不挂 `theme-anim`，颜色直接跳变 | ✅ |
 | 7 | 假时钟 17:59:55 跨 18:00 → **自动边界切换也走过渡** | ✅ |
-| 8 | 帧率（见下） | 见下 |
+| 8 | 帧率（见下） | 1 项非满分 |
 
-### 生产帧率实测（切换期间）
+### 生产帧率实测（切换期间，错峰版本）
 
 | 页面 | 元素数 | 帧率 | 最大帧间隔 | 卡帧 |
 |---|---|---|---|---|
 | 首页 | 268 | **62fps** | 18ms | 0 |
-| 睡前故事页 | 377 | **62fps** | 18ms | 0 |
-| **儿歌页** | **1481** | **62fps** | 21ms | **0** |
-| 汉字页 | 1079 | 47fps | 37ms | 1 |
+| 睡前故事页 | 377 | **63fps** | 18ms | 0 |
+| **儿歌页** | **1481** | **62fps** | 22ms | **0** |
+| 汉字页 | 1079 | 53–55fps | 28–37ms | 0–1 |
 
-**关键结论**：儿歌页 1481 个元素（含 48 个 `.glass` 毛玻璃卡）在切换期间 **62fps / 0 卡帧** —— 与 §4 的「排除 `.glass` → 61fps」一致，**证明排除策略在生产规模上成立**。
+**关键结论**：儿歌页 1481 个元素（含 48 个 `.glass` 毛玻璃卡）在切换期间 **62fps / 0 卡帧** —— 与 §4 的「排除 `.glass` → 61fps」一致，**证明排除策略在生产规模上成立**。加分层错峰后帧率**无下降**。
 
-汉字页 47fps 是**既有基线**（原方案 §4 记录 47–50fps，本轮复测 47fps），不是本次引入的回归；最大间隔 37ms ≈ 2 帧，无肉眼可见卡顿。其余三页均 62fps。
+汉字页 53–55fps 是**既有基线**（原方案 §4 记录 47–50fps；上一轮切换过渡测得 47fps），不是本次引入的回归，且本轮 **0 卡帧**。最大间隔 28–37ms ≈ 2 帧，无肉眼可见卡顿。
 
 ### 部署
 
-- 线上：`index-BxFSlr3k.js` + `index-DCcKonyD.css` → **`index-oHQmV0_m.js` + `index-Db_1pB5i.css`**，陈旧产物自动清 2 个
+- 线上：`index-oHQmV0_m.js` + `index-Db_1pB5i.css` → **`index-DDgRG558.js` + `index-B01-dnGl.css`**，陈旧产物自动清 2 个
 - 7 条路径 + 2 个新产物全 **200**，2 个旧产物全 **404**；**服务全程未重启**，日志 0 traceback
-- 公网 md5 == 本地：JS `542f5439360ec9de9f82a7d9735542e1`、CSS `02608a7dd4e00596e1aac07dc0401ec3`
-- 回滚点：`/tmp/dist-prev-20260930-085803.tgz`
+- 公网 md5 == 本地：JS `c06447696c90e52a1343e2c98fae7b07`、CSS `e04aee60320fae2621f6e3b3f7517084`
+- 回滚点：`/tmp/dist-prev-20260930-091325.tgz`
 
-### 后续可选优化（未做）
+### 残留与后续
 
-- **分层错峰**（§6）：给 header / 卡片加 20–40ms 微延迟做「色温流动」感。**先不加** —— 先看基础版观感，觉得「平」再补
-- 汉字页 47fps 若日后想追平：需查清是图片解码还是 SVG 量导致，与本方案无关
+- 汉字页 53–55fps 若日后想追平：需查清是图片解码还是 SVG 量导致，与本方案无关
+- 分层错峰已到 3 层 / 最大 40ms。延迟 >80ms 会显得散乱，**不建议再加层**

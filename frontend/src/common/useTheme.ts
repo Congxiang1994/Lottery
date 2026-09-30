@@ -22,6 +22,15 @@ const OVERRIDE_KEY = "site_theme_override";
 /** 主题切换过渡时长，**必须与 index.css 的 `--dur-theme` 一致** */
 const THEME_ANIM_MS = 320;
 
+/** 分层错峰的最大延迟（main / footer 层），**必须与 index.css 的 `--stagger-theme` 一致** */
+const THEME_STAGGER_MS = 40;
+
+/**
+ * `.theme-anim` 的保留时长 = 最晚开始的那一层 (40ms) + 过渡时长 (320ms) + 余量 (60ms)。
+ * ⚠️ 漏加错峰时长会让最底层元素的过渡被中途掐断 —— 只有内容区看起来「没过渡完就硬停了」。
+ */
+const ANIM_HOLD_MS = THEME_ANIM_MS + THEME_STAGGER_MS + 60;
+
 /** 过渡期间挂在 <html> 上的临时类。⚠️ 与 .site-night 解耦 —— 详见 index.css 的 ⚠️① */
 const ANIM_CLASS = "theme-anim";
 
@@ -47,7 +56,7 @@ function withThemeAnim(apply: () => void) {
   el.classList.add(ANIM_CLASS);
   apply(); // 同步改 .site-night，浏览器下一帧统一算样式 → 插值生效
   window.clearTimeout(animTimer);
-  animTimer = window.setTimeout(() => el.classList.remove(ANIM_CLASS), THEME_ANIM_MS + 60);
+  animTimer = window.setTimeout(() => el.classList.remove(ANIM_CLASS), ANIM_HOLD_MS);
 }
 
 /** 亮色时段 [DAY_START, DAY_END)，本地小时。改这里必须同步 index.html */

@@ -666,7 +666,8 @@ html.theme-anim select {
   transition-property: color, background-color, border-color, fill, stroke, scale !important;
   transition-duration: var(--dur-theme) !important;
   transition-timing-function: var(--ease-theme) !important;
-  transition-delay: 0ms !important;
+  /* 分层错峰的实际取值：见下方「分层错峰」段。未分层处回落 0ms。 */
+  transition-delay: var(--stagger-theme, 0ms) !important;
 }
 
 /* 毛玻璃面板（导航栏 + 卡片）：见上方 ⚠️③，让它们保持瞬时切换 */
@@ -675,16 +676,49 @@ html.theme-anim .glass * {
   transition-property: none !important;
 }
 
+/* ---------- 分层错峰：色温从背景向内容「流动」 ----------
+
+   结构（App.tsx）：<div.bg-aurora> → <header> + <main> + <footer>
+
+     · 页面底色 / wrapper      0ms  （回落到 fallback）
+     · header（导航层）       20ms
+     · main / footer（内容层） 40ms
+
+   ⚠️ **为什么用 CSS 变量而不是给容器写 `X *` 后代选择器**：
+      延迟必须作用到「真正承载颜色的元素」上 —— 页面上的颜色变化绝大多数发生在
+      div / p / span 上，只给 <main> 本身设延迟等于没效果。而写 `main *` 会引入
+      一层后代匹配成本（儿歌页 1481 元素）。
+      **`--stagger-theme` 是可继承的自定义属性**：容器上一设，整棵子树自动跟随，
+      既不需要后代选择器，也天然按 DOM 层级生效。
+
+   ⚠️ 摘除 `.theme-anim` 时变量随之消失 → 所有 `transition-delay` 回落 0ms，
+      不会残留。窗口期（320 + 40 = 360ms）内的取值见下。
+
+   ⚠️ 最大延迟改动必须同步 `useTheme.ts` 的 `THEME_STAGGER_MS`，否则摘除时机不对。 */
+html.theme-anim header,
+html.theme-anim nav {
+  --stagger-theme: 20ms;
+}
+
+/* main 放在 header 之后：万一 nav 嵌在 main 里，内容层应当赢 */
+html.theme-anim main,
+html.theme-anim footer {
+  --stagger-theme: 40ms;
+}
+
 /* 滚动条是伪元素，不在上面的列表里，单独补一条（代价极低） */
 html.theme-anim ::-webkit-scrollbar-thumb {
   transition: background-color var(--dur-theme) var(--ease-theme) !important;
 }
 
-/* 用户关闭动效时整体退化 —— 与站内其他动效保持同一策略 */
+/* 用户关闭动效时整体退化 —— 与站内其他动效保持同一策略。
+   ⚠️ delay 也要归零：只把 duration 设 0 的话，分层错峰的 40ms 延迟还在，
+      会变成「先干等 40ms、再瞬间跳」，比不加更糟。 */
 @media (prefers-reduced-motion: reduce) {
   html.theme-anim,
   html.theme-anim * {
     transition-duration: 0ms !important;
+    transition-delay: 0ms !important;
   }
 }
 
