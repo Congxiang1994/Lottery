@@ -1,7 +1,8 @@
-# API 用量触发器（Trigger）· 需求文档
+# API 用量触发器（Trigger）· 实现文档
 
-> 2026-09-01 需求分析定稿。状态：待开发。
-> 一句话：在 Lottery 门户加一个密码保护的私有功能，配置每日定时任务，到点由服务器向大模型 API 发一次最小请求，点亮 5 小时用量窗口。
+> 2026-09-01 需求定稿，已上线。一句话：密码保护的私有功能，配置每日定时任务，
+> 到点由服务器向大模型 API 发一次最小请求，点亮 5 小时用量窗口。
+> 全站定位见 [README.md](./README.md)。
 
 ## 1. 背景与目标
 
@@ -54,7 +55,7 @@ app/trigger/
   __init__.py
   config.py      # 常量：cookie 名/TTL、DB 路径、重试参数
   store.py       # sqlite 建表 + CRUD（复用 app/common/db.py 连接抽象）
-  scheduler.py   # asyncio 循环 + flock leader 选举 + httpx 请求 + 重试 + 历史写入
+  scheduler.py   # asyncio 循环 + SQLite 原子租约选派发者 + httpx 请求 + 重试 + 历史写入 + 看门狗
   router.py      # APIRouter（挂 /api/trigger 前缀）
 ```
 
@@ -102,8 +103,7 @@ API（除 auth 外全部校验 cookie 会话，无效 → 401）：
 ```
 frontend/src/trigger/
   api.ts          # fetch 封装（401 → 回密码门）
-  Trigger.tsx     # 页面骨架：密码门 / Tab（任务配置 · 执行历史）
-  components/     # 任务表单、历史表格、状态卡
+  Trigger.tsx     # 页面骨架：密码门 / Tab（任务配置 · 执行历史，含全部弹窗与表格）
 ```
 - 路由 `/trigger` 挂顶级路径（App.tsx）；Portal 入口。
 - UI 风格与现有 lottery 页面一致（紧凑、扁平、表格化）。
@@ -121,7 +121,9 @@ frontend/src/trigger/
 - 密码错误流控 1 次/秒，防爆破。
 - 单用户设计，无多租户；不做用户体系。
 
-## 6. 验收清单
+## 6. 验收清单（设计期验收项，功能均已上线）
+
+以下为上线前设计的验收用例；实现与事故修复见 §7 变更日志。
 - [ ] 输错密码 3 次/秒 → 429；正确密码 → 种 cookie 进入功能页
 - [ ] 12h 后访问自动回到密码门
 - [ ] 新建 06:30 任务 → 到点服务器发出请求，历史出现 success 行

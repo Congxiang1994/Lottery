@@ -3,6 +3,7 @@
 > 2026-09-30 上线。一句话：门户里加一个**密码保护的访问管理页**（`/access`），
 > 记录「谁、什么时候、从哪个 IP / 地区、访问了哪些接口与功能」，
 > 支持一行一请求的明细、按 IP 与访客双维度聚合、图表分析、CSV 导出与地区下钻。
+> 全站定位见 [README.md](./README.md)。
 
 - 管理页：<https://doudoutech.cloud/access>（私有，密码同全站操作密码）
 - 设计文档：[docs/access-management-design.md](./docs/access-management-design.md)

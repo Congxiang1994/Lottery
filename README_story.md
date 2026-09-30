@@ -3,6 +3,7 @@
 > 2026-09-24 需求定稿并实现上线。一句话：门户里加一个**按日期倒序展示的睡前故事页**，
 > 外加一个**密码保护的私有管理页**（故事增删改查 + API 密钥管理），
 > 让外部脚本能通过 `X-API-Key` 调用接口写入故事。
+> 全站定位见 [README.md](./README.md)。
 
 - 公开页：<https://doudoutech.cloud/story>
 - 管理页：<https://doudoutech.cloud/story-admin>（私有，密码同全站操作密码）
