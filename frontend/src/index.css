@@ -598,3 +598,93 @@ summary:active {
   background-color: rgba(232, 195, 122, 0.06);
 }
 
+/* ============================================================================
+   主题切换过渡（2026-09-30）—— 让亮/暗切换是「渐变」而不是「跳变」
+
+   背景：切换时 81% 的元素根本没有 transition，单帧直接跳到终值 → 观感生硬。
+
+   机制：切换**瞬间**由 JS 给 <html> 挂 `.theme-anim`，≤380ms 后摘掉。
+        不要在这里写 `.site-night { transition: ... }` —— 见下方 ⚠️①。
+
+   ⚠️① **必须与 .site-night 解耦**。写成 `.site-night { transition }` 的话，
+        切回亮色时 class 先被移除、transition 声明同时消失 → 只有「亮→暗」
+        优雅，「暗→亮」照样硬跳。挂在不随主题变化的 `.theme-anim` 上才行。
+
+   ⚠️② **必须只在切换瞬间挂、不能常驻**。常驻会让暗色用户刷新时看到
+        「亮→暗」渐入，等于把 index.html 的首屏防闪烁废掉；且 hover 手感变钝。
+
+   ⚠️③ **必须排除 `.glass`**。儿歌页 48 个 `backdrop-filter: blur(14px)` 卡片
+        每帧都要重采样背后内容，纳入过渡实测 32fps / 17 次卡帧（排除后 61fps / 0）。
+        而且 .glass 背景是渐变，**本来就不可插值** —— 让它参与是花大钱做无用功。
+
+   ⚠️④ **选择器必须限定、不能用 `*`**。通配符在最重页面（1470 元素）
+        实测 30fps / 22 次卡帧；限定后 61fps / 0 卡帧。
+
+   ⚠️⑤ 时长改动要同步 `useTheme.ts` 的 `THEME_ANIM_MS`。 */
+:root {
+  /* 比站内卡片悬停 250ms 略长：从容，但不拖沓 */
+  --dur-theme: 320ms;
+  --ease-theme: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html.theme-anim,
+html.theme-anim body,
+html.theme-anim main,
+html.theme-anim header,
+html.theme-anim footer,
+html.theme-anim section,
+html.theme-anim article,
+html.theme-anim aside,
+html.theme-anim nav,
+html.theme-anim div,
+html.theme-anim h1,
+html.theme-anim h2,
+html.theme-anim h3,
+html.theme-anim h4,
+html.theme-anim p,
+html.theme-anim span,
+html.theme-anim a,
+html.theme-anim li,
+html.theme-anim ul,
+html.theme-anim ol,
+html.theme-anim label,
+html.theme-anim strong,
+html.theme-anim em,
+html.theme-anim small,
+html.theme-anim code,
+html.theme-anim pre,
+html.theme-anim blockquote,
+html.theme-anim table,
+html.theme-anim th,
+html.theme-anim td,
+html.theme-anim button,
+html.theme-anim svg,
+html.theme-anim path,
+html.theme-anim input,
+html.theme-anim textarea,
+html.theme-anim select {
+  transition-property: color, background-color, border-color, fill, stroke, scale !important;
+  transition-duration: var(--dur-theme) !important;
+  transition-timing-function: var(--ease-theme) !important;
+  transition-delay: 0ms !important;
+}
+
+/* 毛玻璃面板（导航栏 + 卡片）：见上方 ⚠️③，让它们保持瞬时切换 */
+html.theme-anim .glass,
+html.theme-anim .glass * {
+  transition-property: none !important;
+}
+
+/* 滚动条是伪元素，不在上面的列表里，单独补一条（代价极低） */
+html.theme-anim ::-webkit-scrollbar-thumb {
+  transition: background-color var(--dur-theme) var(--ease-theme) !important;
+}
+
+/* 用户关闭动效时整体退化 —— 与站内其他动效保持同一策略 */
+@media (prefers-reduced-motion: reduce) {
+  html.theme-anim,
+  html.theme-anim * {
+    transition-duration: 0ms !important;
+  }
+}
+

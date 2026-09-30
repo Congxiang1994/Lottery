@@ -19,6 +19,37 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 /** 手动覆盖的存储键：{"v":"day"|"night","until":<到期时间戳>} */
 const OVERRIDE_KEY = "site_theme_override";
 
+/** 主题切换过渡时长，**必须与 index.css 的 `--dur-theme` 一致** */
+const THEME_ANIM_MS = 320;
+
+/** 过渡期间挂在 <html> 上的临时类。⚠️ 与 .site-night 解耦 —— 详见 index.css 的 ⚠️① */
+const ANIM_CLASS = "theme-anim";
+
+let animTimer = 0;
+
+/**
+ * 给「主题切换」套一层过渡：切换瞬间挂 `.theme-anim`，过渡结束后摘掉。
+ *
+ * ⚠️ 只在切换窗口内挂 —— 常驻会让暗色用户刷新时看到「亮→暗」渐入，
+ *    等于把 index.html 的首屏防闪烁废掉。
+ * ⚠️ 连点必须重置计时器 —— 否则第一次的计时器会在中途摘掉 class，打断第二次过渡。
+ */
+function withThemeAnim(apply: () => void) {
+  if (typeof window === "undefined") return;
+  const el = document.documentElement;
+  if (
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    apply();
+    return;
+  }
+  el.classList.add(ANIM_CLASS);
+  apply(); // 同步改 .site-night，浏览器下一帧统一算样式 → 插值生效
+  window.clearTimeout(animTimer);
+  animTimer = window.setTimeout(() => el.classList.remove(ANIM_CLASS), THEME_ANIM_MS + 60);
+}
+
 /** 亮色时段 [DAY_START, DAY_END)，本地小时。改这里必须同步 index.html */
 export const DAY_START = 7;
 export const DAY_END = 18;
@@ -78,9 +109,19 @@ export function useThemeState() {
   );
   const [manual, setManual] = useState(() => readOverride() !== null);
 
-  // 应用 class
+  // 应用 class。首次是「接管首屏」不是「切换」—— 必须直接应用、不能带动画，
+  // 否则暗色用户每次刷新都会看到一次「亮→暗」渐入，等于废掉首屏防闪烁。
+  // 之后的每一次变化（手动 toggle / 到点自动切换 / 回到页面时纠正）都走过渡。
+  const firstApply = useRef(true);
   useEffect(() => {
-    document.documentElement.classList.toggle("site-night", night);
+    const el = document.documentElement;
+    const apply = () => el.classList.toggle("site-night", night);
+    if (firstApply.current) {
+      firstApply.current = false;
+      apply();
+      return;
+    }
+    withThemeAnim(apply);
   }, [night]);
 
   // 定时到下一个时段边界：到点后覆盖自然过期、按时间重算；回到页面时纠正（覆盖休眠漂移）
