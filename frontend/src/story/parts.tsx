@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { BookOpen, Check, Copy, Pause, Volume2 } from "lucide-react";
 
 /* ==========================================================================
@@ -283,7 +283,18 @@ function useEffectOnce(fn: () => (() => void) | void) {
 
 /* ------------------------------ 书页正文 ------------------------------ */
 
-/** 书页化正文：段落首行缩进、行高 2.0；末段以「睡吧」开头时作为落点句居中收尾 */
+/** 书页化正文：每一行都缩进 2 字，末段以「睡吧」开头时作为落点句居中收尾。
+ *
+ * ⚠️ 缩进必须落到**每一行**，不能整块一个 <p>：
+ *   `text-indent` 按 CSS 规范**只作用于块的首行**。稿件里大量用手动 \n 断行
+ *   （线上 20 篇实测：220 个空行块中 95 个含手动换行），这些行是作者明确新起的行，
+ *   若整块只渲染一个 <p> 并靠 <br/> 换行，第 2 行起就会顶格，
+ *   与上下相邻段落（缩进 2 字）参差 —— 视觉上像"漏了缩进"。
+ *   所以：手动 \n 断出的每一行各自成 <p>（都缩进 2em）；
+ *        自动换行的续行由浏览器折行，天然保持顶格（中文书页标准，勿改）。
+ *
+ * 段间距保留两层节奏：空行分段 0.9em，同一块内的手动换行 0.35em。
+ * 依赖 Tailwind preflight 把 <p> 的默认 margin 归零，相邻 margin 折叠后取较大值。 */
 export function StoryBody({
   content, night, font,
 }: { content: string; night: boolean; font: FontKey }) {
@@ -292,17 +303,27 @@ export function StoryBody({
   const hasEnding = blocks.length > 1 && last.startsWith("睡吧");
   const body = hasEnding ? blocks.slice(0, -1) : blocks;
   const px = FONTS[font];
+
+  const lines: { text: string; gap: string }[] = [];
+  for (const b of body) {
+    const ls = b
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    ls.forEach((text, j) => {
+      lines.push({
+        text,
+        gap: lines.length === 0 ? "0" : j === 0 ? "0.9em" : "0.35em",
+      });
+    });
+  }
+
   return (
     <div>
       <div style={{ fontSize: px, lineHeight: 2, color: night ? "#e8ddd0" : "#4a3826" }}>
-        {body.map((b, i) => (
-          <p key={i} style={{ textIndent: "2em", margin: i === 0 ? 0 : "0 0 0.8em" }}>
-            {b.split("\n").map((line, j) => (
-              <Fragment key={j}>
-                {j > 0 && <br />}
-                {tidy(line)}
-              </Fragment>
-            ))}
+        {lines.map((l, i) => (
+          <p key={i} style={{ textIndent: "2em", marginTop: l.gap }}>
+            {tidy(l.text)}
           </p>
         ))}
       </div>
