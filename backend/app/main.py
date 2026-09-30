@@ -98,10 +98,14 @@ if DIST.exists():
 #   1. /api/* 保持 404 JSON —— 否则接口路径写错会返回 HTML，
 #      前端把 HTML 当 JSON 解析，报错信息完全失真
 #   2. dist 里真实存在的文件直接给（favicon / robots.txt / song-covers/…）
-#   3. **「像文件」的路径不做回退**（/.env、/wp-login.php、/backup.zip…）→ 404
-#      否则扫描器拿到的 200 + index.html 会被访问管理记成「命中 200」，
-#      「有没有人翻我的敏感文件」这个最该看清的信号直接失真
+#   3. **「像文件」的路径不做回退** → 404。判定与 nginx `location @spa` 的
+#      两条规则**逐条对应**（改一处必须同步另一处）：
+#        nginx `if ($uri ~* "[.][A-Za-z0-9]{1,8}$")` → _FILEISH（末段带扩展名）
+#        nginx `if ($uri ~ "/[.]")`                  → _DOTSEG（任一段以点开头）
+#      ⚠️ 只有 _FILEISH 是不够的：`/.git/config` 的末段是 `config`（不含点），
+#         会漏判成 SPA 路由返 200 + HTML —— 正是本规则要防的「扫描被记成命中 200」。
 _FILEISH = re.compile(r"\.[A-Za-z0-9]{1,8}$")
+_DOTSEG = re.compile(r"(?:^|/)\.")
 
 
 @app.get("/{full_path:path}", include_in_schema=False)
@@ -114,7 +118,7 @@ def spa_fallback(full_path: str):
     if target.is_file() and target.is_relative_to(dist_root):
         return FileResponse(target)
 
-    if _FILEISH.search(full_path.rsplit("/", 1)[-1]):
+    if _FILEISH.search(full_path.rsplit("/", 1)[-1]) or _DOTSEG.search(full_path):
         raise HTTPException(status_code=404, detail="Not Found")
 
     index = DIST / "index.html"
