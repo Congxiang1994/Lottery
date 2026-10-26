@@ -11,6 +11,7 @@ import {
   BookOpen,
   BookMarked,
   Radar,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,7 +30,7 @@ const APPS: {
   href: string;
   status: "live" | "soon";
   isPrivate?: boolean;
-  tint: "red" | "sky" | "gold" | "violet" | "amber";
+  tint: "red" | "sky" | "gold" | "violet" | "amber" | "teal";
 }[] = [
   {
     id: "hanzi",
@@ -70,6 +71,16 @@ const APPS: {
     href: "/lottery",
     status: "live",
     tint: "violet",
+  },
+  {
+    id: "tools",
+    title: "实用小工具",
+    desc: "开发者随身工具箱：时间戳双向转换、JSON 格式化与纠错、Markdown 实时预览，一处搞定。",
+    icon: Wrench,
+    tags: ["小工具", "效率"],
+    href: "/tools",
+    status: "live",
+    tint: "teal",
   },
   {
     id: "babysong-admin",
