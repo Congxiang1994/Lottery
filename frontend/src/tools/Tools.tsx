@@ -1,15 +1,17 @@
 import { useState } from "react";
-import { Braces, Clock, FileText, Wrench, type LucideIcon } from "lucide-react";
+import { Braces, Clock, FileText, Pencil, Wrench, type LucideIcon } from "lucide-react";
 import TimestampTool from "./TimestampTool";
 import JsonTool from "./JsonTool";
 import MarkdownTool from "./MarkdownTool";
+import DrawTool from "./DrawTool";
 
-type TabKey = "timestamp" | "json" | "markdown";
+type TabKey = "timestamp" | "json" | "markdown" | "draw";
 
 const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: "timestamp", label: "时间戳", icon: Clock },
   { key: "json", label: "JSON", icon: Braces },
   { key: "markdown", label: "Markdown", icon: FileText },
+  { key: "draw", label: "画板", icon: Pencil },
 ];
 
 export default function Tools() {
@@ -22,7 +24,7 @@ export default function Tools() {
             <Wrench size={26} className="text-[#0d9488]" /> 实用小工具
           </h1>
           <p className="mt-1 text-sm text-paper-700">
-            开发者随身工具箱：时间戳双向转换、JSON 格式化与纠错、Markdown 实时预览。
+            开发者随身工具箱：时间戳双向转换、JSON 格式化与纠错、Markdown 实时预览、随手画板。
           </p>
         </div>
       </div>
@@ -46,6 +48,7 @@ export default function Tools() {
         {tab === "timestamp" && <TimestampTool />}
         {tab === "json" && <JsonTool />}
         {tab === "markdown" && <MarkdownTool />}
+        {tab === "draw" && <DrawTool />}
       </div>
     </div>
   );
