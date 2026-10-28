@@ -8,8 +8,9 @@
 
 节奏
 ----
-每 ``FETCH_INTERVAL_SECONDS``（20 分钟）抓一轮，每轮 ``pages_per_round`` 页。
-日请求量 ≈ 2 页 × 3 轮/小时 × 24 = 144 次，远低于实测安全线（3 次/分钟）。
+每 ``FETCH_INTERVAL_SECONDS``（20 分钟）抓一轮，每轮 ``pages_per_round`` 页（默认 5）。
+日请求量 ≈ 5 页 × 3 轮/小时 × 24 = 360 次，仍远低于实测风控线
+（30~40 次/3~4 分钟即触发验证码）。
 """
 from __future__ import annotations
 
