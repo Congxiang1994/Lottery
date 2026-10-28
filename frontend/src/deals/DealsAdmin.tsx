@@ -490,7 +490,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         desc={
           config.cookie_set
             ? `已配置：${config.cookie_masked}`
-            : "未配置 —— 裸爬会被风控拦下，配一个能显著降低被拦概率"
+            : "未配置 —— 好价列表页匿名可读，目前不配也能抓；只有开始被风控拦时才需要"
         }
         right={
           <button
@@ -507,15 +507,29 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
               <b>1.</b> 浏览器打开 <span className="font-mono">smzdm.com</span>，确认已登录
             </li>
             <li>
-              <b>2.</b> 按 <span className="font-mono">F12</span> → Network 标签 → 刷新页面 →
-              右键任意一条 <span className="font-mono">smzdm.com</span> 请求 →
-              Copy → <b>Copy as cURL</b>
+              <b>2. 拿 Cookie。首选这条，完全不用 F12：</b>
+              <div className="mt-1 rounded-lg bg-white/70 px-2 py-1.5 font-mono text-[10.5px] leading-relaxed text-paper-800">
+                python3 ~/.workbuddy/scripts/lottery-web/get_smzdm_cookie.py --push
+              </div>
+              <div className="mt-1 text-paper-600">
+                直接读浏览器自己的 cookie 库并解密，自动写下方的保存一步。要求浏览器已登录。
+              </div>
             </li>
             <li>
-              <b>3.</b> 粘贴到下面输入框，点保存。整条命令直接粘，不用自己挑 Cookie
+              <b>3. 非要用 F12 的话：</b>
+              <span className="font-mono">smzdm.com</span> 首页会加载一个腾讯 Chaos VM 混淆脚本，
+              它把 <span className="font-mono">debugger</span> 当虚拟机指令反复执行，
+              一开 DevTools 就会被无穷断点卡死。先点 Sources 面板左上角的
+              <b> Deactivate breakpoints</b>（或 <span className="font-mono">⌘F8</span>）关掉断点，
+              再回 Network → 右键任意 <span className="font-mono">smzdm.com</span> 请求 →
+              Copy → <b>Copy as cURL</b>。
+            </li>
+            <li>
+              <b>4.</b> 粘贴到下面输入框，点保存。整条命令直接粘，不用自己挑 Cookie
             </li>
             <li className="text-paper-500">
-              说明：Cookie 只存在你自己的服务器上，不回显、不写日志；失效时在这里重新粘一次即可。
+              说明：Cookie 只存在你自己的服务器上，不回显、不写日志。请注意登录态来自你家里网络，
+              服务器用的是机房 IP —— 站方可能提示异地登录，介意的话就别配。
             </li>
           </ol>
         )}

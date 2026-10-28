@@ -21,7 +21,7 @@
 | 限速 | 进程内令牌桶，请求间强制 ≥3 秒；命中验证码即**退避 30 分钟** |
 | 多 worker | 文件 flock（非阻塞）抢本轮执行权，抢不到就跳过；持有者崩溃内核自动释放 |
 | 登录凭据 | 存**会话 Cookie**，不存账号密码（SMZDM 登录有滑块，脚本密码登录走不通） |
-| 凭据录入 | 管理页粘贴 `Copy as cURL` 整条命令，后端解析出 `Cookie` + `User-Agent`；也接受裸 Cookie 串 / 单行 `Cookie:` 头 |
+| 凭据录入 | 首选本地脚本 `get_smzdm_cookie.py`（读本机浏览器 cookie 库并解密，不用 F12）；也接受管理页粘贴 `Copy as cURL` / 裸 Cookie 串 / 单行 `Cookie:` 头 |
 | 凭据展示 | 永不回显原文，只给脱敏串（`sess=ABC…998877（共 52 字符）`）；落库于 `smzdm.db`（0600/0700） |
 | 入选判定 | 关注分类 + 值率硬门槛 + 值/收藏/评论三选 N（见 §4），全部可在管理页配置 |
 | 关注分类的语义 | **只影响「入选/展示」，不影响入库**；非关注品类照常入库，改配置后历史立即可用 |
@@ -182,3 +182,33 @@ curl -s 'https://doudoutech.cloud/api/deals/stats'
 6. **分类页不可用**：`/fenlei/diannaoshuma/` 虽可访问（HTTP 200）且 robots 未禁，
    但卡片是 Vue 组件 `haojia-card-container` 渲染，**没有收藏数与评论数**，
    无法满足判定需求，故放弃「按品类频道定向抓取」这条更优路线。
+
+## 9. 登录 Cookie 怎么拿（F12 不可用时的正路）
+
+**现象**：在 smzdm.com 按 F12，DevTools 会不停停在 `debugger` 上，Network 面板根本用不了。
+
+**机制**（已实测确认，不是猜测）：首页会向 HTML 里注入一个随机路径的脚本
+（形如 `/C2WF946J0/probev3.js`），内容是 `__TENCENT_CHAOS_VM` —— 腾讯的 JS 虚拟机混淆。
+它自带一套字节码解释器，而 `debugger` 是它的**一个操作码**（`case 0: debugger`），
+再由 `setInterval` 反复驱动 VM。于是只要有调试器附着，就会被无休止地断在 VM 内部。
+
+**两条路**：
+
+1. **不用 F12（首选）**：本机跑
+   `python3 ~/.workbuddy/scripts/lottery-web/get_smzdm_cookie.py --push`
+   * 直接读浏览器自己的 cookie 库（SQLite）并解密，再调管理接口写入。
+   * 解密参数（已在本机 17/17 条验证）：macOS 口令取自 Keychain
+     `Chrome Safe Storage`，`PBKDF2-HMAC-SHA1(salt="saltysalt", 1003 次, dkLen=16)`
+     → AES-128-CBC，IV 为 16 个空格，密文带 `v10` 前缀；
+     明文 = `sha256(host_key)` 32 字节 ‖ 真实值（脚本用这 32 字节做自校验，
+     对不上直接报错退出，不会把乱码当 cookie 交出去）。
+   * `--save` 另存到 `~/.workbuddy/.secrets/`（0600）；不加参数只做只读预览。
+   * 只支持 Chromium 系（Chrome / Edge / Brave / Arc），`--browser` 切换。
+
+2. **非要用 F12**：先点 Sources 面板左上角 **Deactivate breakpoints**（⌘F8）把断点全关掉，
+   `debugger` 就退化成空语句；再回 Network → 右键请求 → Copy as cURL。
+
+**要不要配**：好价列表页**匿名可读**，线上实测匿名抓取数小时未被拦，所以默认留空即可。
+配置登录态的收益不确定，代价是明确的：登录态来自你的家庭网络，而服务器走机房 IP，
+站方可能提示异地登录，极端情况会把你自己的浏览器会话挤下线。**只在真的开始被拦时再配。**
+
