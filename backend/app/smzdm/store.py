@@ -395,6 +395,26 @@ def list_deals(
     return {"total": total, "items": items}
 
 
+def seen_cate_names(days: int = 7) -> tuple[set[str], int]:
+    """近 N 天在好价流里实际出现过的一级/二级分类名，以及同窗口的样本条数。
+
+    用途是给「关注分类名是否还有效」做判定 —— 站点会改分类层级，
+    配错/改名会让功能静默停摆。返回值带样本条数，是为了让调用方
+    能在样本太少时**不要**急着报「分类名失效」（新库头几小时必然一条都没有）。
+    """
+    since = (datetime.now() - timedelta(days=max(1, days))).strftime("%Y-%m-%d %H:%M:%S")
+    with get_conn(DB_PATH) as con:
+        rows = con.execute(
+            "SELECT cate1, cate2 FROM deals WHERE first_seen >= ?", (since,)
+        ).fetchall()
+    names: set[str] = set()
+    for c1, c2 in rows:
+        for v in (c1, c2):
+            if v:
+                names.add(str(v))
+    return names, len(rows)
+
+
 def stats() -> dict[str, Any]:
     """公开页顶部的健康摘要。
 

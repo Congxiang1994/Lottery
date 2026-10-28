@@ -39,6 +39,11 @@ _started_wall: str = ""
 
 _LOCK_PATH = DB_PATH.parent / "smzdm_fetch.lock"
 
+# 「关注分类名疑似失效」判定所需的最小样本量。
+# 低于这个数不下结论：新库头几小时本来就看不到全部分类，报错纯属误伤。
+# 抽成常量是为了能被测试注入一个极小值，从而真正跑到报警分支。
+RENAME_MIN_SAMPLES = 400
+
 
 def _pick_cate(deals: list[crawler.Deal], cate_filter: str) -> list[crawler.Deal]:
     """按「关注分类」过滤。配置为空 = 全部品类。"""
@@ -83,16 +88,24 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
         )
         parsed = len(deals)
         kept = _pick_cate(deals, st.get("cate_filter", ""))
+        notes: list[str] = []
 
-        # 配了分类却一条都没命中，几乎一定是分类名变了 —— 必须显式提示，
-        # 否则页面会「一直没数据」而无人知道原因。
-        if not kept and parsed and st.get("cate_filter", "").strip():
-            errors.append(
-                f"本轮 {parsed} 条好价没有一条命中关注分类「{st['cate_filter']}」，"
-                f"请到管理页核对分类名（实际出现："
-                f"{'、'.join(sorted({d.cate1 for d in deals if d.cate1})[:8])}）"
+        # 「本轮一条都没命中关注分类」对数码这类稀缺品类是常态（实测供给仅 ~1.4%），
+        # 不能当错误报 —— 否则每一轮都标红，用户会以为功能坏了（2026-10-28 实测踩到）。
+        # 真正该报警的是「关注分类名在足够长的窗口里从未出现过」= 站点改名/调层级。
+        if parsed and not kept and store.cate_wanted(st):
+            notes.append(
+                f"本轮 {parsed} 条好价没有关注分类的条目（该品类供给稀少，属正常）"
             )
-            _logger.warning("smzdm 分类过滤未命中：%s", st["cate_filter"])
+            seen, seen_rows = store.seen_cate_names(7)
+            # 样本不足时不下结论：新库头几小时本来就看不到全部分类
+            if seen_rows >= RENAME_MIN_SAMPLES and not (set(store.cate_wanted(st)) & seen):
+                errors.append(
+                    f"关注分类「{st['cate_filter']}」近 7 天（{seen_rows} 条样本）"
+                    f"从未出现过，分类名可能已改；实际出现："
+                    f"{'、'.join(sorted(seen)[:10])}"
+                )
+                _logger.warning("smzdm 关注分类疑似失效：%s", st["cate_filter"])
 
         # 🔴 全量入库，不按分类预过滤。
         #   分类过滤只作用于「入选」（在 store.judge 里），不作用于落库：
@@ -122,6 +135,7 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
             "picked": picked,
             "banned": banned,
             "errors": errors,
+            "notes": notes,
             "elapsed_ms": round((time.monotonic() - started) * 1000),
             "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }

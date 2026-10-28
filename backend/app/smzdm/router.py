@@ -18,6 +18,7 @@ Cookie 录入的设计取舍
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import shlex
 import time
@@ -38,6 +39,9 @@ from app.smzdm.config import (
 from app.trigger.config import sign_session, verify_session
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
+
+# 手动抓取任务的强引用（不交给 GC；同时用于「连点只跑一轮」的判定）
+_manual_task: asyncio.Task | None = None
 
 
 # ------------------------------------------------------------ 通道 A：公开
@@ -309,18 +313,31 @@ def admin_status(
 
 
 @router.post("/admin/fetch")
-def admin_fetch_now(deals_session: str | None = Cookie(default=None)):
-    """手动触发一轮（异步执行，立即返回，结果到 /admin/status 看）。"""
+async def admin_fetch_now(deals_session: str | None = Cookie(default=None)):
+    """手动触发一轮（异步执行，立即返回，结果到 /admin/status 看）。
+
+    🔴 必须是 ``async def``：写成同步 ``def`` 时 FastAPI 会把它丢进线程池执行，
+    线程池里**没有运行中的事件循环**，``asyncio.get_running_loop()`` 会直接抛
+    ``RuntimeError: no running event loop`` → 接口 500（2026-10-28 实测踩到）。
+
+    任务引用存在模块变量里，不交给 GC 收 —— 否则「已开始抓取」返回后任务可能
+    还没跑完就被回收。同一时刻只允许一个手动轮次，避免连点叠加请求。
+    """
     _require_session(deals_session)
     if crawler.ban_remaining_seconds() > 0:
         raise HTTPException(
             status_code=429,
             detail=f"仍在退避期（剩余 {crawler.ban_remaining_seconds()} 秒），请稍后再试",
         )
-    import asyncio
-
-    asyncio.get_running_loop().create_task(scheduler.run_round(manual=True))
-    return {"ok": True, "message": "已开始抓取，约 10 秒后到「抓取状态」查看结果"}
+    global _manual_task
+    if _manual_task is not None and not _manual_task.done():
+        return {
+            "ok": True,
+            "running": True,
+            "message": "上一轮手动抓取还在进行中，稍后到「抓取状态」看结果",
+        }
+    _manual_task = asyncio.create_task(scheduler.run_round(manual=True))
+    return {"ok": True, "running": True, "message": "已开始抓取，约 15 秒后到「抓取状态」查看结果"}
 
 
 @router.post("/admin/unban")
