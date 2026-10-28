@@ -8,6 +8,8 @@ import {
   Undo2,
   Trash2,
   Download,
+  Maximize,
+  Minimize,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,6 +43,7 @@ const COLORS = [
 ];
 
 export default function DrawTool() {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const historyRef = useRef<ImageData[]>([]);
@@ -53,6 +56,29 @@ export default function DrawTool() {
   const [color, setColor] = useState("#111827");
   const [size, setSize] = useState(4);
   const [canUndo, setCanUndo] = useState(false);
+  const [isFull, setIsFull] = useState(false);
+
+  // 全屏状态跟随浏览器实际状态（ESC 退出也同步）
+  useEffect(() => {
+    const onFs = () => setIsFull(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFs);
+    document.addEventListener("webkitfullscreenchange", onFs);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFs);
+      document.removeEventListener("webkitfullscreenchange", onFs);
+    };
+  }, []);
+
+  const toggleFull = () => {
+    const el = wrapRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+    } else {
+      const req = el.requestFullscreen || (el as any).webkitRequestFullscreen;
+      req.call(el);
+    }
+  };
 
   // 把工具/颜色/粗细同步进 ref，绘制时读取最新值
   const toolRef = useRef(tool);
@@ -197,7 +223,14 @@ export default function DrawTool() {
   };
 
   return (
-    <div className="space-y-4">
+    <div
+      ref={wrapRef}
+      className={
+        isFull
+          ? "flex h-screen flex-col bg-[#0f172a] p-3"
+          : "space-y-4"
+      }
+    >
       {/* 工具栏 */}
       <div className="glass flex flex-wrap items-center gap-3 rounded-2xl p-3 shadow-card">
         {/* 工具 */}
@@ -287,24 +320,40 @@ export default function DrawTool() {
           >
             <Download size={14} /> 下载 PNG
           </button>
+          <button
+            onClick={toggleFull}
+            title={isFull ? "退出全屏" : "全屏"}
+            className="flex items-center gap-1.5 rounded-xl border border-[#0d9488]/30 bg-[#0d9488]/10 px-3 py-1.5 text-xs font-medium text-[#0d9488] transition hover:bg-[#0d9488]/20"
+          >
+            {isFull ? <Minimize size={14} /> : <Maximize size={14} />}
+            {isFull ? "退出全屏" : "全屏"}
+          </button>
         </div>
       </div>
 
-      {/* 画布 */}
-      <canvas
-        ref={canvasRef}
-        width={W}
-        height={H}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerLeave={onUp}
-        className="w-full touch-none rounded-2xl border border-paper-200 bg-white shadow-card"
-        style={{ cursor: tool === "eraser" ? "cell" : "crosshair" }}
-      />
-      <p className="text-xs text-paper-500">
-        鼠标按住拖动即可手绘；选「直线 / 矩形 / 椭圆」后拖拽生成图形；「橡皮」擦成白底。
-      </p>
+      {/* 画布（全屏时居中放大、保持比例） */}
+      <div className={isFull ? "flex flex-1 items-center justify-center overflow-hidden" : ""}>
+        <canvas
+          ref={canvasRef}
+          width={W}
+          height={H}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerLeave={onUp}
+          className={
+            isFull
+              ? "touch-none rounded-2xl border border-paper-200 bg-white shadow-card max-h-full max-w-full"
+              : "w-full touch-none rounded-2xl border border-paper-200 bg-white shadow-card"
+          }
+          style={{ cursor: tool === "eraser" ? "cell" : "crosshair" }}
+        />
+      </div>
+      {!isFull && (
+        <p className="text-xs text-paper-500">
+          鼠标按住拖动即可手绘；选「直线 / 矩形 / 椭圆」后拖拽生成图形；「橡皮」擦成白底。
+        </p>
+      )}
     </div>
   );
 }
