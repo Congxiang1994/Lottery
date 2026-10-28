@@ -24,6 +24,7 @@ function useNavLinks() {
   if (pathname.startsWith("/babysong")) return portalLinks;
   if (pathname.startsWith("/story")) return portalLinks;
   if (pathname.startsWith("/access")) return portalLinks;
+  if (pathname.startsWith("/deals")) return portalLinks;
   if (pathname.startsWith("/tools")) return portalLinks;
   return lotteryLinks;
 }

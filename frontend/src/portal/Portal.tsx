@@ -12,6 +12,8 @@ import {
   BookMarked,
   Radar,
   Wrench,
+  BadgePercent,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 
@@ -73,6 +75,16 @@ const APPS: {
     tint: "violet",
   },
   {
+    id: "deals",
+    title: "捡漏",
+    desc: "自动盯「什么值得买」好价流，只留下值友认可度高的：值率高、收藏与评论够热，点开直接去原站下单。",
+    icon: BadgePercent,
+    tags: ["好价聚合", "自动筛选"],
+    href: "/deals",
+    status: "live",
+    tint: "gold",
+  },
+  {
     id: "tools",
     title: "实用小工具",
     desc: "开发者随身工具箱：时间戳双向转换、JSON 格式化与纠错、Markdown 实时预览，一处搞定。",
@@ -122,6 +134,17 @@ const APPS: {
     icon: BookMarked,
     tags: ["内容管理", "私有"],
     href: "/story-admin",
+    status: "live",
+    isPrivate: true,
+    tint: "amber",
+  },
+  {
+    id: "deals-admin",
+    title: "捡漏设置",
+    desc: "私有工具：调整入选阈值（值率/值/收藏/评论）、配置登录 Cookie、按品类收窄抓取范围。",
+    icon: SlidersHorizontal,
+    tags: ["阈值配置", "私有"],
+    href: "/deals-admin",
     status: "live",
     isPrivate: true,
     tint: "amber",

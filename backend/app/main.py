@@ -21,6 +21,8 @@ from app.story.router import v1_call_logger
 from app.access import router as access_router
 from app.access import store as access_store
 from app.access.middleware import access_logger
+from app.smzdm import router as smzdm_router
+from app.smzdm import scheduler as smzdm_scheduler
 from app.trigger import scheduler
 from app.common import password as password_store
 from app.common.db import harden_dir
@@ -39,6 +41,8 @@ async def lifespan(app: FastAPI):
     access_store.init()
     # 触发器调度循环（SQLite 租约选派发者，多 worker 自愈；gunicorn 优雅重启安全）
     scheduler.start()
+    # 什么值得买捡漏：建表 + 定时抓取循环（文件 flock 多 worker 互斥，单轮独立超时）
+    smzdm_scheduler.start()
     # 儿歌下载队列恢复：清理崩溃残留 + 队列有 pending 则继续下载（重启不丢任务）
     from app.babysong import downloads
 
@@ -46,6 +50,7 @@ async def lifespan(app: FastAPI):
     yield
     # 退出前把访问日志队列 flush 干净（否则最后 1 秒的记录会丢）
     access_store.shutdown()
+    await smzdm_scheduler.stop()
     await scheduler.stop()
 
 
@@ -61,6 +66,7 @@ app.include_router(trigger_router.router)
 app.include_router(babysong_router.router)
 app.include_router(story_router.router)
 app.include_router(access_router.router)
+app.include_router(smzdm_router.router)
 
 # 对外 API 调用明细日志：只处理 /api/story/v1/ 前缀，其他路由原样放行
 app.middleware("http")(v1_call_logger)

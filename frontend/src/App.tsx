@@ -15,6 +15,8 @@ import StoryPage from "./story/Story";
 import StoryAdmin from "./story/StoryAdmin";
 import Access from "./access/Access";
 import Tools from "./tools/Tools";
+import Deals from "./deals/Deals";
+import DealsAdmin from "./deals/DealsAdmin";
 import { api } from "./lottery/api";
 import { LotteryInfo } from "./lottery/types";
 import { LotteryCtx } from "./lottery/context";
@@ -61,6 +63,8 @@ export default function App() {
               <Route path="/story-admin" element={<StoryAdmin />} />
               <Route path="/access" element={<Access />} />
               <Route path="/tools" element={<Tools />} />
+              <Route path="/deals" element={<Deals />} />
+              <Route path="/deals-admin" element={<DealsAdmin />} />
               {/* 兼容旧链接：/ 原为彩票首页，现统一指向聚合门户 */}
               <Route path="*" element={<Portal />} />
               </Routes>
