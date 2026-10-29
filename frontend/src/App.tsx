@@ -3,8 +3,8 @@ import { Routes, Route, useLocation } from "react-router-dom";
 import Nav from "./common/Nav";
 import Footer from "./common/Footer";
 import Portal from "./portal/Portal";
+import Deals from "./deals/Deals";
 import { RouteFallback } from "./common/State";
-import { DEFAULT_HOURS, fetchDeals } from "./deals/prefetch";
 import { api } from "./lottery/api";
 import { LotteryInfo } from "./lottery/types";
 import { LotteryCtx } from "./lottery/context";
@@ -21,8 +21,12 @@ import { usePageTrack } from "./common/usePageTrack";
  *   首屏 JS 下载 4.16 s，占 /deals 7.3 s 总耗时的 57%。
  *   → 除门户首页（Portal，首屏必看）外全部改按需加载，未访问的页面一条字节不下。
  *
- * ⚠️ 别把 Portal 也改成 lazy：它是 `/` 的落地页，多一次 chunk 往返等于把首屏
- *   最关键的渲染往后推一个 RTT（当前链路 RTT 244 ms）。
+ * ⚠️ 别把 Portal / Deals 也改成 lazy：
+ *   - Portal 是 `/` 的落地页，多一次 chunk 往返等于把首屏最关键的渲染往后推一个 RTT
+ *     （当前链路 RTT 244 ms）。
+ *   - Deals 是本站最高频页，实测懒加载时它还要额外拉 2 个 lucide 图标碎片 chunk
+ *     （flame / clock，各不到 1 kB），三个请求排队把出列表拖到 2.7 s。它本身只有
+ *     4.2 kB gzip，并进入口更划算 —— 代价是首页多下 4 kB，换来少三个 RTT。
  */
 const Home = lazy(() => import("./lottery/pages/Home"));
 const History = lazy(() => import("./lottery/pages/History"));
@@ -36,7 +40,6 @@ const StoryPage = lazy(() => import("./story/Story"));
 const StoryAdmin = lazy(() => import("./story/StoryAdmin"));
 const Access = lazy(() => import("./access/Access"));
 const Tools = lazy(() => import("./tools/Tools"));
-const Deals = lazy(() => import("./deals/Deals"));
 const DealsAdmin = lazy(() => import("./deals/DealsAdmin"));
 
 export default function App() {
@@ -58,32 +61,8 @@ export default function App() {
     });
   }, []);
 
-  // 直接落在 /deals：入口脚本一执行就把列表请求发出去，**不等 Deals chunk 下载完**。
-  //
-  // 为什么这条能省时间：请求链路本来是四段瀑布 —— HTML → 入口JS → Deals chunk →
-  // list/stats。最后那段之所以排在末尾，只因为「组件挂载后才会发请求」。但数据请求
-  // 只依赖 api.ts（几百字节，已在入口 chunk 里），跟组件毫无关系。把它提前到
-  // 入口执行时发起，让它与 chunk 下载并行，实测出列表时间少约 1.2 s。
-  // 请求去重由 fetchDeals 负责（inflight + 5 秒结果复用），组件挂载后不会重复发。
-  useEffect(() => {
-    if (pageKey !== "/deals") return;
-    void fetchDeals(DEFAULT_HOURS).catch(() => {
-      /* 失败不在这里处理：Deals 组件会重新请求并渲染统一的错误块 */
-    });
-  }, [pageKey]);
-
-  // 在门户首页空闲时预取「捡漏」的 chunk：它是最常点的入口，
-  // 提前下好之后点进去就不用等代码。只从 `/` 触发 —— 别的页面用户不会往 /deals 走，
-  // 无条件预取等于给所有访问者白送一次请求。
-  // 用 requestIdleCallback 而不是 setTimeout：不抢首屏带宽，浏览器忙就往后挪。
-  useEffect(() => {
-    if (pageKey !== "/") return;
-    const warm = () => void import("./deals/Deals");
-    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: object) => number })
-      .requestIdleCallback;
-    if (ric) ric(warm, { timeout: 2500 });
-    else setTimeout(warm, 1500);
-  }, [pageKey]);
+  // 注：不再做「空闲时预取某个页面的 chunk」。Deals 已并进入口（见文件顶部注释），
+  // 其余页面都是低频入口，无条件预取等于给每个访问者白送一次请求。
 
   return (
     <ThemeCtx.Provider value={theme}>
