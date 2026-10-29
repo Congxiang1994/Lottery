@@ -215,7 +215,7 @@ export default function Portal() {
           {liveApps.map((app, i) => (
             <div
               key={app.id}
-              className="animate-rise"
+              className="animate-rise h-full"
               style={{ animationDelay: `${340 + i * 70}ms` }}
             >
               <AppCard app={app} />
@@ -236,7 +236,7 @@ export default function Portal() {
           {privateApps.map((app, i) => (
             <div
               key={app.id}
-              className="animate-rise"
+              className="animate-rise h-full"
               style={{ animationDelay: `${i * 70}ms` }}
             >
               <AppCard app={app} />
@@ -349,9 +349,13 @@ function AppCard({
     </div>
   );
 
-  if (!live) return <div className="opacity-70">{inner}</div>;
+  // h-full 逐层传下去，卡片才能真正等高：
+  // grid 只把「外层格子」撑到行高，格子里的 <Link> 是普通 block，高度按内容算，
+  // 内层的 h-full 因此没有可参照的高度 → 描述多的卡片就比同行的高一行。
+  if (!live)
+    return <div className="h-full opacity-70">{inner}</div>;
   return (
-    <Link to={app.href} className="block">
+    <Link to={app.href} className="block h-full">
       {inner}
     </Link>
   );
