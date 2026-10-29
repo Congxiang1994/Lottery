@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowUpRight,
@@ -11,7 +11,7 @@ import {
   ThumbsUp,
   TrendingDown,
 } from "lucide-react";
-import { Deal, DealStats, dealsApi } from "./api";
+import { Deal, DealList, DealStats, dealsApi } from "./api";
 import { ErrorBlock, errText } from "../common/State";
 
 /**
@@ -233,13 +233,66 @@ const RANGES = [
 // 不做 localStorage 记忆 —— 「默认」就该是每次打开看到的那个值。
 const DEFAULT_HOURS = 24;
 
+/* ------------------------------ 本地缓存 ------------------------------ */
+
+/**
+ * 列表缓存（stale-while-revalidate）。
+ *
+ * 为什么值得做：这个页面的瓶颈根本不在服务端（list_deals 实测 0.83 ms），
+ * 而在「HTML/JS 下完才开始发请求」—— 两个数据接口被压在关键路径最末端，
+ * 用户盯着空白等一整轮网络往返。把上次结果存进 localStorage，打开就能
+ * 立刻铺满列表，真数据在后台覆盖进来。体感是「秒开」，代价只有可能是
+ * 几十秒前的数据（右上角刷新按钮一直在转，随时可手动拉最新）。
+ *
+ * 只存最近一次、按 hours 分键：切档位时键对不上就不用 —— 宁可显示骨架，
+ * 也不能拿 24 小时的列表冒充 7 天的。
+ */
+const CACHE_KEY = "deals_cache_v1";
+/** 超过 6 小时不再当首屏数据用：那已经不是「稍旧」，而是另一个时段的行情了 */
+const CACHE_MAX_AGE_MS = 6 * 3600_000;
+
+interface Cached {
+  hours: number;
+  ts: number;
+  list: DealList;
+  stats: DealStats;
+}
+
+function readCache(hours: number): Cached | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw) as Cached;
+    if (c?.hours !== hours || !Array.isArray(c.list?.items) || !c.stats) return null;
+    if (!(Date.now() - c.ts < CACHE_MAX_AGE_MS)) return null;
+    return c;
+  } catch {
+    // 缓存内容坏了（旧版本结构、手工改过）→ 当作没有，不要因它把整页搞崩
+    return null;
+  }
+}
+
+function writeCache(hours: number, list: DealList, stats: DealStats) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ hours, ts: Date.now(), list, stats }));
+  } catch {
+    // 隐私模式 / 配额满：缓存是纯优化，写不进去也只是回到「每次都等网络」
+    /* ignore */
+  }
+}
+
 export default function Deals() {
-  const [items, setItems] = useState<Deal[]>([]);
-  const [total, setTotal] = useState(0);
-  const [stats, setStats] = useState<DealStats | null>(null);
+  // 首帧就带上缓存：useMemo 保证只在首次渲染读一次 localStorage，
+  // 后面的渲染（含每次 load 的 setState）不再碰它。
+  const cached = useMemo(() => readCache(DEFAULT_HOURS), []);
+  const [items, setItems] = useState<Deal[]>(cached?.list.items ?? []);
+  const [total, setTotal] = useState(cached?.list.total ?? 0);
+  const [stats, setStats] = useState<DealStats | null>(cached?.stats ?? null);
   const [hours, setHours] = useState(DEFAULT_HOURS);
-  const [loading, setLoading] = useState(true);
+  // 有缓存就不进骨架：数据已经在屏幕上，这次请求只是刷新
+  const [loading, setLoading] = useState(!cached);
   const [err, setErr] = useState<string | null>(null);
+  const prevHours = useRef(DEFAULT_HOURS);
 
   const load = useCallback(async (h: number) => {
     setLoading(true);
@@ -249,6 +302,7 @@ export default function Deals() {
       setItems(list.items);
       setTotal(list.total);
       setStats(st);
+      writeCache(h, list, st);
     } catch (e) {
       setErr(errText(e));
     } finally {
@@ -257,8 +311,16 @@ export default function Deals() {
   }, []);
 
   useEffect(() => {
+    if (prevHours.current !== hours) {
+      prevHours.current = hours;
+      // 切档位：先把旧档列表清掉（命中新档缓存则直接铺上），避免两个时段的数据混显
+      const c = readCache(hours);
+      setItems(c?.list.items ?? []);
+      setTotal(c?.list.total ?? 0);
+      setErr(null);
+    }
     void load(hours);
-  }, [load, hours]);
+  }, [hours, load]);
 
   return (
     <div className="pt-8">
@@ -322,7 +384,7 @@ export default function Deals() {
             {r.label}
           </button>
         ))}
-        {!loading && (
+        {items.length > 0 && (
           <span className="ml-auto self-center text-[11px] text-paper-500">
             共 {total} 条
           </span>
@@ -332,7 +394,9 @@ export default function Deals() {
       {err && <ErrorBlock message={err} onRetry={() => void load(hours)} className="mt-5" />}
 
       <div className="mt-4">
-        {loading ? (
+        {/* 骨架只在「真的没东西可看」时出现：命中本地缓存时列表已经渲染在屏幕上，
+            loading 期间继续显示它（后台刷新，不闪） */}
+        {loading && items.length === 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {[0, 1, 2, 3].map((i) => (
               <div

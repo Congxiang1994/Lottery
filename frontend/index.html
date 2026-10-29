@@ -38,9 +38,135 @@
         } catch (e) {}
       })();
     </script>
+    <!--
+      首屏骨架（Boot skeleton）。
+      为什么写在这里、而且必须内联：index-*.css 与 index-*.js 是两个独立请求，
+      它们到达之前页面上什么都没有 → 用户看到的是整屏白（或暗）底，实测这段空白
+      长达 4 秒多。骨架必须**自带样式**，不能依赖还没下载完的 CSS 文件。
+
+      为什么不用 React 渲染：React 挂载的前提就是 JS 到齐。骨架的意义正是在
+      JS 到齐之前顶上去，只能由 HTML 自己承担。
+
+      React 首次 commit 会清空 #root 的既有子节点，骨架自动消失，无需手动清理。
+      颜色变量由上面的主题脚本决定：它先给 <html> 加了 .site-night，这里按类切换。
+    -->
+    <style>
+      :root {
+        --bk-bg: #fdfbf7;
+        --bk-fg: #f3ece2;
+        --bk-fg2: #e8ddcc;
+      }
+      html.site-night {
+        --bk-bg: #0b0d13;
+        --bk-fg: #1b1f2b;
+        --bk-fg2: #272c3a;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bk-bg);
+      }
+      #boot {
+        max-width: 1152px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+      #boot .bk {
+        background: var(--bk-fg);
+        border-radius: 10px;
+        animation: bk-pulse 1.5s ease-in-out infinite;
+      }
+      #boot .bk-nav {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 60px;
+        border-bottom: 1px solid var(--bk-fg);
+      }
+      #boot .bk-logo {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+      }
+      #boot .bk-word {
+        width: 78px;
+        height: 15px;
+      }
+      #boot .bk-gap {
+        flex: 1;
+      }
+      #boot .bk-pill {
+        width: 74px;
+        height: 30px;
+        border-radius: 9px;
+      }
+      #boot .bk-body {
+        padding-top: 40px;
+      }
+      #boot .bk-title {
+        width: 132px;
+        height: 26px;
+        border-radius: 8px;
+      }
+      #boot .bk-sub {
+        width: 320px;
+        height: 12px;
+        margin-top: 12px;
+      }
+      #boot .bk-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin-top: 24px;
+      }
+      #boot .bk-card {
+        height: 124px;
+        border-radius: 16px;
+      }
+      @media (min-width: 640px) {
+        #boot .bk-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      @keyframes bk-pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      /* 尊重系统「减少动态效果」设置 */
+      @media (prefers-reduced-motion: reduce) {
+        #boot .bk {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot" aria-hidden="true">
+        <div class="bk-nav">
+          <span class="bk bk-logo"></span>
+          <span class="bk bk-word"></span>
+          <span class="bk-gap"></span>
+          <span class="bk bk-pill"></span>
+          <span class="bk bk-logo"></span>
+        </div>
+        <div class="bk-body">
+          <div class="bk bk-title"></div>
+          <div class="bk bk-sub"></div>
+          <div class="bk-grid">
+            <div class="bk bk-card"></div>
+            <div class="bk bk-card"></div>
+            <div class="bk bk-card"></div>
+            <div class="bk bk-card"></div>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

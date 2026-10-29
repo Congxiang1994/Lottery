@@ -40,6 +40,29 @@ export function ErrorBlock({
   );
 }
 
+/**
+ * 路由懒加载占位。
+ *
+ * 为什么是「一条扫光进度条」而不是卡片骨架：这个 fallback 被 15 个路由共用，
+ * 画成卡片网格会让 /hanzi 播放页、/story 阅读页在加载瞬间闪现一屏「购物卡片」，
+ * 比留白更像故障。进度条只表达「正在来」，不预设内容形状。
+ *
+ * 进度条用 Tailwind 的 animate-indeterminate（定义在 tailwind.config.cjs），
+ * 不额外写 CSS —— 与全站动画共用一套缓动。
+ */
+export function RouteFallback() {
+  return (
+    <div className="pt-8" aria-busy="true">
+      <span className="sr-only" role="status">
+        加载中
+      </span>
+      <div className="h-0.5 w-full overflow-hidden rounded-full bg-paper-100">
+        <div className="h-full w-1/3 animate-indeterminate rounded-full bg-gradient-to-r from-brand-red to-brand-red2" />
+      </div>
+    </div>
+  );
+}
+
 /** 把任意异常转成一句能给人看的话。
  *  fetch 抛出来的原文是 `TypeError: Failed to fetch`、`请求失败 500: {"detail":"..."}`
  *  这类，直接甩到界面上既不友好也读不懂 —— 这里统一收敛一遍。 */
