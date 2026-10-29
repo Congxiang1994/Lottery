@@ -47,7 +47,7 @@ const APPS: {
   {
     id: "babysong",
     title: "Super Simple Songs 儿歌",
-    desc: "518 首经典英文儿歌：官方封面 + YouTube 直链，点击即跳转播放，让孩子轻松磨耳朵。",
+    desc: "518 首经典英文儿歌：官方封面 + YouTube 直链，已下载的可站内秒开，让孩子轻松磨耳朵。",
     icon: Music,
     tags: ["儿歌", "YouTube"],
     href: "/babysong",
@@ -87,7 +87,7 @@ const APPS: {
   {
     id: "tools",
     title: "实用小工具",
-    desc: "开发者随身工具箱：时间戳双向转换、JSON 格式化与纠错、Markdown 实时预览，一处搞定。",
+    desc: "开发者随身工具箱：时间戳转换、JSON 格式化、Markdown 预览、随手画板，一处搞定。",
     icon: Wrench,
     tags: ["小工具", "效率"],
     href: "/tools",
@@ -141,9 +141,9 @@ const APPS: {
   {
     id: "deals-admin",
     title: "捡漏设置",
-    desc: "私有工具：调整入选阈值（值率/值/收藏/评论）、配置登录 Cookie、按品类收窄抓取范围。",
+    desc: "私有工具：调整入选阈值（值率/值/收藏/评论）、关注品类权重与品类黑名单。",
     icon: SlidersHorizontal,
-    tags: ["阈值配置", "私有"],
+    tags: ["阈值 · 品类", "私有"],
     href: "/deals-admin",
     status: "live",
     isPrivate: true,
