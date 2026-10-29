@@ -228,11 +228,16 @@ const RANGES = [
   { label: "全部", hours: 0 },
 ];
 
+// 默认最近 24 小时：捡漏拼的是「刚漏」，三天前的价大概率已经涨价或售罄，
+// 混在里面只会稀释实时感。更早的仍在库里，切「3 天 / 7 天」随时能看。
+// 不做 localStorage 记忆 —— 「默认」就该是每次打开看到的那个值。
+const DEFAULT_HOURS = 24;
+
 export default function Deals() {
   const [items, setItems] = useState<Deal[]>([]);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<DealStats | null>(null);
-  const [hours, setHours] = useState(72);
+  const [hours, setHours] = useState(DEFAULT_HOURS);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
