@@ -393,7 +393,8 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-paper-900">捡漏设置</h1>
           <p className="mt-1 text-xs text-paper-600">
-            每 {config.constants.interval_minutes} 分钟抓一轮，每轮 {form.pages_per_round} 页
+            每 {config.constants.interval_minutes} 分钟抓一轮：精选流 {form.pages_per_round} 页
+            （时间序，每页 20 条）+ 推荐流 {config.constants.home_pages_per_round} 页（兜底）
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -552,12 +553,12 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
             max={3}
           />
           <NumField
-            label="每轮抓几页"
-            hint="页数越多覆盖越全，请求也越多"
+            label="每轮抓几页精选流"
+            hint="精选流是时间序，每页 20 条最新好价；另固定抓 1 页推荐流兜住漏的"
             value={form.pages_per_round}
             onChange={(v) => set({ pages_per_round: v })}
             min={1}
-            max={5}
+            max={8}
           />
         </div>
       </Section>

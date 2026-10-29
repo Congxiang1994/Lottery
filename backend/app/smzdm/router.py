@@ -38,6 +38,7 @@ from app.smzdm.config import (
     CATE_SUGGESTIONS,
     COOKIE_NAME,
     FETCH_INTERVAL_SECONDS,
+    HOME_PAGES_PER_ROUND,
     MIN_REQUEST_INTERVAL_SECONDS,
     PAGES_PER_ROUND,
     SESSION_TTL_SECONDS,
@@ -208,7 +209,9 @@ def _validate_config(patch: dict[str, Any]) -> dict[str, Any]:
         "fav_min": (0, 100_000),
         "cmt_min": (0, 100_000),
         "need_hits": (1, 3),
-        "pages_per_round": (1, 5),
+        # 精选流页数。上限 8：再往上（8 页 = 160 条）单轮就要 27 秒的连续请求，
+        # 而 10 分钟一轮下 3 页已经能接住供给（每页 20 条、约 3 分钟一页）。
+        "pages_per_round": (1, 8),
     }
     for key, (lo, hi) in ints.items():
         if key in patch:
@@ -277,6 +280,9 @@ def admin_config(deals_session: str | None = Cookie(default=None)):
             "interval_minutes": FETCH_INTERVAL_SECONDS // 60,
             "min_request_interval_seconds": MIN_REQUEST_INTERVAL_SECONDS,
             "pages_per_round_default": PAGES_PER_ROUND,
+            # 每轮固定抓几页首页推荐流（分页失效，恒为 1）。前端文案要能说清
+            # 「N 页精选 + 1 页推荐」，否则用户只看到「每轮 3 页」会以为少抓了。
+            "home_pages_per_round": HOME_PAGES_PER_ROUND,
             "ban_backoff_minutes": BAN_BACKOFF_SECONDS // 60,
             "cate_suggestions": CATE_SUGGESTIONS,
             "cate_boost_default": CATE_BOOST_DEFAULT,

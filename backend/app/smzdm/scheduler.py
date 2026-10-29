@@ -8,8 +8,9 @@
 
 节奏
 ----
-每 ``FETCH_INTERVAL_SECONDS``（20 分钟）抓一轮，每轮 ``pages_per_round`` 页（默认 5）。
-日请求量 ≈ 5 页 × 3 轮/小时 × 24 = 360 次，仍远低于实测风控线
+每 ``FETCH_INTERVAL_SECONDS``（10 分钟）抓一轮：精选流 ``pages_per_round`` 页
+（默认 3 页 × 20 条）+ 首页推荐流 1 页，共 4 次请求。
+日请求量 ≈ 4 × 6 轮/小时 × 24 = 576 次，平均 0.4 次/分钟，远低于实测风控线
 （30~40 次/3~4 分钟即触发验证码）。
 """
 from __future__ import annotations
@@ -23,7 +24,12 @@ from datetime import datetime
 from typing import Any
 
 from app.smzdm import crawler, store
-from app.smzdm.config import DB_PATH, FETCH_INTERVAL_SECONDS
+from app.smzdm.config import (
+    DB_PATH,
+    FETCH_INTERVAL_SECONDS,
+    HOME_PAGES_PER_ROUND,
+    PAGES_PER_ROUND,
+)
 
 _loop_task: asyncio.Task | None = None
 _watchdog_task: asyncio.Task | None = None
@@ -77,15 +83,18 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
     started = time.monotonic()
     try:
         try:
-            pages = max(1, min(int(st.get("pages_per_round") or 2), 5))
+            jx_pages = max(1, min(int(st.get("pages_per_round") or PAGES_PER_ROUND), 8))
         except ValueError:
-            pages = 2
+            jx_pages = PAGES_PER_ROUND
+        home_pages = HOME_PAGES_PER_ROUND
 
         deals, errors = await crawler.fetch_round(
             cookie=st.get("cookie", ""),
             ua=st.get("cookie_ua", ""),
-            pages=pages,
+            jx_pages=jx_pages,
+            home_pages=home_pages,
         )
+        pages = jx_pages + (1 if home_pages > 0 else 0)
         parsed = len(deals)
         kept = _pick_cate(deals, st.get("cate_filter", ""))
         notes: list[str] = []
@@ -130,6 +139,8 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
         result = {
             "ok": not errors,
             "pages": pages,
+            "jx_pages": jx_pages,
+            "home_pages": home_pages,
             "parsed": parsed,
             "kept": len(kept),
             "added": added,

@@ -1,13 +1,21 @@
-"""SMZDM 好价列表抓取与解析。
+"""SMZDM 好价抓取与解析（双入口）。
 
-为什么只抓列表页
-----------------
-实测（2026-10-28）`/p2/` 这类分页的每张卡片里就已经带齐了全部判据：
-值、不值、收藏数、评论数、价格、一级/二级分类、卡片标签、上架时分。
-详情页（单条 300KB~1MB）只有正文，没有额外的「历史低价 / 绝对值」标记。
+两个入口，各管一件事（2026-10-29 实测后确定，改前先复读）
+--------------------------------------------------------
+- ``/jingxuan/pN/``（精选流，**时间序**）= 主入口，管「快」。
+  每页 20 条、翻页有效、上架时分严格倒序、判据 20/20 齐全。
+  新好价发布后几分钟内就出现在这里 → 决定「进库延迟」。
+- ``/``（首页推荐流，**算法序**）= 兜底入口，只抓 1 页，管「全」。
+  能上首页的都是热度攒够的（实测发现延迟中位 181 分钟），
+  正好回收「在精选流窗口里滑掉、但后来被值友顶起来」的那批。
+  ⚠️ 它的 `/pN/` 分页已失效 —— p2~p7 每页都返回同一屏（相邻页重叠 13~17 条），
+  所以**只抓第 1 页**，多抓纯粹浪费风控额度。
 
-一页列表 29 条 ≈ 一次请求覆盖 29 个好价；抓详情要 29 次请求、十几 MB。
-所以本模块**只走列表页**，这是把日请求量压到 150 次量级的关键。
+为什么都不抓详情页
+------------------
+列表卡片的 HTML 里已经带齐全部判据：值、不值、收藏数、评论数、价格、
+一级分类、卡片标签、上架时分。详情页（单条 300KB~1MB）只有正文，
+没有额外的「历史低价 / 绝对值」标记 —— 抓详情是 20 倍的流量换零信息。
 
 风控
 ----
@@ -29,9 +37,12 @@ import httpx
 from app.smzdm.config import (
     BASE_URL,
     BAN_BACKOFF_SECONDS,
-    FIRST_PAGE,
+    HOME_PAGES_PER_ROUND,
+    HOME_PATH,
     HTTP_TIMEOUT_SECONDS,
+    JINGXUAN_PATH,
     MIN_REQUEST_INTERVAL_SECONDS,
+    PAGES_PER_ROUND,
     USER_AGENT,
 )
 
@@ -145,8 +156,27 @@ def looks_blocked(body: str, status: int) -> bool:
     return ("TCaptcha" in body) or ("WafCaptcha" in body) or ("__captcha" in body)
 
 
-async def fetch_page(page: int, cookie: str = "", ua: str = "") -> str:
-    """抓一页好价列表，返回 HTML。
+def _page_url(kind: str, page: int) -> str:
+    """拼目标页 URL。
+
+    kind="jingxuan"：``/jingxuan/``、``/jingxuan/p2/`` ……（翻页有效且时间序）
+    kind="home"    ：只支持第 1 页。``/p2/`` 起的首页分页返回的是同一屏内容，
+                     抓了也不多一条，还会白占风控额度（2026-10-29 实测）。
+    """
+    if kind == "home":
+        return f"{BASE_URL}{HOME_PATH}"
+    if page <= 1:
+        return f"{BASE_URL}{JINGXUAN_PATH}/"
+    return f"{BASE_URL}{JINGXUAN_PATH}/p{page}/"
+
+
+async def fetch_page(
+    page: int, cookie: str = "", ua: str = "", kind: str = "jingxuan"
+) -> str:
+    """抓一页列表，返回 HTML。
+
+    Args:
+        kind: "jingxuan"（精选流，时间序）或 "home"（首页推荐流，仅第 1 页）
 
     Raises:
         Banned: 命中验证码或 202 挑战
@@ -155,7 +185,7 @@ async def fetch_page(page: int, cookie: str = "", ua: str = "") -> str:
     if ban_remaining_seconds() > 0:
         raise Banned(f"仍处于退避期，剩余 {ban_remaining_seconds()} 秒")
 
-    url = f"{BASE_URL}/p{page}/"
+    url = _page_url(kind, page)
     headers = {
         "User-Agent": ua or USER_AGENT,
         "Accept": (
@@ -176,7 +206,9 @@ async def fetch_page(page: int, cookie: str = "", ua: str = "") -> str:
             resp = await client.get(url, headers=headers)
     body = resp.text or ""
     if looks_blocked(body, resp.status_code):
-        mark_banned(f"第 {page} 页返回反爬页（HTTP {resp.status_code}，{len(body)} 字节）")
+        mark_banned(
+            f"{kind} 第 {page} 页返回反爬页（HTTP {resp.status_code}，{len(body)} 字节）"
+        )
         raise Banned(_last_error)
     if resp.status_code != 200:
         raise httpx.HTTPStatusError(
@@ -198,10 +230,21 @@ _RE_ID = re.compile(r'smzdm\.com/p/(\d+)/')
 _RE_TITLE = re.compile(
     r'<h5 class="feed-block-title[^"]*">\s*<a[^>]*>\s*(.*?)\s*</a>', re.S
 )
-# 价格：z-highlight 容器里第一个链接的文本，形如「8.45元（需用券）」
-_RE_PRICE = re.compile(r'<div class="z-highlight[^"]*">\s*<a[^>]*>\s*([^<]{1,60})</a>', re.S)
+# 价格：⚠️ 两个入口的 DOM 结构不同 ——
+#   首页    ：<div class="z-highlight"><a href>8.45元（需用券）</a></div>
+#   精选流  ：<a class="z-highlight" href>99元</a>          ← 自己就是那个带 class 的元素
+# 只认「div + 内部 a」的写法，精选流的价格全部解析为空（不报错，卡片上就是一片空白，
+# 2026-10-29 实测 59/77 条空价格才发现）。所以这里把 class 与 `<a>` 都做成可选。
+_RE_PRICE = re.compile(
+    r'class="z-highlight[^"]*"[^>]*>\s*(?:<a[^>]*>\s*)?([^<]{1,60})\s*<', re.S
+)
+# 分类：⚠️ 两个入口的键名不同 —— 首页是中文键 `'1级分类'`，精选流是 `'cate_level1'`。
+# 只认一套的话另一个入口的条目 cate1 会全空，品类加权（cate_hit）直接失效，
+# 而且不报错、不告警 —— 页面上只是「关注」标记悄悄消失。两套都要认。
 _RE_CATE1 = re.compile(r"'1级分类':'([^']*)'")
+_RE_CATE1_ALT = re.compile(r"'cate_level1':'([^']*)'")
 _RE_CATE2 = re.compile(r"'2级分类':'([^']*)'")
+_RE_CATE2_ALT = re.compile(r"'cate_level2':'([^']*)'")
 _RE_MALL = re.compile(r"'mall_name':'([^']*)'")
 # 值 / 不值：图标后面紧跟数字，是最精确的锚点（同卡片内还有 voted-wrap「已打分」等干扰）
 _RE_WORTH = re.compile(r'icon-zhi-o-thin"></i><span>(\d+)</span>')
@@ -263,8 +306,8 @@ def parse_list_page(html: str) -> list[Deal]:
         )
         m_price = _RE_PRICE.search(raw)
         m_mall = _RE_MALL.search(raw)
-        m_c1 = _RE_CATE1.search(raw)
-        m_c2 = _RE_CATE2.search(raw)
+        m_c1 = _RE_CATE1.search(raw) or _RE_CATE1_ALT.search(raw)
+        m_c2 = _RE_CATE2.search(raw) or _RE_CATE2_ALT.search(raw)
         m_hh = _RE_HHMM.search(raw)
         m_img = _RE_IMG.search(raw) or _RE_IMG_LOOSE.search(raw)
 
@@ -290,24 +333,38 @@ def parse_list_page(html: str) -> list[Deal]:
 
 
 async def fetch_round(
-    *, cookie: str = "", ua: str = "", pages: int = 2, first_page: int = FIRST_PAGE
+    *,
+    cookie: str = "",
+    ua: str = "",
+    jx_pages: int = PAGES_PER_ROUND,
+    home_pages: int = HOME_PAGES_PER_ROUND,
 ) -> tuple[list[Deal], list[str]]:
-    """抓一轮（连续多页），返回 (全部好价, 错误列表)。
+    """抓一轮（精选流 N 页 + 首页推荐流 M 页，M 最多 1），返回 (全部好价, 错误列表)。
+
+    顺序很重要：**先精选流、后首页**。精选流是时间序，越靠前越新；万一中途被
+    风控（Banned 直接 break），至少已经把最新那批拿到手了。反过来先抓首页的话，
+    被封时手里只有一批三小时前的旧货。
+
+    首页只取第 1 页：它的 ``/pN/`` 分页返回同一屏内容，翻页没有意义。
 
     单页失败不阻断整轮：已拿到的页面照常入库，错误汇总返回给调用方记日志。
     """
     out: list[Deal] = []
     errors: list[str] = []
     seen: set[int] = set()
-    for i in range(pages):
-        page = first_page + i
+    jobs: list[tuple[str, int]] = [
+        ("jingxuan", p) for p in range(1, max(0, jx_pages) + 1)
+    ]
+    if home_pages > 0:
+        jobs.append(("home", 1))
+    for kind, page in jobs:
         try:
-            html = await fetch_page(page, cookie=cookie, ua=ua)
+            html = await fetch_page(page, cookie=cookie, ua=ua, kind=kind)
         except Banned as exc:
-            errors.append(f"p{page}: {exc}")
+            errors.append(f"{kind} p{page}: {exc}")
             break  # 已被风控，本轮立即停手
         except Exception as exc:  # 网络/超时/HTTP 错误
-            errors.append(f"p{page}: {type(exc).__name__}: {exc}")
+            errors.append(f"{kind} p{page}: {type(exc).__name__}: {exc}")
             continue
         for d in parse_list_page(html):
             if d.id in seen:

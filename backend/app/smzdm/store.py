@@ -96,7 +96,7 @@ def _init_lock():
 
 
 def init() -> None:
-    """建表 + 补列 + 补齐缺省配置（幂等）。"""
+    """建表 + 补列 + 补齐缺省配置 + 一次性迁移（幂等）。"""
     with _init_lock():
         with get_conn(DB_PATH) as con:
             con.executescript(_SCHEMA)
@@ -108,6 +108,21 @@ def init() -> None:
             if missing:
                 con.executemany(
                     "INSERT INTO settings (key, value) VALUES (?,?)", missing
+                )
+
+            # 一次性迁移（2026-10-29）：抓取入口从「首页推荐流」换成
+            # 「精选流 N 页 + 首页 1 页」。
+            # `pages_per_round` 的旧值 5 是按首页算的，而首页分页已失效 ——
+            # 换到精选流后每页 20 条且真能翻页，沿用 5 会白抓 100 条冗余、
+            # 请求量从 576/天涨到 864/天。这里重置为新默认值，之后用户
+            # 自己改的值照常保留（迁移只做一次，靠 feed_v2 标记）。
+            if "feed_v2" not in existing:
+                con.execute(
+                    "UPDATE settings SET value=? WHERE key='pages_per_round'",
+                    (DEFAULT_SETTINGS["pages_per_round"],),
+                )
+                con.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('feed_v2','1')"
                 )
 
 

@@ -109,6 +109,8 @@ export interface DealConfig {
     interval_minutes: number;
     min_request_interval_seconds: number;
     pages_per_round_default: number;
+    /** 每轮固定抓几页首页推荐流（分页失效，恒为 1） */
+    home_pages_per_round: number;
     ban_backoff_minutes: number;
     cate_suggestions: string[];
     cate_boost_default: number;
