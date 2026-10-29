@@ -136,6 +136,8 @@ function NumField({
   onChange,
   min,
   max,
+  step,
+  disabled,
 }: {
   label: string;
   hint: string;
@@ -143,15 +145,19 @@ function NumField({
   onChange: (v: string) => void;
   min: number;
   max: number;
+  step?: number;
+  disabled?: boolean;
 }) {
   return (
-    <label className="block">
+    <label className={`block ${disabled ? "opacity-50" : ""}`}>
       <span className="text-[11px] font-medium text-paper-800">{label}</span>
       <input
         type="number"
         min={min}
         max={max}
+        step={step}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         className={`mt-1 ${inputCls} tabular-nums`}
       />
@@ -225,6 +231,11 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         need_hits: form.need_hits,
         pages_per_round: form.pages_per_round,
         enabled: form.enabled,
+        discount_mode: form.discount_mode,
+        discount_direct: form.discount_direct,
+        discount_assist: form.discount_assist,
+        newbie_discount: form.newbie_discount,
+        newbie_price: form.newbie_price,
       });
       flash(`已保存，全库重算后共 ${res.picked ?? 0} 条入选`);
       const st = await refresh();
@@ -333,6 +344,25 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  /** 标签流开关：点 chip 加入/移出。存的是 slug（中文名会 301，后端也会挡）。 */
+  const toggleTag = async (slug: string) => {
+    if (!form) return;
+    const cur = form.tag_feeds.split(",").map((x) => x.trim()).filter(Boolean);
+    const next = cur.includes(slug) ? cur.filter((x) => x !== slug) : [...cur, slug];
+    const val = next.join(",");
+    setBusy(true);
+    try {
+      await dealsApi.saveConfig({ tag_feeds: val });
+      setForm((f) => (f ? { ...f, tag_feeds: val } : f));
+      flash(next.length ? `已启用 ${next.length} 个标签流` : "已关闭标签流，只保留首页推荐流");
+      await refresh();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const fetchNow = async () => {
     setBusy(true);
     try {
@@ -393,11 +423,12 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-paper-900">捡漏设置</h1>
           <p className="mt-1 text-xs text-paper-600">
-            每 {config.constants.interval_minutes} 分钟抓一轮：推荐流{" "}
-            {config.constants.home_pages_per_round} 页
+            每 {config.constants.interval_minutes} 分钟一轮：标签流{" "}
+            {form.tag_feeds.split(",").filter(Boolean).length} 个 ×{" "}
+            {form.tag_pages || 0} 页 + 推荐流 {config.constants.home_pages_per_round} 页
             {Number(form.pages_per_round) > 0
               ? ` + 精选流 ${form.pages_per_round} 页`
-              : "（精选流已关）"}
+              : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -500,10 +531,135 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         )}
       </Section>
 
+      {/* 折扣判定（主力判据） */}
+      <Section
+        title="折扣判定"
+        desc="从正文里的「原价 → 到手价」算出折数。折扣够深就直接入选，不看投票 —— 刚发布的好价没人投过票，但折扣是客观的。这是唯一与曝光无关的判据。"
+        right={
+          <button
+            onClick={() => void saveThresholds()}
+            disabled={busy}
+            className="press inline-flex items-center gap-1.5 rounded-xl bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+          >
+            <Save size={12} /> 保存
+          </button>
+        }
+      >
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-paper-800">
+          <input
+            type="checkbox"
+            checked={form.discount_mode === "1"}
+            onChange={(e) => set({ discount_mode: e.target.checked ? "1" : "0" })}
+            className="h-3.5 w-3.5 accent-[#c0453e]"
+          />
+          启用折扣优先
+          <span className="font-normal text-paper-500">
+            （关掉则退回纯热度判据，应急回滚用）
+          </span>
+        </label>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <NumField
+            label="直接入选：折扣 ≤（%）"
+            hint="50 = 5 折及以内，不看投票直接入选"
+            value={form.discount_direct}
+            onChange={(v) => set({ discount_direct: v })}
+            min={1}
+            max={100}
+            disabled={form.discount_mode !== "1"}
+          />
+          <NumField
+            label="需热度：折扣 ≤（%）"
+            hint="70 = 5~7 折之间，需至少一项热度达标"
+            value={form.discount_assist}
+            onChange={(v) => set({ discount_assist: v })}
+            min={1}
+            max={100}
+            disabled={form.discount_mode !== "1"}
+          />
+          <NumField
+            label="新人价：折扣 <（%）"
+            hint="低于此折扣且金额很小 → 判为首购礼金"
+            value={form.newbie_discount}
+            onChange={(v) => set({ newbie_discount: v })}
+            min={0}
+            max={100}
+            disabled={form.discount_mode !== "1"}
+          />
+          <NumField
+            label="新人价：到手价 <（元）"
+            hint="0.4 折 0.59 元这种是新人补贴，限购 1 件"
+            value={form.newbie_price}
+            onChange={(v) => set({ newbie_price: v })}
+            min={0}
+            max={1000}
+            step={0.01}
+            disabled={form.discount_mode !== "1"}
+          />
+        </div>
+        <p className="mt-3 text-[10px] leading-relaxed text-paper-500">
+          折扣来自列表正文里的原价声明（「活动售价 505 元…到手 254 元」）。
+          约一半条目正文没写原价，那些自动走下面的热度判据 —— 所以两套都要维护。
+        </p>
+      </Section>
+
+      {/* 抓取来源 */}
+      <Section
+        title="抓取来源"
+        desc="标签流是主力入口：时间序、带正文与爆料人，实测入选率约为首页推荐流的 5~20 倍。首页推荐流作为兜底保留，排行榜每 3 轮补充一次数码品类。"
+      >
+        <div className="flex flex-wrap gap-1.5">
+          {config.constants.tag_feeds.map((t) => {
+            const on = form.tag_feeds
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean)
+              .includes(t.slug);
+            return (
+              <button
+                key={t.slug}
+                onClick={() => void toggleTag(t.slug)}
+                disabled={busy}
+                className={`press rounded-full border px-2.5 py-1 text-[11px] transition disabled:opacity-50 ${
+                  on
+                    ? "border-brand-red/40 bg-brand-red/10 font-medium text-brand-red2"
+                    : "border-paper-200 text-paper-700 hover:bg-paper-100"
+                }`}
+                title={on ? "点击关闭该标签流" : "点击启用该标签流"}
+              >
+                {t.name}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <NumField
+            label="每个标签抓几页"
+            hint="默认 2。0 = 完全关闭标签流"
+            value={form.tag_pages}
+            onChange={(v) => set({ tag_pages: v })}
+            min={0}
+            max={3}
+          />
+          <div className="col-span-2 self-center text-[10px] leading-relaxed text-paper-500">
+            每轮约请求{" "}
+            <b className="tabular-nums text-paper-800">
+              {form.tag_feeds.split(",").filter(Boolean).length *
+                Number(form.tag_pages || 0) +
+                config.constants.home_pages_per_round +
+                1}
+            </b>{" "}
+            次（含排行榜，每 {config.constants.top_every_n_rounds} 轮一次），
+            间隔 {config.constants.min_request_interval_seconds} 秒。
+          </div>
+        </div>
+      </Section>
+
       {/* 阈值 */}
       <Section
-        title="入选阈值"
-        desc="判定式：值率达标，且 值 / 收藏 / 评论 三项中满足指定项数。保存后立即重算全库。"
+        title="热度阈值（算不出折数时使用）"
+        desc="正文没写原价的条目（约一半），按值率 + 值/收藏/评论三项判定。保存后立即重算全库。"
         right={
           <button
             onClick={() => void saveThresholds()}

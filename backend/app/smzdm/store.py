@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -50,6 +51,10 @@ CREATE TABLE IF NOT EXISTS deals (
     heat        REAL NOT NULL DEFAULT 0,
     cate_hit    INTEGER NOT NULL DEFAULT 0,
     hhmm        TEXT NOT NULL DEFAULT '',
+    discount    INTEGER NOT NULL DEFAULT 0,
+    reporter    TEXT NOT NULL DEFAULT '',
+    feed_tags   TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL DEFAULT '',
     first_seen  TEXT NOT NULL,
     last_seen   TEXT NOT NULL,
     picked      INTEGER NOT NULL DEFAULT 0,
@@ -57,6 +62,7 @@ CREATE TABLE IF NOT EXISTS deals (
 );
 CREATE INDEX IF NOT EXISTS idx_deals_picked ON deals(picked, heat DESC);
 CREATE INDEX IF NOT EXISTS idx_deals_first ON deals(first_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_deals_discount ON deals(picked, discount);
 
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
@@ -153,6 +159,18 @@ def _ensure_columns(con: sqlite3.Connection) -> None:
         # （不命中直接不入库），改成加权排序后需要把这枚标记持久化，
         # 否则每次列表查询都要重新解析配置 + 逐行比对。
         ("cate_hit", "INTEGER NOT NULL DEFAULT 0"),
+        # ---------------- 2026-10-29 第二轮：折扣优先 ----------------
+        # discount：整数百分比（44 = 4.4 折，0 = 未知）。唯一与「曝光」无关的
+        # 判据 —— 刚发布的好价没有投票，但折扣是客观的。
+        ("discount", "INTEGER NOT NULL DEFAULT 0"),
+        # reporter：爆料人昵称（标签流专有）。把「个人爆料」变成可见信息，
+        # 比按黑名单过滤运营号更透明。
+        ("reporter", "TEXT NOT NULL DEFAULT ''"),
+        # feed_tags：站点分类标签页的归属（手慢无/绝对值/历史低价…）+
+        # 卡片自带的 /fenlei/ 品类标签。与营销标签 tags 不是一回事。
+        ("feed_tags", "TEXT NOT NULL DEFAULT ''"),
+        # source：tag / home / jingxuan / top，排查「这条从哪来」用
+        ("source", "TEXT NOT NULL DEFAULT ''"),
     ):
         if name not in cols:
             con.execute(f"ALTER TABLE deals ADD COLUMN {name} {ddl}")
@@ -252,22 +270,35 @@ def in_blacklist(cate1: str, cate2: str, st: dict[str, str]) -> bool:
 
 
 def judge(deal: Any, st: dict[str, str]) -> tuple[bool, str]:
-    """按当前阈值判定一条好价是否「超值」。
+    """按当前阈值判定一条好价是否「超值」。返回 (是否入选, 原因)。
 
-    判定式：**不属于黑名单品类** 且 值率达标 且 (值 / 收藏 / 评论) 三项中满足 need_hits 项。
-    关注品类只影响排序（在 list_deals 里乘权重），**不再影响能否入选**。
+    判定式（2026-10-29 第二轮改造，三档）
+    ------------------------------------
+    ① 命中品类黑名单                     → 否决（连阈值都不看）
+    ② 有折扣数据（正文里找到了原价）：
+         折扣 ≤ discount_direct（默认 50%）  → **直接入选，不看投票**
+         direct < 折扣 ≤ assist（默认 70%）  → 热度三项命中 1 项即可
+         折扣 > assist                       → 落到 ③（折得不够狠，按旧判据）
+       新人价护栏：折扣 < 10% 且到手价 < 5 元 → 否决（首购礼金/新人补贴，
+       限购 1 件、无复购价值，不该占据榜单）
+    ③ 无折扣数据 → 旧判据：值率达标 且 (值/收藏/评论) 三项中满足 need_hits 项
 
-    为什么值率是硬门槛而不是"三选一"之一：
-    SMZDM 上评论数高经常是因为大家在吵（价格争议、发货翻车），
-    「被喷」也会推高评论数。值率是真人投票的直接结果，先过关才谈热度。
+    为什么要这样改（上一版的实测问题）
+    ----------------------------------
+    旧判据本质在测「曝光量」：值、收藏、评论都是**被看见之后**才产生的。
+    实测证明这系统性漏掉了最该捞的东西 ——
+      米家扫地机器人 3.3 折、海尔冰箱 3.9 折、骆驼登山鞋 2.0 折，
+      值数分别只有 6 / 0 / 2，按旧判据永远进不来。
+    而旧判据实际捞到的是「值 5~12、靠评论数勉强过线」的大牌常规促销 ——
+    恰恰是最不劲爆的那类。用户的反馈「都是正常的好价，感觉一般般」就是这个。
+    折扣是唯一与曝光无关的客观信号：原价 505 → 到手 254 就是 5 折，
+    不管有没有人投过票。
 
-    为什么黑名单放在最前面：它挡的是「根本不是商品」的帖子
-    （如「每日领京豆」这类 cate1=金融服务 的羊毛帖），这类条目热度可以很高，
-    但不属于捡漏 —— 在阈值环节之后否决等于让它们先把榜单占满再删。
+    为什么黑名单仍在最前面：它挡的是「根本不是商品」的帖子
+    （如「每日领京豆」这类 cate1=金融服务 的羊毛帖），这类条目热度可以很高。
 
-    为什么分类判定（旧的硬过滤）从判定里移除：
-    全量参与判定才能拿到足够的量；而「我是来看数码的」这个诉求
-    用排序加权满足更合理 —— 想看的在最上面，但别把其它漏掉。
+    为什么关注品类只影响排序：数码在好价流里只占 0.6%，硬过滤等于一天 1 条；
+    全品类都参与判定、命中关注品类乘权重往前排，既拿到了量也不会把数码漏掉。
     """
     cate1 = getattr(deal, "cate1", "") or ""
     cate2 = getattr(deal, "cate2", "") or ""
@@ -275,6 +306,45 @@ def judge(deal: Any, st: dict[str, str]) -> tuple[bool, str]:
     if in_blacklist(cate1, cate2, st):
         return False, ""
 
+    worth_min = _as_int(st, "worth_min", 50)
+    fav_min = _as_int(st, "fav_min", 50)
+    cmt_min = _as_int(st, "cmt_min", 20)
+
+    hits: list[str] = []
+    if deal.worth >= worth_min:
+        hits.append(f"值{deal.worth}")
+    if deal.fav >= fav_min:
+        hits.append(f"收藏{deal.fav}")
+    if deal.cmt >= cmt_min:
+        hits.append(f"评论{deal.cmt}")
+
+    def tag_reason(base: str) -> str:
+        return base + (" · 关注品类" if cate_hit(cate1, cate2, st) else "")
+
+    discount = int(getattr(deal, "discount", 0) or 0)
+    mode_on = str(st.get("discount_mode", "1")) == "1"
+
+    if mode_on and discount > 0:
+        direct = _as_int(st, "discount_direct", 50)
+        assist = _as_int(st, "discount_assist", 70)
+        newbie_d = _as_int(st, "newbie_discount", 10)
+        newbie_p = _as_float(st, "newbie_price", 5.0)
+        cur = float(getattr(deal, "cur_price", 0) or 0)
+
+        # 新人价护栏：0.4 折、0.59 元这类是首购礼金/新人补贴，不是真"漏"
+        if discount < newbie_d and 0 < cur < newbie_p:
+            return False, ""
+
+        label = f"{discount / 10:.1f}折"
+        if discount <= direct:
+            return True, tag_reason(label)
+        if discount <= assist:
+            if hits:
+                return True, tag_reason(f"{label} · " + " · ".join(hits))
+            return False, ""
+        # discount > assist → 折得不够狠，交给旧判据复核
+
+    # ---------------- 旧判据（无折扣数据 / 折扣不够深）----------------
     rated = deal.worth + deal.unworth
     if rated < MIN_RATED:
         return False, ""
@@ -283,26 +353,30 @@ def judge(deal: Any, st: dict[str, str]) -> tuple[bool, str]:
     if deal.worth_pct < pct_min:
         return False, ""
 
-    hits: list[str] = []
-    if deal.worth >= _as_int(st, "worth_min", 50):
-        hits.append(f"值{deal.worth}")
-    if deal.fav >= _as_int(st, "fav_min", 50):
-        hits.append(f"收藏{deal.fav}")
-    if deal.cmt >= _as_int(st, "cmt_min", 20):
-        hits.append(f"评论{deal.cmt}")
-
     if len(hits) >= _as_int(st, "need_hits", 2):
         # 用 .1f 而不是 :g —— 值率是 round 到 1 位的浮点，:g 在脏数据（未取整）
         # 下会原样吐出 92.3077%，看起来像精度丢了没处理。
-        reason = f"值率{deal.worth_pct:.1f}% · " + " · ".join(hits)
-        # 打上标记，用户才发现「置顶」不是随机 —— 也方便判断加权有没有生效
-        if cate_hit(cate1, cate2, st):
-            reason += " · 关注品类"
-        return True, reason
+        return True, tag_reason(
+            f"值率{deal.worth_pct:.1f}% · " + " · ".join(hits)
+        )
     return False, ""
 
 
 # ---------------------------------------------------------------- 写入
+
+
+_PRICE_NUM = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)")
+
+
+def price_number(price: str) -> float:
+    """从价格串里抠出到手价数字。失败返回 0（调用方必须把 0 当「不知道」）。"""
+    m = _PRICE_NUM.match((price or "").strip())
+    if not m:
+        return 0.0
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return 0.0
 
 
 def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[int, int]:
@@ -317,7 +391,7 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
     with get_conn(DB_PATH) as con:
         for r in rows:
             heat = heat_of(r["worth"], r["fav"], r["cmt"])
-            # 判定需要 worth_pct，Deal.to_row 已算好，这里构造轻量对象喂给 judge
+            # 判定需要 worth_pct / discount / cur_price，这里构造轻量对象喂给 judge
             obj = type(
                 "_D",
                 (),
@@ -329,6 +403,8 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
                     "worth_pct": r["worth_pct"],
                     "cate1": r.get("cate1", ""),
                     "cate2": r.get("cate2", ""),
+                    "discount": r.get("discount", 0),
+                    "cur_price": price_number(r.get("price", "")),
                 },
             )()
             ok, reason = judge(obj, st)
@@ -344,8 +420,9 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
                 """
                 INSERT INTO deals (id,title,url,price,mall,cate1,cate2,tags,img,
                     worth,unworth,fav,cmt,worth_pct,heat,cate_hit,hhmm,
+                    discount,reporter,feed_tags,source,
                     first_seen,last_seen,picked,pick_reason)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     title=excluded.title, price=excluded.price, mall=excluded.mall,
                     cate1=excluded.cate1, cate2=excluded.cate2, tags=excluded.tags,
@@ -355,6 +432,10 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
                     worth_pct=excluded.worth_pct, heat=excluded.heat,
                     cate_hit=excluded.cate_hit,
                     hhmm=excluded.hhmm, last_seen=excluded.last_seen,
+                    discount=excluded.discount,
+                    reporter=excluded.reporter,
+                    feed_tags=excluded.feed_tags,
+                    source=excluded.source,
                     picked=excluded.picked, pick_reason=excluded.pick_reason
                 """,
                 (
@@ -362,8 +443,10 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
                     r.get("mall", ""), r.get("cate1", ""), r.get("cate2", ""),
                     r.get("tags", ""), r.get("img", ""),
                     r["worth"], r["unworth"], r["fav"], r["cmt"],
-                    r["worth_pct"], heat, hit, r.get("hhmm", ""), now, now,
-                    int(ok), reason,
+                    r["worth_pct"], heat, hit, r.get("hhmm", ""),
+                    r.get("discount", 0), r.get("reporter", ""),
+                    r.get("feed_tags", ""), r.get("source", ""),
+                    now, now, int(ok), reason,
                 ),
             )
             if not exists:
@@ -382,8 +465,8 @@ def rejudge(st: dict[str, str]) -> tuple[int, int]:
     changed = 0
     with get_conn(DB_PATH) as con:
         rows = con.execute(
-            "SELECT id,worth,unworth,fav,cmt,worth_pct,picked,cate1,cate2,cate_hit "
-            "FROM deals"
+            "SELECT id,worth,unworth,fav,cmt,worth_pct,picked,cate1,cate2,cate_hit,"
+            "discount,price FROM deals"
         ).fetchall()
         for r in rows:
             c1 = r[7] or ""
@@ -395,6 +478,8 @@ def rejudge(st: dict[str, str]) -> tuple[int, int]:
                     "worth": r[1], "unworth": r[2], "fav": r[3],
                     "cmt": r[4], "worth_pct": r[5],
                     "cate1": c1, "cate2": c2,
+                    "discount": r[10] or 0,
+                    "cur_price": price_number(r[11] or ""),
                 },
             )()
             ok, reason = judge(obj, st)
@@ -454,21 +539,31 @@ def list_deals(
         args.append(since)
 
     clause = ("WHERE " + " AND ".join(where)) if where else ""
-    # 排序 = 综合热度 × 关注品类加权。boost 拼成数字字面量而不是绑定参数：
-    # WHERE 的 args 已按顺序排好，插一个占位符就得重排索引，容易错位；
-    # 而 boost 是自己解析出来的 float，round 之后不可能是注入载体。
+    # 排序（2026-10-29 改造）：**折扣深度优先，热度只做同档内的次级排序**。
+    #
+    # 为什么要换：拾漏要的是「折得狠」，而 heat 排序把「值 500 的 iPhone 常规促销」
+    # 顶在最上面 —— 那是最不劲爆的一类。新排序：
+    #   ① 有折扣的整组排在无折扣之前（discount > 0 DESC）
+    #   ② 组内按 discount 升序 = 折扣越深越前（3 折在 5 折前）
+    #   ③ 关注品类的有效折扣再除以 boost → 同折扣下数码往前挪
+    #   ④ 同折扣按 heat 兜底，保证「3 折且值 500」比「3 折且值 2」靠前
+    # boost 拼成数字字面量而不是绑定参数：WHERE 的 args 已按顺序排好，
+    # 插一个占位符就得重排索引，容易错位；而 boost 是自己解析的 float，不可能是注入载体。
     st = get_settings()
     boost = min(max(_as_float(st, "cate_boost", CATE_BOOST_DEFAULT), 1.0), 5.0)
     order = (
-        f"heat * (CASE WHEN cate_hit=1 THEN {round(boost, 2)} ELSE 1.0 END) DESC, "
-        f"first_seen DESC"
+        f"(discount > 0) DESC, "
+        f"CASE WHEN discount > 0 THEN discount * 1.0 / "
+        f"(CASE WHEN cate_hit=1 THEN {round(boost, 2)} ELSE 1.0 END) ELSE 0 END ASC, "
+        f"heat DESC, first_seen DESC"
     )
     with get_conn(DB_PATH) as con:
         total = con.execute(f"SELECT COUNT(*) FROM deals {clause}", args).fetchone()[0]
         rows = con.execute(
             f"SELECT id,title,url,price,mall,cate1,cate2,tags,img,"
             f"worth,unworth,fav,cmt,"
-            f"worth_pct,heat,hhmm,first_seen,picked,pick_reason,cate_hit "
+            f"worth_pct,heat,hhmm,first_seen,picked,pick_reason,cate_hit,"
+            f"discount,reporter,feed_tags,source "
             f"FROM deals {clause} ORDER BY {order} LIMIT ? OFFSET ?",
             [*args, max(1, min(limit, 200)), max(0, offset)],
         ).fetchall()
@@ -480,6 +575,10 @@ def list_deals(
             "worth_pct": r[13], "heat": r[14], "hhmm": r[15], "first_seen": r[16],
             "picked": bool(r[17]), "pick_reason": r[18],
             "cate_hit": bool(r[19]),
+            "discount": r[20] or 0,
+            "reporter": r[21] or "",
+            "feed_tags": r[22] or "",
+            "source": r[23] or "",
         }
         for r in rows
     ]
@@ -546,6 +645,11 @@ def stats() -> dict[str, Any]:
             "fav_min": _as_int(st, "fav_min", 50),
             "cmt_min": _as_int(st, "cmt_min", 20),
             "need_hits": _as_int(st, "need_hits", 2),
+            # 折扣档一并下发：空态与卡片上的「为什么入选」都要能自圆其说，
+            # 用户改完折扣阈值后，写死的文案会变成假话。
+            "discount_mode": str(st.get("discount_mode", "1")) == "1",
+            "discount_direct": _as_int(st, "discount_direct", 50),
+            "discount_assist": _as_int(st, "discount_assist", 70),
         },
         "last_round": (
             {

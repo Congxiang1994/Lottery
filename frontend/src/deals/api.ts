@@ -53,6 +53,16 @@ export interface Deal {
   pick_reason: string;
   /** 是否命中「关注品类」—— 只影响排序加权，不影响能否入选 */
   cate_hit: boolean;
+  /** 折扣百分比（43 = 4.3 折，0 = 正文没写原价、未知）。
+   *  唯一与「曝光」无关的判据：刚发布的好价没有投票，但折扣是客观的。 */
+  discount: number;
+  /** 爆料人昵称（标签流专有）。空串表示该来源不提供。 */
+  reporter: string;
+  /** 站点分类标签页的归属（手慢无 / 绝对值 / 历史低价…），`|` 分隔。
+   *  ⚠️ 与 `tags`（卡片营销标签）不是一回事，展示时优先用它。 */
+  feed_tags: string;
+  /** tag / home / jingxuan / top */
+  source: string;
 }
 
 export interface DealList {
@@ -73,6 +83,12 @@ export interface DealStats {
     fav_min: number;
     cmt_min: number;
     need_hits: number;
+    /** 折扣优先判定是否开启 */
+    discount_mode: boolean;
+    /** 折扣 ≤ 此值（%）直接入选，不看投票 */
+    discount_direct: number;
+    /** 折扣在 (direct, assist] 需要热度命中 1 项 */
+    discount_assist: number;
   };
   last_round: {
     ts: string;
@@ -96,6 +112,19 @@ export interface DealSettings {
   cate_blacklist: string;
   enabled: string;
   pages_per_round: string;
+  /** 启用的标签流 slug，逗号分隔（手慢无 tz273gm 等） */
+  tag_feeds: string;
+  /** 每个标签每轮抓几页，0 = 关闭标签流 */
+  tag_pages: string;
+  /** 折扣优先判定总开关（1/0） */
+  discount_mode: string;
+  /** 折扣 ≤ 此值（%）直接入选 */
+  discount_direct: string;
+  /** 折扣在此值以内需要热度命中 1 项 */
+  discount_assist: string;
+  /** 新人价护栏：折扣低于此值（%）且到手价低于 newbie_price 时否决 */
+  newbie_discount: string;
+  newbie_price: string;
   cookie: string;
   cookie_ua: string;
 }
@@ -114,6 +143,10 @@ export interface DealConfig {
     ban_backoff_minutes: number;
     cate_suggestions: string[];
     cate_boost_default: number;
+    /** 可选的标签流（slug 是存进配置的值，name 是中文名） */
+    tag_feeds: { slug: string; name: string }[];
+    tag_pages_default: number;
+    top_every_n_rounds: number;
   };
 }
 

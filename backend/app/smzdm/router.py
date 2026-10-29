@@ -42,6 +42,9 @@ from app.smzdm.config import (
     MIN_REQUEST_INTERVAL_SECONDS,
     PAGES_PER_ROUND,
     SESSION_TTL_SECONDS,
+    TAG_FEEDS,
+    TAG_PAGES_PER_ROUND,
+    TOP_EVERY_N_ROUNDS,
 )
 from app.trigger.config import sign_session, verify_session
 
@@ -213,6 +216,9 @@ def _validate_config(patch: dict[str, Any]) -> dict[str, Any]:
         # 100 条里 0 条能过阈值，拿它当入选来源只是灌库。上限 8 留给
         # 「刚上新」这类未来用途。
         "pages_per_round": (0, 8),
+        # 标签流页数（主力入口）。0 = 关闭标签流（退回只看首页推荐流）。
+        # 上限 3：实测手慢无 3 页已覆盖 1.5 小时，再多都是重复。
+        "tag_pages": (0, 3),
     }
     for key, (lo, hi) in ints.items():
         if key in patch:
@@ -223,6 +229,66 @@ def _validate_config(patch: dict[str, Any]) -> dict[str, Any]:
             if not (lo <= v <= hi):
                 raise HTTPException(status_code=422, detail=f"{key} 应在 {lo}~{hi} 之间")
             out[key] = str(v)
+
+    # 折扣档：direct < assist 必须成立，否则「直接入选」比「需热度」还宽，
+    # 逻辑会错乱（先命中 direct 分支，assist 永远走不到）。
+    def _pct(key: str, lo: float, hi: float, label: str) -> str | None:
+        if key not in patch:
+            return None
+        try:
+            v = float(patch[key])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail=f"{label}必须是数字")
+        if not (lo <= v <= hi):
+            raise HTTPException(status_code=422, detail=f"{label}应在 {lo}~{hi} 之间")
+        return str(round(v, 1))
+
+    v_direct = _pct("discount_direct", 1, 100, "「直接入选」折扣上限")
+    v_assist = _pct("discount_assist", 1, 100, "「需热度」折扣上限")
+    if v_direct is not None:
+        out["discount_direct"] = str(int(float(v_direct)))
+    if v_assist is not None:
+        out["discount_assist"] = str(int(float(v_assist)))
+    d = out.get("discount_direct", patch.get("discount_direct"))
+    a = out.get("discount_assist", patch.get("discount_assist"))
+    if d is not None and a is not None and float(d) >= float(a):
+        raise HTTPException(
+            status_code=422,
+            detail="「直接入选」的折扣上限必须小于「需热度」的折扣上限（如 50 < 70）",
+        )
+
+    for key, label in (
+        ("newbie_discount", "新人价折扣阈值"),
+        ("newbie_price", "新人价金额阈值"),
+    ):
+        if key in patch:
+            try:
+                v = float(patch[key])
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail=f"{label}必须是数字")
+            if not (0 <= v <= 1000):
+                raise HTTPException(status_code=422, detail=f"{label}超出合理范围")
+            out[key] = str(round(v, 1))
+
+    if "discount_mode" in patch:
+        out["discount_mode"] = (
+            "1" if str(patch["discount_mode"]) in ("1", "true", "True") else "0"
+        )
+
+    if "tag_feeds" in patch:
+        raw = str(patch["tag_feeds"] or "")
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        if len(parts) > 8:
+            raise HTTPException(status_code=422, detail="标签流最多 8 个")
+        # ⚠️ 必须是短 slug（如 tz273gm），不能是中文名 —— 中文名会 301，
+        # 每轮都白多一次往返。这里直接挡掉。
+        for p in parts:
+            if not re.fullmatch(r"[a-z0-9]{4,16}", p):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"标签「{p}」格式不对：应为站点短 slug（如 tz273gm），不是中文名",
+                )
+        out["tag_feeds"] = ",".join(parts)
 
     if "worth_pct_min" in patch:
         try:
@@ -287,6 +353,11 @@ def admin_config(deals_session: str | None = Cookie(default=None)):
             "ban_backoff_minutes": BAN_BACKOFF_SECONDS // 60,
             "cate_suggestions": CATE_SUGGESTIONS,
             "cate_boost_default": CATE_BOOST_DEFAULT,
+            # 标签流：给管理页做「可点选的标签清单」，用户不用记 slug。
+            # 键是 slug（要存进配置的），值是中文名（给人看的）。
+            "tag_feeds": [{"slug": s, "name": n} for s, n in TAG_FEEDS],
+            "tag_pages_default": TAG_PAGES_PER_ROUND,
+            "top_every_n_rounds": TOP_EVERY_N_ROUNDS,
         },
     }
 
@@ -317,6 +388,13 @@ def admin_update_config(payload: dict, deals_session: str | None = Cookie(defaul
             "need_hits",
             "cate_filter",
             "cate_blacklist",
+            # 折扣档改动同样要立刻重算 —— 调宽 discount_direct 之后，
+            # 库里已有的「3 折但 0 票」条目应当马上出现在页面上。
+            "discount_mode",
+            "discount_direct",
+            "discount_assist",
+            "newbie_discount",
+            "newbie_price",
         )
     ):
         picked, changed = store.rejudge(st)

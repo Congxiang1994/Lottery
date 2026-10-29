@@ -47,16 +47,36 @@ function relTime(s: string): string {
 /** 活动类标签是噪音（每个商品都挂一个），只留有信息量的降价/新低信号 */
 const NOISE_TAGS = /美淘节|双11|双十一|618|818|年货节|开学季|值得买|会员日/i;
 
-function usefulTags(raw: string): string[] {
-  return (raw || "")
+/**
+ * 挑要展示的标签。
+ *
+ * 优先 `feed_tags`（站点分类标签页的归属：手慢无 / 绝对值 / 历史低价 / 值友专享），
+ * 它比卡片上的营销标签（`tags`）可信得多 —— 营销标签每个商品都挂一个，
+ * 而「手慢无」是站点真的把它归到这个榜里了。
+ * 只有标签流没有营销标签块，所以标签页条目的 `tags` 本来就是空的。
+ */
+function pickTags(d: Deal): string[] {
+  const src = (d.feed_tags || d.tags || "").trim();
+  if (!src) return [];
+  return src
     .split("|")
     .map((t) => t.trim())
     .filter((t) => t && !NOISE_TAGS.test(t))
-    .slice(0, 2);
+    .slice(0, 3);
 }
 
 function isDropTag(t: string): boolean {
   return /新低|低价|历史|降价|直降|补贴|绝对值|手慢无|清仓/.test(t);
+}
+
+/**
+ * 折扣档位样式。三档而不是连续渐变 ——
+ * 用户扫列表时只关心「这是不是狠漏」，不需要精确到小数点。
+ */
+function discountClass(d: number): string {
+  if (d <= 30) return "bg-brand-red text-white";
+  if (d <= 50) return "bg-brand-red/12 text-brand-red2 border border-brand-red/30";
+  return "bg-paper-100 text-paper-700";
 }
 
 /** 值率显示。后端已 round 到 1 位，这里再兜一道 ——
@@ -68,7 +88,7 @@ function fmtPct(v: number): string {
 /* ------------------------------ 卡片 ------------------------------ */
 
 function DealCard({ d }: { d: Deal }) {
-  const tags = useMemo(() => usefulTags(d.tags), [d.tags]);
+  const tags = useMemo(() => pickTags(d), [d.feed_tags, d.tags]);
   return (
     <a
       href={d.url}
@@ -103,6 +123,16 @@ function DealCard({ d }: { d: Deal }) {
         </div>
 
         <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          {/* 折扣徽标放价格前：它是「这条劲不劲爆」的第一眼答案，
+              比价格数字本身更有信息量（6999 元不一定是漏，3 折才是） */}
+          {d.discount > 0 && (
+            <span
+              className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${discountClass(d.discount)}`}
+              title="按正文里的原价与到手价计算"
+            >
+              {(d.discount / 10).toFixed(1)}折
+            </span>
+          )}
           <span className="text-[15px] font-bold tabular-nums text-brand-red2">
             {d.price || "见原帖"}
           </span>
@@ -150,8 +180,8 @@ function DealCard({ d }: { d: Deal }) {
           </span>
         </div>
 
-        {tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+        {(tags.length > 0 || d.reporter) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {tags.map((t) => (
               <span
                 key={t}
@@ -164,6 +194,13 @@ function DealCard({ d }: { d: Deal }) {
                 {t}
               </span>
             ))}
+            {/* 爆料人：用户要的是「个人爆料的真漏」，把谁挖的摆出来，
+                比用黑名单悄悄过滤运营号更透明 —— 他能自己判断可信度 */}
+            {d.reporter && (
+              <span className="ml-auto truncate text-[10px] text-paper-500" title={`爆料人：${d.reporter}`}>
+                {d.reporter}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -185,10 +222,19 @@ function EmptyState({ stats }: { stats: DealStats | null }) {
       {/* 阈值从接口取而不是写死：用户改完阈值后，写死的文案会变成假话 */}
       <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-paper-600">
         {t ? (
-          <>
-            当前门槛：值率 ≥{t.worth_pct_min}%，且 值 ≥{t.worth_min} / 收藏 ≥{t.fav_min} /
-            评论 ≥{t.cmt_min} 三项中满足 {t.need_hits} 项。换个时间范围，或到管理页放宽。
-          </>
+          t.discount_mode ? (
+            <>
+              当前门槛：正文里能算出折数的，{(t.discount_direct / 10).toFixed(1)} 折以内直接入选、
+              {(t.discount_assist / 10).toFixed(1)} 折以内需值友热度；算不出折数的才看
+              值率 ≥{t.worth_pct_min}% 且 值 ≥{t.worth_min} / 收藏 ≥{t.fav_min} /
+              评论 ≥{t.cmt_min} 三项中满足 {t.need_hits} 项。换个时间范围或到管理页放宽。
+            </>
+          ) : (
+            <>
+              当前门槛：值率 ≥{t.worth_pct_min}%，且 值 ≥{t.worth_min} / 收藏 ≥{t.fav_min} /
+              评论 ≥{t.cmt_min} 三项中满足 {t.need_hits} 项。换个时间范围，或到管理页放宽。
+            </>
+          )
         ) : (
           "判定门槛较高，放宽条件或换个时间范围再看看。"
         )}
@@ -336,7 +382,8 @@ export default function Deals() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-paper-900">捡漏</h1>
           <p className="mt-1 text-xs text-paper-600">
-            自动盯「什么值得买」好价流，只留值友认可度高的。点卡片直接去原站。
+            盯「什么值得买」的手慢无 / 绝对值 / 历史低价榜，按折扣深度排序 ——
+            折得越狠越靠前。点卡片直接去原站。
           </p>
         </div>
         <div className="flex items-center gap-2">

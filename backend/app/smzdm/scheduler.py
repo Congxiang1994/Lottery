@@ -6,12 +6,18 @@
 用**文件 flock（非阻塞）**抢本轮执行权：抢到的抓，没抢到的直接跳过这一轮。
 比建租约表简单，且天然自愈 —— 持有者进程挂了，内核自动释放锁。
 
-节奏
-----
-每 ``FETCH_INTERVAL_SECONDS``（10 分钟）抓一轮：首页推荐流 1 页（18 条），
-精选流默认 0 页（见 config.PAGES_PER_ROUND 的实测记录）。
-日请求量 ≈ 1 × 6 轮/小时 × 24 = 144 次，平均 0.1 次/分钟，
-远低于实测风控线（30~40 次/3~4 分钟即触发验证码）。
+节奏（2026-10-29 第二轮改造后）
+------------------------------
+每 ``FETCH_INTERVAL_SECONDS``（10 分钟）抓一轮：
+
+- 标签流 4 个（手慢无 / 绝对值 / 历史低价 / 多重优惠叠加）× 2 页 = 8 次
+  这是主力入口：时间序、带正文（能算折扣）、带爆料人，实测入选率 20%
+- 首页推荐流 1 页（兜底，实测入选率已降到 0，但成本极低）
+- 排行榜 1 页，每 3 轮（30 分钟）一次（它变化慢，实测 5 分钟内字节数完全相同）
+- 精选流 0 页（默认关闭，见 config.PAGES_PER_ROUND）
+
+日请求量 ≈ (8+1) × 6 轮/小时 × 24 + 8 次排行 ≈ 1300 次，平均 0.9 次/分钟，
+仍远低于实测风控线（30~40 次/3~4 分钟即触发验证码，约 10 次/分钟）。
 """
 from __future__ import annotations
 
@@ -29,12 +35,18 @@ from app.smzdm.config import (
     FETCH_INTERVAL_SECONDS,
     HOME_PAGES_PER_ROUND,
     PAGES_PER_ROUND,
+    TAG_PAGES_PER_ROUND,
+    TOP_EVERY_N_ROUNDS,
 )
 
 _loop_task: asyncio.Task | None = None
 _watchdog_task: asyncio.Task | None = None
 _stopping = False
 _logger = logging.getLogger("uvicorn.error")
+
+# 轮次序号（只用于「排行榜每 N 轮抓一次」）。多 worker 各自计数、互不同步也没关系 ——
+# flock 保证同一时刻只有一个在跑，最多让排行榜多抓或少抓一轮，不影响正确性。
+_round_seq: int = 0
 
 # 可观测性（/api/deals/admin/status 暴露）
 _last_round_wall: str = ""
@@ -90,13 +102,37 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
             jx_pages = PAGES_PER_ROUND
         home_pages = HOME_PAGES_PER_ROUND
 
+        # 标签流：本轮要抓的 slug 列表 + 每个抓几页。
+        # slug 在 DB 里可改（管理页），所以每次从 settings 现取而不是用配置常量。
+        tag_slugs = [
+            s.strip() for s in str(st.get("tag_feeds", "")).split(",") if s.strip()
+        ]
+        try:
+            tag_pages = max(0, min(int(st.get("tag_pages") or 0), 3))
+        except ValueError:
+            tag_pages = TAG_PAGES_PER_ROUND
+        if tag_pages == 0:
+            tag_slugs = []  # 页数为 0 时连 slug 都不发，避免抓了不解析
+
+        global _round_seq
+        include_top = _round_seq % max(1, TOP_EVERY_N_ROUNDS) == 0
+        _round_seq += 1
+
         deals, errors = await crawler.fetch_round(
             cookie=st.get("cookie", ""),
             ua=st.get("cookie_ua", ""),
             jx_pages=jx_pages,
             home_pages=home_pages,
+            tag_slugs=tag_slugs,
+            tag_pages=tag_pages,
+            include_top=include_top,
         )
-        pages = jx_pages + (1 if home_pages > 0 else 0)
+        pages = (
+            len(tag_slugs) * tag_pages
+            + jx_pages
+            + (1 if home_pages > 0 else 0)
+            + (1 if include_top else 0)
+        )
         parsed = len(deals)
         kept = _pick_cate(deals, st.get("cate_filter", ""))
         notes: list[str] = []
@@ -143,6 +179,9 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
             "pages": pages,
             "jx_pages": jx_pages,
             "home_pages": home_pages,
+            "tag_pages": tag_pages,
+            "tag_feeds": len(tag_slugs),
+            "top": include_top,
             "parsed": parsed,
             "kept": len(kept),
             "added": added,
