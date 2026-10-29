@@ -85,6 +85,35 @@ function fmtPct(v: number): string {
   return String(Math.round(v * 10) / 10);
 }
 
+/** 价格显示。主数字大、后缀小。
+ *  「428.98元淘金币到手363.5元」这类串如果整串同一个字重，会比标题还抢眼，
+ *  真正要看的「多少钱」反而淹没在说明文字里。拆开后主数字是卡片里最重的字，
+ *  后缀（元/返积分后/到手…）降成元信息，扫视时先读到金额。
+ *  颜色用墨色不用红：红色在本页已承担「几折」与「值率」两个信号，
+ *  价格再同色就三处抢眼、糊成一片。墨色压米白约 12:1，原红只有 2.8:1。 */
+function DealPrice({ raw }: { raw: string }) {
+  if (!raw) {
+    return <span className="text-[15px] font-extrabold text-paper-900">见原帖</span>;
+  }
+  const m = /^\s*([\d,.]+)\s*(元[\s\S]*)?$/.exec(raw);
+  // 解析不出「数字 + 元」结构的（脏数据/整串是文字）就整串渲染，不猜
+  if (!m) {
+    return (
+      <span className="text-[16px] font-extrabold tabular-nums tracking-tight text-paper-900">
+        {raw}
+      </span>
+    );
+  }
+  return (
+    <span className="text-paper-900">
+      <span className="text-[17px] font-extrabold tabular-nums tracking-tight">{m[1]}</span>
+      {m[2] && (
+        <span className="ml-0.5 text-[11px] font-medium text-paper-600">{m[2]}</span>
+      )}
+    </span>
+  );
+}
+
 /* ------------------------------ 卡片 ------------------------------ */
 
 function DealCard({ d }: { d: Deal }) {
@@ -133,9 +162,11 @@ function DealCard({ d }: { d: Deal }) {
               {(d.discount / 10).toFixed(1)}折
             </span>
           )}
-          <span className="text-[15px] font-bold tabular-nums text-brand-red2">
-            {d.price || "见原帖"}
-          </span>
+          {/* 价格用墨色，不再用红：本页红色已经承担「几折」与「值率」两个信号，
+              价格再用红（原 #f27a5e）就三处同色、糊成一片，反而看不清金额。
+              实测对比度：墨色 #3d2b1f 压米白 12.5:1，原红只有 2.5:1（不达 AA），
+              一眼先读到「多少钱」，红色留给「劲不劲爆」。 */}
+          <DealPrice raw={d.price} />
           {d.mall && (
             <span className="rounded-md bg-paper-100 px-1.5 py-0.5 text-[10px] font-medium text-paper-700">
               {d.mall}
