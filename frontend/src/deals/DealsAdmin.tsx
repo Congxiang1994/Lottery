@@ -208,6 +208,11 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const set = (patch: Partial<DealSettings>) =>
     setForm((f) => (f ? { ...f, ...patch } : f));
 
+  // 两个清单的当前值 —— 放在这里而不是渲染前，是为了让下方 toggleBlock
+  // 等回调能直接闭包引用，不必把定义顺序倒过来。
+  const blockNow = blockDraft.split(",").map((x) => x.trim()).filter(Boolean);
+  const watchNow = cateDraft.split(",").map((x) => x.trim()).filter(Boolean);
+
   const saveThresholds = async () => {
     if (!form) return;
     setBusy(true);
@@ -261,6 +266,48 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
       setForm((f) => (f ? { ...f, cate_blacklist: value } : f));
       setBlockDraft(value);
       flash(`黑名单已更新，全库重算后共 ${res.picked ?? 0} 条入选`);
+      await refresh();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * 点 chip 切换黑名单（与关注品类同一套交互）。
+   *
+   * 加入黑名单时会把它同时从关注品类里摘掉：两个清单同时命中时黑名单优先，
+   * 留着只会让页面出现「既关注又否决」的自相矛盾状态，用户还得自己猜哪个生效。
+   * 反向不动 —— 移出黑名单不代表想加权，那得由用户自己决定。
+   */
+  const toggleBlock = async (name: string) => {
+    const isOn = blockNow.includes(name);
+    const nextBlock = isOn ? blockNow.filter((x) => x !== name) : [...blockNow, name];
+    const hadWatch = !isOn && watchNow.includes(name);
+    const nextWatch = hadWatch ? watchNow.filter((x) => x !== name) : watchNow;
+    const blockVal = nextBlock.join(",");
+    const cateVal = nextWatch.join(",");
+
+    setBusy(true);
+    try {
+      const res = await dealsApi.saveConfig(
+        hadWatch
+          ? { cate_blacklist: blockVal, cate_filter: cateVal }
+          : { cate_blacklist: blockVal },
+      );
+      setForm((f) =>
+        f ? { ...f, cate_blacklist: blockVal, cate_filter: cateVal } : f,
+      );
+      setBlockDraft(blockVal);
+      if (hadWatch) setCateDraft(cateVal);
+      flash(
+        isOn
+          ? `「${name}」已移出黑名单`
+          : hadWatch
+            ? `「${name}」已加入黑名单，并同时移出关注品类（全库重算后 ${res.picked ?? 0} 条入选）`
+            : `「${name}」已加入黑名单，全库重算后 ${res.picked ?? 0} 条入选`,
+      );
       await refresh();
     } catch (e) {
       setErr(errText(e));
@@ -329,6 +376,16 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
 
   const s = status.scheduler;
   const cates = status.cates;
+
+  // 黑名单的 chip 来源有两个：近 72 小时实际抓到的品类 + 已配置但窗口内没供给的。
+  // 后者不能省 —— 三天没出现过某品类时它不在 cates 里，只读输入框根本看不出
+  // 「我到底还拦着什么」，而黑名单是否决语义，漏看代价比关注品类大。
+  const blockChips: { cate: string; count: number | null }[] = [
+    ...cates.map((c) => ({ cate: c.cate, count: c.count as number | null })),
+    ...blockNow
+      .filter((n) => !cates.some((c) => c.cate === n))
+      .map((n) => ({ cate: n, count: null })),
+  ];
 
   return (
     <div className="space-y-4 pt-8">
@@ -548,12 +605,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         {cates.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {cates.map((c) => {
-              const pickedNow = cateDraft.split(",").map((x) => x.trim());
-              const isBlocked = blockDraft
-                .split(",")
-                .map((x) => x.trim())
-                .filter(Boolean)
-                .includes(c.cate);
+              const isBlocked = blockNow.includes(c.cate);
               return (
                 <button
                   key={c.cate}
@@ -569,7 +621,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
                   className={`press rounded-full border px-2.5 py-1 text-[11px] transition ${
                     isBlocked
                       ? "border-paper-200 text-paper-400 line-through"
-                      : pickedNow.includes(c.cate)
+                      : watchNow.includes(c.cate)
                         ? "border-brand-red/40 bg-brand-red/10 text-brand-red2"
                         : "border-paper-200 text-paper-700 hover:bg-paper-100"
                   }`}
@@ -593,7 +645,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
       {/* 品类黑名单：直接否决 */}
       <Section
         title="品类黑名单"
-        desc="命中即直接否决，连阈值都不看。专挡「不是商品」的帖子 —— 好价流里混着「每日领京豆」「签到领红包」这类羊毛帖，热度很高但不属于捡漏。"
+        desc="命中即直接否决，连阈值都不看。专挡「不是商品」的帖子 —— 好价流里混着「每日领京豆」「签到领红包」这类羊毛帖，热度很高但不属于捡漏。点下方品类即可加入/移出。"
       >
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -610,6 +662,40 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
             <Save size={12} /> 保存
           </button>
         </div>
+
+        {blockChips.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {blockChips.map((c) => {
+              const on = blockNow.includes(c.cate);
+              const inWatch = watchNow.includes(c.cate);
+              return (
+                <button
+                  key={c.cate}
+                  onClick={() => void toggleBlock(c.cate)}
+                  disabled={busy}
+                  className={`press rounded-full border px-2.5 py-1 text-[11px] transition disabled:opacity-50 ${
+                    on
+                      ? "border-paper-300 bg-paper-200 text-paper-500 line-through"
+                      : "border-paper-200 text-paper-700 hover:border-paper-300 hover:bg-paper-100"
+                  }`}
+                  title={
+                    on
+                      ? `近 72 小时 ${c.count ?? "未出现"} 条 —— 已拦截，点击移出黑名单`
+                      : inWatch
+                        ? `近 72 小时 ${c.count ?? "未出现"} 条 —— 当前在关注品类里，加入黑名单会同时移出关注`
+                        : `近 72 小时 ${c.count ?? "未出现"} 条 —— 点击加入黑名单`
+                  }
+                >
+                  {c.cate}
+                  <span className="ml-1 tabular-nums opacity-60">{c.count ?? "—"}</span>
+                  {inWatch && !on && (
+                    <span className="ml-1 text-[10px] text-brand-red2">关注中</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </Section>
 
       <p className="pb-4 text-center text-[10px] text-paper-500">
