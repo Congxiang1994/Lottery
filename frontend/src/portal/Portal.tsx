@@ -77,7 +77,7 @@ const APPS: {
   {
     id: "deals",
     title: "捡漏",
-    desc: "自动盯「什么值得买」好价流，只留下值友认可度高的：值率高、收藏与评论够热，点开直接去原站下单。",
+    desc: "自动盯「什么值得买」的手慢无、绝对值、历史低价、多重优惠叠加四个标签流，按折扣深度排序 —— 折得越狠越靠前，榜单里带爆料人与原价折数。",
     icon: BadgePercent,
     tags: ["好价聚合", "自动筛选"],
     href: "/deals",
@@ -141,9 +141,9 @@ const APPS: {
   {
     id: "deals-admin",
     title: "捡漏设置",
-    desc: "私有工具：调整入选阈值（值率/值/收藏/评论）、关注品类权重与品类黑名单。",
+    desc: "私有工具：折扣判定档位、抓取来源（标签流）与页数、热度阈值兜底、关注品类权重与品类黑名单。",
     icon: SlidersHorizontal,
-    tags: ["阈值 · 品类", "私有"],
+    tags: ["折扣 · 来源", "私有"],
     href: "/deals-admin",
     status: "live",
     isPrivate: true,
