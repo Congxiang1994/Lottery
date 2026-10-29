@@ -46,10 +46,10 @@ RENAME_MIN_SAMPLES = 400
 
 
 def _pick_cate(deals: list[crawler.Deal], cate_filter: str) -> list[crawler.Deal]:
-    """按「关注分类」过滤。配置为空 = 全部品类。"""
+    """按「关注品类」筛一遍 —— 仅用于统计与观测，不影响入库与入选。"""
     wanted = [x.strip() for x in cate_filter.split(",") if x.strip()]
     if not wanted:
-        return deals
+        return []
     return [
         d for d in deals if d.cate1 in wanted or d.cate2 in wanted
     ]
@@ -90,12 +90,13 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
         kept = _pick_cate(deals, st.get("cate_filter", ""))
         notes: list[str] = []
 
-        # 「本轮一条都没命中关注分类」对数码这类稀缺品类是常态（实测供给仅 ~1.4%），
-        # 不能当错误报 —— 否则每一轮都标红，用户会以为功能坏了（2026-10-28 实测踩到）。
+        # 「本轮没有命中关注品类」只是观测值，不再影响入库与入选（2026-10-29 改为加权）。
+        # 数码在好价流里只占 ~0.6%，几乎每轮都是 0 命中 —— 若当错误报，状态栏会一直标红。
         # 真正该报警的是「关注分类名在足够长的窗口里从未出现过」= 站点改名/调层级。
         if parsed and not kept and store.cate_wanted(st):
             notes.append(
-                f"本轮 {parsed} 条好价没有关注分类的条目（该品类供给稀少，属正常）"
+                f"本轮 {parsed} 条好价里没有关注品类的条目（不影响其它品类入选，"
+                f"关注品类只在排序上加权）"
             )
             seen, seen_rows = store.seen_cate_names(7)
             # 样本不足时不下结论：新库头几小时本来就看不到全部分类

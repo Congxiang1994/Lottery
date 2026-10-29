@@ -51,6 +51,8 @@ export interface Deal {
   first_seen: string;
   picked: boolean;
   pick_reason: string;
+  /** 是否命中「关注品类」—— 只影响排序加权，不影响能否入选 */
+  cate_hit: boolean;
 }
 
 export interface DealList {
@@ -64,6 +66,14 @@ export interface DealStats {
   today_added: number;
   today_picked: number;
   cate_filter: string;
+  cate_boost: number;
+  thresholds: {
+    worth_pct_min: number;
+    worth_min: number;
+    fav_min: number;
+    cmt_min: number;
+    need_hits: number;
+  };
   last_round: {
     ts: string;
     pages: number;
@@ -82,6 +92,8 @@ export interface DealSettings {
   cmt_min: string;
   need_hits: string;
   cate_filter: string;
+  cate_boost: string;
+  cate_blacklist: string;
   enabled: string;
   pages_per_round: string;
   cookie: string;
@@ -99,6 +111,7 @@ export interface DealConfig {
     pages_per_round_default: number;
     ban_backoff_minutes: number;
     cate_suggestions: string[];
+    cate_boost_default: number;
   };
 }
 
@@ -174,11 +187,6 @@ export const dealsApi = {
       picked?: number;
       changed?: number;
     }>("/admin/config", put(patch)),
-
-  clearCookie: () =>
-    request<{ ok: boolean; cookie_set: boolean }>("/admin/cookie", {
-      method: "DELETE",
-    }),
 
   status: () => request<DealStatus>("/admin/status"),
 

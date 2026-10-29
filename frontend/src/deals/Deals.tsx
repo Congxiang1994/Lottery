@@ -21,9 +21,13 @@ import { ErrorBlock, errText } from "../common/State";
  * 版式：信息流双列。捡漏是「扫一眼有没有漏」的场景，密度比美观重要，
  *   所以每张卡压到三行：标题 / 价格+指标 / 标签。
  *
- * 为什么列表可能很空：判定式是「值率 ≥85% 且 值/收藏/评论 三项满足两项」，
- * 这是爆款级门槛。空列表是**正常的**，不是坏了 —— 所以空态必须给出
- * 「最近一轮抓了多少条」的证据，否则用户没法区分「没抓到」和「抓到了但都不够格」。
+ * 「关注品类」只影响排序（heat × 权重），不限制入选 —— 所以列表里有非数码商品是
+ * 刻意的：宁可多给几条，也不因为品类太窄而整天空着。命中的会带「关注」标记。
+ *
+ * 为什么列表可能很空：判定式是「值率达标 且 值/收藏/评论 三项满足 N 项」，
+ * 门槛由管理页配置。空列表是**正常的**，不是坏了 —— 所以空态必须给出
+ * 「最近一轮抓了多少条」与「当前门槛具体是多少」的证据，
+ * 否则用户没法区分「没抓到」和「抓到了但都不够格」。
  */
 
 /* ------------------------------ 工具 ------------------------------ */
@@ -52,6 +56,12 @@ function usefulTags(raw: string): string[] {
 
 function isDropTag(t: string): boolean {
   return /新低|低价|历史|降价|直降|补贴|绝对值|手慢无|清仓/.test(t);
+}
+
+/** 值率显示。后端已 round 到 1 位，这里再兜一道 ——
+ *  一旦有脏数据（老库/手工写入）没取整，页面上会出现 `92.3076923076923%`。 */
+function fmtPct(v: number): string {
+  return String(Math.round(v * 10) / 10);
 }
 
 /* ------------------------------ 卡片 ------------------------------ */
@@ -100,6 +110,14 @@ function DealCard({ d }: { d: Deal }) {
               {d.mall}
             </span>
           )}
+          {d.cate_hit && (
+            <span
+              className="rounded-md bg-brand-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-paper-800"
+              title="命中关注品类，排序已加权"
+            >
+              关注
+            </span>
+          )}
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-paper-600">
@@ -108,7 +126,7 @@ function DealCard({ d }: { d: Deal }) {
             title={`${d.worth} 人认为值 / ${d.unworth} 人认为不值`}
           >
             <TrendingDown size={11} className="rotate-180" />
-            {d.worth_pct}% 值
+            {fmtPct(d.worth_pct)}% 值
           </span>
           <span className="inline-flex items-center gap-1" title="认为值的次数">
             <ThumbsUp size={11} />
@@ -153,20 +171,28 @@ function DealCard({ d }: { d: Deal }) {
 
 function EmptyState({ stats }: { stats: DealStats | null }) {
   const last = stats?.last_round;
+  const t = stats?.thresholds;
   return (
     <div className="rounded-2xl border border-paper-100 glass p-8 text-center">
       <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-brand-red/10 text-brand-red2">
         <Flame size={22} />
       </div>
-      <h3 className="mt-3 text-base font-semibold text-paper-900">还没有达到门槛的好价</h3>
+      <h3 className="mt-3 text-base font-semibold text-paper-900">这个时段还没有达到门槛的好价</h3>
+      {/* 阈值从接口取而不是写死：用户改完阈值后，写死的文案会变成假话 */}
       <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-paper-600">
-        判定条件是「值率 ≥85% 且 值 / 收藏 / 评论 三项满足其中两项」，属于爆款级门槛，
-        平时筛不出几条是正常的。想放宽就到管理页调低数值。
+        {t ? (
+          <>
+            当前门槛：值率 ≥{t.worth_pct_min}%，且 值 ≥{t.worth_min} / 收藏 ≥{t.fav_min} /
+            评论 ≥{t.cmt_min} 三项中满足 {t.need_hits} 项。换个时间范围，或到管理页放宽。
+          </>
+        ) : (
+          "判定门槛较高，放宽条件或换个时间范围再看看。"
+        )}
       </p>
       {stats?.cate_filter ? (
         <p className="mx-auto mt-2 max-w-md text-[11px] leading-relaxed text-paper-500">
-          当前只展示「{stats.cate_filter}」品类 —— 该品类在好价流里占比很低，
-          所以空列表大多是因为<b className="font-semibold">没有供给</b>，而不是抓取失败。
+          关注品类「{stats.cate_filter}」只影响排序（命中会往前排 ×{stats.cate_boost}），
+          不再限制入选 —— 所以列表空着是真的没有够格的好价，不是品类太窄。
         </p>
       ) : null}
 

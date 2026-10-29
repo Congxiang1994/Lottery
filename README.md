@@ -20,7 +20,7 @@
 | 🖍 **汉字是画出来的** `/hanzi` | 《汉字是画出来的》**108 节动画课**在线点播：检索、竖屏友好、全屏播放器（±5s / 上下集 / 进度拖动） | [README_hanzi.md](./README_hanzi.md) |
 | 🎵 **Super Simple Songs 儿歌** `/babysong` | **518 首经典英文儿歌**：B 站 / YouTube 双平台播放 + 服务器本地下载（yt-dlp）站内连播，进度/收藏全在浏览器本地 | [README_babysong.md](./README_babysong.md) |
 | 📖 **每日儿童睡前故事** `/story` | 按日期倒序的睡前故事页 + 密码保护管理页，对外提供 `X-API-Key` 鉴权的 REST 接口，脚本可直写 | [README_story.md](./README_story.md) |
-| 💰 **捡漏** `/deals` | 自动盯「什么值得买」好价流，按**值率 + 值/收藏/评论**筛出真正值得下手的条目，点卡片直达原站；阈值密码页可配 | [README_deals.md](./README_deals.md) |
+| 💰 **捡漏** `/deals` | 自动盯「什么值得买」好价流，按**值率 + 值/收藏/评论**筛出真正值得下手的条目，关注品类加权置顶，点卡片直达原站；阈值密码页可配 | [README_deals.md](./README_deals.md) |
 | ⚡ **API 用量触发器** `/trigger` 🔒 | 密码保护的私有定时任务：到点向大模型 API 发一次最小请求，点亮 **5 小时用量窗口** | [README_trigger.md](./README_trigger.md) |
 | 🔍 **访问管理** `/access` 🔒 | 全站访问审计：一行一请求明细、按 IP / 访客双维度聚合、地区解析、图表分析与 CSV 导出 | [README_access.md](./README_access.md) |
 | 🛠 **小鹅通下载器** | 视频课程批量下载器（108 节动画课实测 108/108 成功） | [tools/xiaoe-downloader/README.md](./tools/xiaoe-downloader/README.md) |
@@ -71,7 +71,7 @@ README 分两层：**本页讲「全站」**，分册讲「各模块实现」，
 | [README_hanzi.md](./README_hanzi.md) | 汉字课点播模块：列表接口、Nginx 视频静态服务、伪全屏播放器设计 |
 | [README_babysong.md](./README_babysong.md) | 儿歌模块：双平台播放、本地下载管理（yt-dlp）、B 站链接每日刷新、前端进度管理 |
 | [README_story.md](./README_story.md) | 睡前故事模块：三条鉴权通道、原子配额计数、对外 API 全表 |
-| [README_deals.md](./README_deals.md) | 捡漏模块：只抓列表页的取舍、反爬守卫与退避、入选判定式、品类供给实测、凭据录入与脱敏 |
+| [README_deals.md](./README_deals.md) | 捡漏模块：只抓列表页的取舍、反爬守卫与退避、入选判定式、品类供给实测与加权策略、黑名单 |
 | [README_trigger.md](./README_trigger.md) | API 用量触发器：调度与防双发设计、补发窗口、看门狗自愈、API 全表 |
 | [README_access.md](./README_access.md) | 访问管理：中间件采集、双维度聚合、离线地区库、nginx SPA 回退防探测 |
 | [tools/xiaoe-downloader/README.md](./tools/xiaoe-downloader/README.md) | 小鹅通下载器：接口链路、踩坑记录、使用步骤 |

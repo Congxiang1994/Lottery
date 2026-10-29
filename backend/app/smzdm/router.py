@@ -7,14 +7,19 @@ A. **公开只读** ``GET /list`` ``GET /stats``
 
 B. **管理会话** ``/admin/*``
    复用全站操作密码（与彩票/触发器/故事同一把），密码校验通过后签发 12h
-   httpOnly cookie（名 ``deals_session``）。阈值、Cookie、分类过滤都在这条通道里改。
+   httpOnly cookie（名 ``deals_session``）。阈值、关注品类、加权系数都在这条通道里改。
 
-Cookie 录入的设计取舍
---------------------
-不让用户填账号密码 —— SMZDM 登录有滑块验证，脚本密码登录根本走不通，
-且明文存密码的风险远高于存会话 cookie。
-改成让用户从浏览器 ``Copy as cURL`` 整条粘贴进来，后端解析出 Cookie 与 UA：
-这是**唯一能拿到 httpOnly cookie 的便捷途径**（document.cookie 读不到 sess）。
+关于登录 Cookie（2026-10-29 起管理页不再暴露）
+---------------------------------------------
+结论先行：**好价列表页匿名可读，Cookie 目前不是必需品**。线上匿名跑过数小时、
+每轮 5 页、零风控，所以管理页放一个「怎么拿 Cookie」的区块纯属误导 ——
+用户会以为不配就不能用，而真实代价是把家宽登录态搬到机房 IP（站方可能
+提示异地登录，极端情况会挤掉本机会话）。
+
+因此 UI 入口已删除，但后端三条能力保留，作为被风控掐死时的逃生通道：
+``cookie`` / ``cookie_ua`` 配置项、``DELETE /admin/cookie``、以及
+``GET /admin/config`` 回读 ``cookie_masked`` 做长度校验（脚本 ``--push`` 用）。
+配合本地脚本 ``get_smzdm_cookie.py --push`` 一键注入，不需要改代码。
 """
 from __future__ import annotations
 
@@ -29,6 +34,7 @@ from fastapi import APIRouter, Cookie, HTTPException, Request, Response
 from app.smzdm import crawler, scheduler, store
 from app.smzdm.config import (
     BAN_BACKOFF_SECONDS,
+    CATE_BOOST_DEFAULT,
     CATE_SUGGESTIONS,
     COOKIE_NAME,
     FETCH_INTERVAL_SECONDS,
@@ -227,10 +233,30 @@ def _validate_config(patch: dict[str, Any]) -> dict[str, Any]:
         raw = str(patch["cate_filter"] or "")
         parts = [p.strip() for p in raw.split(",") if p.strip()]
         if len(parts) > 12:
-            raise HTTPException(status_code=422, detail="关注分类最多 12 个")
+            raise HTTPException(status_code=422, detail="关注品类最多 12 个")
         if any(len(p) > 20 for p in parts):
-            raise HTTPException(status_code=422, detail="分类名过长")
+            raise HTTPException(status_code=422, detail="品类名过长")
         out["cate_filter"] = ",".join(parts)
+
+    if "cate_blacklist" in patch:
+        raw = str(patch["cate_blacklist"] or "")
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        if len(parts) > 12:
+            raise HTTPException(status_code=422, detail="黑名单品类最多 12 个")
+        if any(len(p) > 20 for p in parts):
+            raise HTTPException(status_code=422, detail="品类名过长")
+        out["cate_blacklist"] = ",".join(parts)
+
+    if "cate_boost" in patch:
+        try:
+            v = float(patch["cate_boost"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="cate_boost 必须是数字")
+        if not (1.0 <= v <= 5.0):
+            raise HTTPException(
+                status_code=422, detail="关注品类加权系数应在 1.0~5.0 之间"
+            )
+        out["cate_boost"] = str(round(v, 2))
 
     if "enabled" in patch:
         out["enabled"] = "1" if str(patch["enabled"]) in ("1", "true", "True") else "0"
@@ -253,6 +279,7 @@ def admin_config(deals_session: str | None = Cookie(default=None)):
             "pages_per_round_default": PAGES_PER_ROUND,
             "ban_backoff_minutes": BAN_BACKOFF_SECONDS // 60,
             "cate_suggestions": CATE_SUGGESTIONS,
+            "cate_boost_default": CATE_BOOST_DEFAULT,
         },
     }
 
@@ -270,10 +297,20 @@ def admin_update_config(payload: dict, deals_session: str | None = Cookie(defaul
         patch["cookie_ua"] = ua or ""
     st = store.update_settings(patch)
     # 阈值类改动立即重算已有记录，否则用户要等下一轮抓取（20 分钟）才知道调对没有。
+    # 关注品类 / 黑名单 / 加权系数也要重算 —— 它们决定 cate_hit 与 picked，
+    # 漏了就会出现「改完页面没反应，但下一轮抓取后又变了」的灵异现象。
     # 只改 Cookie / 开关时不重算 —— 那不影响判定，白扫一遍全表没意义。
     if any(
         k in patch
-        for k in ("worth_pct_min", "worth_min", "fav_min", "cmt_min", "need_hits")
+        for k in (
+            "worth_pct_min",
+            "worth_min",
+            "fav_min",
+            "cmt_min",
+            "need_hits",
+            "cate_filter",
+            "cate_blacklist",
+        )
     ):
         picked, changed = store.rejudge(st)
     else:

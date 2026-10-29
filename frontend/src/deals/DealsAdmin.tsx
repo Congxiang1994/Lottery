@@ -9,7 +9,6 @@ import {
   RefreshCw,
   Save,
   ShieldOff,
-  Trash2,
 } from "lucide-react";
 import {
   DealConfig,
@@ -23,12 +22,13 @@ import { ErrorBlock, errText } from "../common/State";
  * 什么值得买 · 捡漏管理 /deals-admin（私有）
  *
  * 三块配置，按「改完立刻能看到效果」排序：
- *   1. 阈值 —— 保存即重算全库，公开页马上变
- *   2. 登录 Cookie —— 决定会不会被风控掐死
- *   3. 关注分类 —— 决定抓取量（也是唯一能显著降请求的旋钮）
+ *   1. 入选阈值 —— 保存即重算全库，公开页马上变
+ *   2. 关注品类 —— 只影响排序加权（命中的往前排），不影响能否入选
+ *   3. 品类黑名单 —— 直接否决，用来挡「不是商品」的羊毛帖
  *
- * 不填账号密码：SMZDM 登录有滑块，脚本密码登录走不通；
- * 让用户粘 `Copy as cURL`，是唯一能拿到 httpOnly `sess` 的省事办法。
+ * 为什么没有登录 Cookie：好价列表页匿名可读，线上匿名跑了数小时零风控，
+ * 配了反而把家宽登录态搬到机房 IP（站方可能提示异地登录）。UI 去掉，
+ * 后端保留字段，真被风控掐死时用本地脚本 --push 注入即可。
  */
 
 const inputCls =
@@ -68,7 +68,7 @@ function PasswordGate({ onPass }: { onPass: () => void }) {
           </div>
         </div>
         <p className="mt-4 text-xs leading-relaxed text-paper-700">
-          调整入选阈值、配置登录 Cookie、查看抓取健康度。
+          调整入选阈值、关注品类与黑名单，查看抓取健康度。
         </p>
         <input
           type="password"
@@ -166,12 +166,11 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const [status, setStatus] = useState<DealStatus | null>(null);
   const [config, setConfig] = useState<DealConfig | null>(null);
   const [form, setForm] = useState<DealSettings | null>(null);
-  const [cookieDraft, setCookieDraft] = useState("");
   const [cateDraft, setCateDraft] = useState("");
+  const [blockDraft, setBlockDraft] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [showGuide, setShowGuide] = useState(false);
   const timers = useRef<number[]>([]);
 
   const flash = (text: string) => {
@@ -190,6 +189,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
       // 但 form 在本次 render 里还是 null（setForm 是异步的），
       // 结果输入框恒为空 → 分类 chips 永远不高亮，用户以为没保存上。
       setCateDraft(cfg.settings.cate_filter ?? "");
+      setBlockDraft(cfg.settings.cate_blacklist ?? "");
       setErr(null);
       return st;
     } catch (e) {
@@ -235,13 +235,17 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const saveCookie = async () => {
-    if (!cookieDraft.trim()) return;
+  const saveCate = async (value: string) => {
     setBusy(true);
     try {
-      await dealsApi.saveConfig({ cookie: cookieDraft.trim() });
-      setCookieDraft("");
-      flash("Cookie 已保存");
+      const res = await dealsApi.saveConfig({ cate_filter: value });
+      setForm((f) => (f ? { ...f, cate_filter: value } : f));
+      setCateDraft(value);
+      flash(
+        value
+          ? `已保存，当前共 ${res.picked ?? 0} 条入选（命中关注品类的排前面）`
+          : "已清空关注品类，榜单不再加权",
+      );
       await refresh();
     } catch (e) {
       setErr(errText(e));
@@ -250,13 +254,30 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const saveCate = async (value: string) => {
+  const saveBlacklist = async (value: string) => {
     setBusy(true);
     try {
-      await dealsApi.saveConfig({ cate_filter: value });
-      setForm((f) => (f ? { ...f, cate_filter: value } : f));
-      setCateDraft(value);
-      flash(value ? `已限定分类：${value}` : "已改为抓取全部品类");
+      const res = await dealsApi.saveConfig({ cate_blacklist: value });
+      setForm((f) => (f ? { ...f, cate_blacklist: value } : f));
+      setBlockDraft(value);
+      flash(`黑名单已更新，全库重算后共 ${res.picked ?? 0} 条入选`);
+      await refresh();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveBoost = async (value: string) => {
+    setBusy(true);
+    try {
+      await dealsApi.saveConfig({ cate_boost: value });
+      // 用后端规范化后的值回填（"1.60" → "1.6"）。不回填的话输入框和实际生效值
+      // 不一致，下次失焦又会被判成「改过了」再存一遍。
+      const cfg = await dealsApi.config();
+      setForm((f) => (f ? { ...f, cate_boost: cfg.settings.cate_boost } : cfg.settings));
+      flash(`加权系数已设为 ${cfg.settings.cate_boost}`);
       await refresh();
     } catch (e) {
       setErr(errText(e));
@@ -484,103 +505,35 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         </div>
       </Section>
 
-      {/* Cookie */}
+      {/* 关注品类：只影响排序 */}
       <Section
-        title="登录 Cookie"
-        desc={
-          config.cookie_set
-            ? `已配置：${config.cookie_masked}`
-            : "未配置 —— 好价列表页匿名可读，目前不配也能抓；只有开始被风控拦时才需要"
-        }
+        title="关注品类"
+        desc={`只影响排序，不影响入选 —— 命中这些品类的综合热度 ×${form.cate_boost} 往前排，其它品类照样入选。留空 = 不加权。下方数字是近 72 小时实际抓到的条数（红色为达标数）。`}
         right={
-          <button
-            onClick={() => setShowGuide((v) => !v)}
-            className="rounded-lg border border-paper-200 px-2.5 py-1 text-[11px] text-paper-700 transition hover:bg-paper-100"
-          >
-            {showGuide ? "收起步骤" : "怎么获取？"}
-          </button>
-        }
-      >
-        {showGuide && (
-          <ol className="mb-3 space-y-1.5 rounded-xl bg-paper-100/70 px-3 py-2.5 text-[11px] leading-relaxed text-paper-700">
-            <li>
-              <b>1.</b> 浏览器打开 <span className="font-mono">smzdm.com</span>，确认已登录
-            </li>
-            <li>
-              <b>2. 拿 Cookie。首选这条，完全不用 F12：</b>
-              <div className="mt-1 rounded-lg bg-white/70 px-2 py-1.5 font-mono text-[10.5px] leading-relaxed text-paper-800">
-                python3 ~/.workbuddy/scripts/lottery-web/get_smzdm_cookie.py --push
-              </div>
-              <div className="mt-1 text-paper-600">
-                直接读浏览器自己的 cookie 库并解密，自动写下方的保存一步。要求浏览器已登录。
-              </div>
-            </li>
-            <li>
-              <b>3. 非要用 F12 的话：</b>
-              <span className="font-mono">smzdm.com</span> 首页会加载一个腾讯 Chaos VM 混淆脚本，
-              它把 <span className="font-mono">debugger</span> 当虚拟机指令反复执行，
-              一开 DevTools 就会被无穷断点卡死。先点 Sources 面板左上角的
-              <b> Deactivate breakpoints</b>（或 <span className="font-mono">⌘F8</span>）关掉断点，
-              再回 Network → 右键任意 <span className="font-mono">smzdm.com</span> 请求 →
-              Copy → <b>Copy as cURL</b>。
-            </li>
-            <li>
-              <b>4.</b> 粘贴到下面输入框，点保存。整条命令直接粘，不用自己挑 Cookie
-            </li>
-            <li className="text-paper-500">
-              说明：Cookie 只存在你自己的服务器上，不回显、不写日志。请注意登录态来自你家里网络，
-              服务器用的是机房 IP —— 站方可能提示异地登录，介意的话就别配。
-            </li>
-          </ol>
-        )}
-        <textarea
-          value={cookieDraft}
-          onChange={(e) => setCookieDraft(e.target.value)}
-          rows={4}
-          placeholder="粘贴 Copy as cURL 的内容，或者直接粘 Cookie 字符串（形如 a=1; b=2）"
-          className="w-full resize-y rounded-xl border border-paper-200 bg-white/60 px-3 py-2 font-mono text-[11px] leading-relaxed text-paper-900 outline-none focus:border-brand-gold/50"
-        />
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => void saveCookie()}
-            disabled={busy || !cookieDraft.trim()}
-            className="press inline-flex items-center gap-1.5 rounded-xl bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-          >
-            <Save size={12} /> 保存 Cookie
-          </button>
-          {config.cookie_set && (
-            <button
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  await dealsApi.clearCookie();
-                  flash("已清除 Cookie");
-                  await refresh();
-                } catch (e) {
-                  setErr(errText(e));
-                } finally {
-                  setBusy(false);
-                }
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-paper-600">权重</span>
+            <input
+              type="number"
+              step="0.1"
+              min={1}
+              max={5}
+              value={form.cate_boost}
+              onChange={(e) => set({ cate_boost: e.target.value })}
+              onBlur={(e) => {
+                const v = e.target.value;
+                if (v && v !== config.settings.cate_boost) void saveBoost(v);
               }}
-              disabled={busy}
-              className="press inline-flex items-center gap-1.5 rounded-xl border border-paper-200 px-3 py-1.5 text-xs text-paper-700 transition hover:border-rose-300 hover:text-rose-600 disabled:opacity-40"
-            >
-              <Trash2 size={12} /> 清除
-            </button>
-          )}
-        </div>
-      </Section>
-
-      {/* 关注分类 */}
-      <Section
-        title="关注分类"
-        desc="公开页只展示这些一级分类。其它品类照样抓取入库（改配置后立刻可用历史），只是不展示。留空 = 全部展示。下方数字是近 72 小时实际抓到的条数。"
+              className="w-16 rounded-lg border border-paper-200 bg-white/60 px-2 py-1 text-[11px] tabular-nums text-paper-900 outline-none focus:border-brand-gold/50"
+              title="1.0 = 不加权，越大越靠前"
+            />
+          </div>
+        }
       >
         <div className="flex flex-wrap items-center gap-2">
           <input
             value={cateDraft}
             onChange={(e) => setCateDraft(e.target.value)}
-            placeholder="如：电脑数码,家用电器（逗号分隔，留空为全部）"
+            placeholder="如：电脑数码,家用电器（逗号分隔，留空为不加权）"
             className={`min-w-0 flex-1 ${inputCls}`}
           />
           <button
@@ -594,33 +547,69 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
 
         {cates.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {cates.map((c) => (
-              <button
-                key={c.cate}
-                onClick={() => {
-                  const cur = cateDraft.split(",").map((x) => x.trim()).filter(Boolean);
-                  const next = cur.includes(c.cate)
-                    ? cur.filter((x) => x !== c.cate)
-                    : [...cur, c.cate];
-                  const joined = next.join(",");
-                  setCateDraft(joined);
-                  void saveCate(joined);
-                }}
-                className={`press rounded-full border px-2.5 py-1 text-[11px] transition ${
-                  cateDraft.split(",").map((x) => x.trim()).includes(c.cate)
-                    ? "border-brand-red/40 bg-brand-red/10 text-brand-red2"
-                    : "border-paper-200 text-paper-700 hover:bg-paper-100"
-                }`}
-                title={`近 72 小时抓到 ${c.count} 条，其中 ${c.picked} 条达标 —— 点击加入/移出关注分类`}
-              >
-                {c.cate} <span className="tabular-nums opacity-60">{c.count}</span>
-                {c.picked > 0 && (
-                  <span className="ml-1 tabular-nums text-brand-red2">·{c.picked}</span>
-                )}
-              </button>
-            ))}
+            {cates.map((c) => {
+              const pickedNow = cateDraft.split(",").map((x) => x.trim());
+              const isBlocked = blockDraft
+                .split(",")
+                .map((x) => x.trim())
+                .filter(Boolean)
+                .includes(c.cate);
+              return (
+                <button
+                  key={c.cate}
+                  onClick={() => {
+                    const cur = cateDraft.split(",").map((x) => x.trim()).filter(Boolean);
+                    const next = cur.includes(c.cate)
+                      ? cur.filter((x) => x !== c.cate)
+                      : [...cur, c.cate];
+                    const joined = next.join(",");
+                    setCateDraft(joined);
+                    void saveCate(joined);
+                  }}
+                  className={`press rounded-full border px-2.5 py-1 text-[11px] transition ${
+                    isBlocked
+                      ? "border-paper-200 text-paper-400 line-through"
+                      : pickedNow.includes(c.cate)
+                        ? "border-brand-red/40 bg-brand-red/10 text-brand-red2"
+                        : "border-paper-200 text-paper-700 hover:bg-paper-100"
+                  }`}
+                  title={
+                    isBlocked
+                      ? `近 72 小时 ${c.count} 条 —— 该品类在黑名单里，即使加入关注也会被否决`
+                      : `近 72 小时抓到 ${c.count} 条，其中 ${c.picked} 条达标 —— 点击加入/移出关注品类`
+                  }
+                >
+                  {c.cate} <span className="tabular-nums opacity-60">{c.count}</span>
+                  {c.picked > 0 && (
+                    <span className="ml-1 tabular-nums text-brand-red2">·{c.picked}</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
+      </Section>
+
+      {/* 品类黑名单：直接否决 */}
+      <Section
+        title="品类黑名单"
+        desc="命中即直接否决，连阈值都不看。专挡「不是商品」的帖子 —— 好价流里混着「每日领京豆」「签到领红包」这类羊毛帖，热度很高但不属于捡漏。"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={blockDraft}
+            onChange={(e) => setBlockDraft(e.target.value)}
+            placeholder="如：金融服务（逗号分隔，留空为不拦截）"
+            className={`min-w-0 flex-1 ${inputCls}`}
+          />
+          <button
+            onClick={() => void saveBlacklist(blockDraft.trim())}
+            disabled={busy}
+            className="press inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand-red px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+          >
+            <Save size={12} /> 保存
+          </button>
+        </div>
       </Section>
 
       <p className="pb-4 text-center text-[10px] text-paper-500">
