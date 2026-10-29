@@ -504,11 +504,23 @@ summary:active {
   border-color: rgba(201, 134, 0, 0.38);
 }
 /* paper-100 的半透明变体（筛选条容器 / 面板小格）——`.bg-paper-100` 那条盖不住它们 */
+/* ⚠️ 白名单式映射：这里漏哪个比例，哪个比例在夜间就会变成浅米色亮块。
+   `/50` 是 2026-10-29 补的 —— 「捡漏」页统计条用了它，夜间整条发白、文字几乎看不清。 */
+.site-night .bg-paper-100\/50 {
+  background-color: rgba(34, 27, 23, 0.5);
+}
 .site-night .bg-paper-100\/60 {
   background-color: rgba(34, 27, 23, 0.6);
 }
 .site-night .bg-paper-100\/70 {
   background-color: rgba(34, 27, 23, 0.7);
+}
+/* /80 用在 Portal 的眉标/徽章上。 */
+/* ⚠️ 故意**不补** `/75`：它只出现在 Nav 的 sticky header 上，而 `.site-night header`
+   已有专门背景（rgba(23,18,15,.9)）兜底；补一条特指度更高的 `.bg-paper-100\/75`
+   反而会盖掉那条 header 规则，把顶栏透明度改坏。 */
+.site-night .bg-paper-100\/80 {
+  background-color: rgba(34, 27, 23, 0.8);
 }
 /* 状态码 / 功能分布里的中性色块 */
 .site-night .bg-paper-400 {

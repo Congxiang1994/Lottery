@@ -121,8 +121,11 @@ function DealCard({ d }: { d: Deal }) {
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-paper-600">
+          {/* 值率用红不用绿：本站语境是 A 股习惯（涨=红、跌=绿），
+              值率越高越好 → 红；配朝上的箭头，读起来就是「涨」。
+              与左侧价格同色系，一眼能连成「便宜 + 值」一组。 */}
           <span
-            className="inline-flex items-center gap-1 font-semibold text-emerald-700"
+            className="inline-flex items-center gap-1 font-semibold text-brand-red2"
             title={`${d.worth} 人认为值 / ${d.unworth} 人认为不值`}
           >
             <TrendingDown size={11} className="rotate-180" />
