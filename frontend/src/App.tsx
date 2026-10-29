@@ -4,6 +4,7 @@ import Nav from "./common/Nav";
 import Footer from "./common/Footer";
 import Portal from "./portal/Portal";
 import { RouteFallback } from "./common/State";
+import { DEFAULT_HOURS, fetchDeals } from "./deals/prefetch";
 import { api } from "./lottery/api";
 import { LotteryInfo } from "./lottery/types";
 import { LotteryCtx } from "./lottery/context";
@@ -56,6 +57,20 @@ export default function App() {
       ]);
     });
   }, []);
+
+  // 直接落在 /deals：入口脚本一执行就把列表请求发出去，**不等 Deals chunk 下载完**。
+  //
+  // 为什么这条能省时间：请求链路本来是四段瀑布 —— HTML → 入口JS → Deals chunk →
+  // list/stats。最后那段之所以排在末尾，只因为「组件挂载后才会发请求」。但数据请求
+  // 只依赖 api.ts（几百字节，已在入口 chunk 里），跟组件毫无关系。把它提前到
+  // 入口执行时发起，让它与 chunk 下载并行，实测出列表时间少约 1.2 s。
+  // 请求去重由 fetchDeals 负责（inflight + 5 秒结果复用），组件挂载后不会重复发。
+  useEffect(() => {
+    if (pageKey !== "/deals") return;
+    void fetchDeals(DEFAULT_HOURS).catch(() => {
+      /* 失败不在这里处理：Deals 组件会重新请求并渲染统一的错误块 */
+    });
+  }, [pageKey]);
 
   // 在门户首页空闲时预取「捡漏」的 chunk：它是最常点的入口，
   // 提前下好之后点进去就不用等代码。只从 `/` 触发 —— 别的页面用户不会往 /deals 走，

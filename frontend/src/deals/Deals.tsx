@@ -11,7 +11,8 @@ import {
   ThumbsUp,
   TrendingDown,
 } from "lucide-react";
-import { Deal, DealList, DealStats, dealsApi } from "./api";
+import { Deal, DealList, DealStats } from "./api";
+import { DEFAULT_HOURS, fetchDeals, readPrefetched } from "./prefetch";
 import { ErrorBlock, errText } from "../common/State";
 
 /**
@@ -231,7 +232,7 @@ const RANGES = [
 // 默认最近 24 小时：捡漏拼的是「刚漏」，三天前的价大概率已经涨价或售罄，
 // 混在里面只会稀释实时感。更早的仍在库里，切「3 天 / 7 天」随时能看。
 // 不做 localStorage 记忆 —— 「默认」就该是每次打开看到的那个值。
-const DEFAULT_HOURS = 24;
+// ⚠️ 常量在 ./prefetch 里（App 预取时要用同一个值），这里只做转出。
 
 /* ------------------------------ 本地缓存 ------------------------------ */
 
@@ -282,15 +283,20 @@ function writeCache(hours: number, list: DealList, stats: DealStats) {
 }
 
 export default function Deals() {
-  // 首帧就带上缓存：useMemo 保证只在首次渲染读一次 localStorage，
-  // 后面的渲染（含每次 load 的 setState）不再碰它。
-  const cached = useMemo(() => readCache(DEFAULT_HOURS), []);
-  const [items, setItems] = useState<Deal[]>(cached?.list.items ?? []);
-  const [total, setTotal] = useState(cached?.list.total ?? 0);
-  const [stats, setStats] = useState<DealStats | null>(cached?.stats ?? null);
+  // 首帧数据来源优先级：localStorage 缓存 → App 已预取的结果 → 空（走骨架）
+  // useMemo 保证只在首次渲染算一次，后面的渲染（含每次 load 的 setState）不再碰。
+  const boot = useMemo<{ list: DealList; stats: DealStats } | null>(() => {
+    const c = readCache(DEFAULT_HOURS);
+    if (c) return { list: c.list, stats: c.stats };
+    const p = readPrefetched(DEFAULT_HOURS);
+    return p ? { list: p[0], stats: p[1] } : null;
+  }, []);
+  const [items, setItems] = useState<Deal[]>(boot?.list.items ?? []);
+  const [total, setTotal] = useState(boot?.list.total ?? 0);
+  const [stats, setStats] = useState<DealStats | null>(boot?.stats ?? null);
   const [hours, setHours] = useState(DEFAULT_HOURS);
-  // 有缓存就不进骨架：数据已经在屏幕上，这次请求只是刷新
-  const [loading, setLoading] = useState(!cached);
+  // 有初始数据就不进骨架：内容已经在屏幕上，这次请求只是刷新
+  const [loading, setLoading] = useState(!boot);
   const [err, setErr] = useState<string | null>(null);
   const prevHours = useRef(DEFAULT_HOURS);
 
@@ -298,7 +304,9 @@ export default function Deals() {
     setLoading(true);
     setErr(null);
     try {
-      const [list, st] = await Promise.all([dealsApi.list({ hours: h, limit: 100 }), dealsApi.stats()]);
+      // 走 fetchDeals（不是直接调 api）：App 在 /deals 路由上一挂载就预取了，
+      // 这里要么命中同一个 inflight Promise，要么命中 5 秒内的结果 —— 不会发第二次。
+      const [list, st] = await fetchDeals(h);
       setItems(list.items);
       setTotal(list.total);
       setStats(st);
