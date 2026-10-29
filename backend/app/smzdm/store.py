@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS deals (
 );
 CREATE INDEX IF NOT EXISTS idx_deals_picked ON deals(picked, heat DESC);
 CREATE INDEX IF NOT EXISTS idx_deals_first ON deals(first_seen DESC);
-CREATE INDEX IF NOT EXISTS idx_deals_discount ON deals(picked, discount);
+-- ⚠️ 折扣索引不能写在这里：见 _ensure_columns 里的说明（旧库没有 discount 列，
+-- 建索引会先于补列执行 → no such column）。它在 init() 里补列之后单独创建。
 
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
@@ -107,6 +108,16 @@ def init() -> None:
         with get_conn(DB_PATH) as con:
             con.executescript(_SCHEMA)
             _ensure_columns(con)
+            # 🔴 依赖新列的索引必须在补列**之后**建。
+            # 踩过的坑：把 `CREATE INDEX … ON deals(discount)` 写进 _SCHEMA，
+            # 旧库上 `CREATE TABLE IF NOT EXISTS` 不会加列，紧接着建索引就抛
+            # `sqlite3.OperationalError: no such column: discount`，
+            # 结果 lifespan 里 init() 把整个应用启动打挂（线上全站 502）。
+            # 本地用新建的库测不出来 —— 新库建表时就带上了 discount 列。
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_deals_discount "
+                "ON deals(picked, discount)"
+            )
             existing = {r[0] for r in con.execute("SELECT key FROM settings")}
             missing = [
                 (k, v) for k, v in DEFAULT_SETTINGS.items() if k not in existing
