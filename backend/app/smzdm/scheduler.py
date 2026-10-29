@@ -8,10 +8,10 @@
 
 节奏
 ----
-每 ``FETCH_INTERVAL_SECONDS``（10 分钟）抓一轮：精选流 ``pages_per_round`` 页
-（默认 3 页 × 20 条）+ 首页推荐流 1 页，共 4 次请求。
-日请求量 ≈ 4 × 6 轮/小时 × 24 = 576 次，平均 0.4 次/分钟，远低于实测风控线
-（30~40 次/3~4 分钟即触发验证码）。
+每 ``FETCH_INTERVAL_SECONDS``（10 分钟）抓一轮：首页推荐流 1 页（18 条），
+精选流默认 0 页（见 config.PAGES_PER_ROUND 的实测记录）。
+日请求量 ≈ 1 × 6 轮/小时 × 24 = 144 次，平均 0.1 次/分钟，
+远低于实测风控线（30~40 次/3~4 分钟即触发验证码）。
 """
 from __future__ import annotations
 
@@ -83,7 +83,9 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
     started = time.monotonic()
     try:
         try:
-            jx_pages = max(1, min(int(st.get("pages_per_round") or PAGES_PER_ROUND), 8))
+            # 0 是合法值 = 不抓精选流（默认）。下限必须是 0 而不是 1，
+            # 否则关不掉 —— 见 config.PAGES_PER_ROUND 里那段实测记录。
+            jx_pages = max(0, min(int(st.get("pages_per_round") or 0), 8))
         except ValueError:
             jx_pages = PAGES_PER_ROUND
         home_pages = HOME_PAGES_PER_ROUND

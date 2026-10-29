@@ -393,8 +393,11 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-paper-900">捡漏设置</h1>
           <p className="mt-1 text-xs text-paper-600">
-            每 {config.constants.interval_minutes} 分钟抓一轮：精选流 {form.pages_per_round} 页
-            （时间序，每页 20 条）+ 推荐流 {config.constants.home_pages_per_round} 页（兜底）
+            每 {config.constants.interval_minutes} 分钟抓一轮：推荐流{" "}
+            {config.constants.home_pages_per_round} 页
+            {Number(form.pages_per_round) > 0
+              ? ` + 精选流 ${form.pages_per_round} 页`
+              : "（精选流已关）"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -553,11 +556,11 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
             max={3}
           />
           <NumField
-            label="每轮抓几页精选流"
-            hint="精选流是时间序，每页 20 条最新好价；另固定抓 1 页推荐流兜住漏的"
+            label="每轮额外抓几页精选流"
+            hint="默认 0 = 不抓。精选流是时间序的全量爆料流水，值/收藏中位数接近 0，实测 100 条里 0 条能过阈值 —— 它不是「精挑好价」，调大只会多抓请求、多灌库"
             value={form.pages_per_round}
             onChange={(v) => set({ pages_per_round: v })}
-            min={1}
+            min={0}
             max={8}
           />
         </div>

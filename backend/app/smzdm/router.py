@@ -209,9 +209,10 @@ def _validate_config(patch: dict[str, Any]) -> dict[str, Any]:
         "fav_min": (0, 100_000),
         "cmt_min": (0, 100_000),
         "need_hits": (1, 3),
-        # 精选流页数。上限 8：再往上（8 页 = 160 条）单轮就要 27 秒的连续请求，
-        # 而 10 分钟一轮下 3 页已经能接住供给（每页 20 条、约 3 分钟一页）。
-        "pages_per_round": (1, 8),
+        # 精选流页数。**0 = 不抓**（默认）：实测精选流是全量爆料流水，
+        # 100 条里 0 条能过阈值，拿它当入选来源只是灌库。上限 8 留给
+        # 「刚上新」这类未来用途。
+        "pages_per_round": (0, 8),
     }
     for key, (lo, hi) in ints.items():
         if key in patch:

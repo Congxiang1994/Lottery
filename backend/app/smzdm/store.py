@@ -125,6 +125,19 @@ def init() -> None:
                     "INSERT OR REPLACE INTO settings (key, value) VALUES ('feed_v2','1')"
                 )
 
+            # 二次迁移（2026-10-29 当天）：精选流实测是「全量爆料流水」——
+            # p1~p40 共 100 条里 0 条能过阈值（值中位数 0~1），拿它当入选来源
+            # 只是每天灌几千条 picked=0 的数据。收紧为「不抓精选流」。
+            # v2 曾经把这里写成 3，所以必须再迁一次，不能只靠默认值兜底。
+            if "feed_v3" not in existing:
+                con.execute(
+                    "UPDATE settings SET value=? WHERE key='pages_per_round'",
+                    (DEFAULT_SETTINGS["pages_per_round"],),
+                )
+                con.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('feed_v3','1')"
+                )
+
 
 def _ensure_columns(con: sqlite3.Connection) -> None:
     """给已存在的表补新列。
