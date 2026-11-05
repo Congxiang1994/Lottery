@@ -4,6 +4,15 @@
 
 :root {
   color-scheme: light;
+  /* ⚠️ 第二行才是「关闭浏览器自动深色」的开关，删掉它 = 手机端切不回亮色。
+     CSS Color Adjust 的 `only` 关键字禁止 UA 覆盖页面配色，专门用于关闭
+     Chrome Auto Dark Theme（见 MDN color-scheme §only）。
+     只写 `light` 不够：它把页面标成「只支持亮色」，浏览器在系统深色模式下
+     会判定「这站没适配深色」→ 强制反色。此时我们自己的 .site-night 已移除、
+     computed 背景已是亮色，但屏幕上仍是深色，表现就是「点了切换没反应」。
+     2026-11-05 定位：用户手机 UA 为 XiaoMi/MiuiBrowser/20.29（小米浏览器
+     自带深色模式，跟随系统在夜间开启），站内切换在当地 20:27 被强制深色吃掉。 */
+  color-scheme: only light;
 }
 
 html,
@@ -333,6 +342,8 @@ summary:active {
 /* ---------- 全局夜间模式（暖黑，与品牌米白/金色一脉相承） ---------- */
 .site-night {
   color-scheme: dark;
+  /* 夜间同样禁止 UA 再叠一层自动深色（避免二次加深、颜色被再次反相） */
+  color-scheme: only dark;
 }
 .site-night body {
   background: #17120f;

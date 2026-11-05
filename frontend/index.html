@@ -55,11 +55,15 @@
         --bk-bg: #fdfbf7;
         --bk-fg: #f3ece2;
         --bk-fg2: #e8ddcc;
+        /* 首屏骨架在 index-*.css 到达前就要挡住浏览器强制深色（否则亮色时段
+           骨架先被反色成黑的，再被正式样式刷回来）。语义见 index.css :root */
+        color-scheme: only light;
       }
       html.site-night {
         --bk-bg: #0b0d13;
         --bk-fg: #1b1f2b;
         --bk-fg2: #272c3a;
+        color-scheme: only dark;
       }
       html,
       body {
