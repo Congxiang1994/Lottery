@@ -1,16 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ArrowUpRight,
-  Clock,
-  Flame,
-  MessageSquare,
-  RefreshCw,
-  Settings2,
-  Star,
-  ThumbsUp,
-  TrendingDown,
-} from "lucide-react";
+import { ArrowUpRight, Flame, RefreshCw, Settings2 } from "lucide-react";
 import { Deal, DealList, DealStats } from "./api";
 import { DEFAULT_HOURS, fetchDeals, readPrefetched } from "./prefetch";
 import { ErrorBlock, errText } from "../common/State";
@@ -85,155 +75,144 @@ function fmtPct(v: number): string {
   return String(Math.round(v * 10) / 10);
 }
 
-/** 价格显示。主数字大、后缀小。
- *  「428.98元淘金币到手363.5元」这类串如果整串同一个字重，会比标题还抢眼，
- *  真正要看的「多少钱」反而淹没在说明文字里。拆开后主数字是卡片里最重的字，
- *  后缀（元/返积分后/到手…）降成元信息，扫视时先读到金额。
- *  颜色用墨色不用红：红色在本页已承担「几折」与「值率」两个信号，
- *  价格再同色就三处抢眼、糊成一片。墨色压米白约 12:1，原红只有 2.8:1。 */
-function DealPrice({ raw }: { raw: string }) {
-  if (!raw) {
-    return <span className="text-[15px] font-extrabold text-paper-900">见原帖</span>;
-  }
-  const m = /^\s*([\d,.]+)\s*(元[\s\S]*)?$/.exec(raw);
-  // 解析不出「数字 + 元」结构的（脏数据/整串是文字）就整串渲染，不猜
-  if (!m) {
-    return (
-      <span className="text-[16px] font-extrabold tabular-nums tracking-tight text-paper-900">
-        {raw}
-      </span>
-    );
-  }
-  return (
-    <span className="text-paper-900">
-      <span className="text-[17px] font-extrabold tabular-nums tracking-tight">{m[1]}</span>
-      {m[2] && (
-        <span className="ml-0.5 text-[11px] font-medium text-paper-600">{m[2]}</span>
-      )}
-    </span>
-  );
+/**
+ * 标题拆分：标签流标题普遍带营销前缀（「20点开始、今日必买：」「88VIP、」
+ * 「淘金币可用、限地区：」）。一屏 60 条时这些词每行开头都出现，真正要认的
+ * 商品名被推到第二行甚至折叠 —— 这是上一版「标题很乱」的主因。
+ * 只在前缀命中「购买条件」词时才拆，避免误伤「新品：xxx」这类本来就是商品名的标题。
+ */
+const TITLE_COND_HINT = /VIP|会员|淘金币|限地区|点开始|点开抢|今日必买|补贴|预售|券后|可用|开抢/;
+/** 纯营销词直接丢掉，不占任何版面 */
+const TITLE_PURE_MARKETING = /今日必买|今日爆款|绝对值|手慢无/;
+
+function splitTitle(raw: string): { title: string; cond: string } {
+  const i = raw.search(/[：:]/);
+  if (i <= 0 || i > 28) return { title: raw, cond: "" };
+  const head = raw.slice(0, i);
+  if (!TITLE_COND_HINT.test(head)) return { title: raw, cond: "" };
+  const cond = head
+    .split(/[、,，]/)
+    .map((s) => s.trim())
+    .filter((s) => s && !TITLE_PURE_MARKETING.test(s))
+    .map((s) => s.replace(/^(\d{1,2})点开始$/, "$1 点开抢"))
+    .join(" · ");
+  return { title: raw.slice(i + 1).trim(), cond };
+}
+
+/**
+ * 价格拆分：把「多少钱」和「怎么算出来的」分开。
+ * 数据里是 `19.2元返20积分后`、`2299.65元（晒单返 700 元、淘金币低至2257.15元）`
+ * 这种整串 —— 同一字号排出来，主数字被后面的说明淹没，扫视时读到的是
+ * 「元返20积分后」。拆成 num（大字）+ note（小字、单行截断）后，
+ * 主数字才是卡片里最重的东西。
+ */
+function splitPrice(raw: string): { num: string; note: string } | null {
+  if (!raw) return null;
+  const m = /^\s*[¥￥]?\s*([\d,.]+)\s*(?:元)?\s*([\s\S]*)$/.exec(raw);
+  if (!m) return null;
+  return { num: m[1], note: (m[2] || "").trim() };
 }
 
 /* ------------------------------ 卡片 ------------------------------ */
 
 function DealCard({ d }: { d: Deal }) {
   const tags = useMemo(() => pickTags(d), [d.feed_tags, d.tags]);
+  const { title, cond } = useMemo(() => splitTitle(d.title), [d.title]);
+  const price = splitPrice(d.price);
+  const dropTag = tags.find(isDropTag);
+
+  // 元信息只留「在哪买 / 什么时候 / 值不值」三类。上一版一排 5 个图标 + 3 个
+  // 彩色 pill 是最大噪音源；值为 0 时也不再显示「0% 值」（新爆料还没人投票，
+  // 显示 0% 会被误读成「大家都觉得不值」）。收藏/评论/值数收进卡片 title 提示。
+  const meta: { text: string; cls?: string }[] = [];
+  if (dropTag) meta.push({ text: dropTag, cls: "font-semibold text-brand-red2" });
+  if (cond) meta.push({ text: cond });
+  if (d.mall) meta.push({ text: d.mall });
+  meta.push({ text: relTime(d.first_seen) });
+  if (d.worth > 0) meta.push({ text: `${fmtPct(d.worth_pct)}% 值`, cls: "font-semibold text-brand-red2" });
+
   return (
     <a
       href={d.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex gap-3.5 rounded-2xl border border-paper-100 glass card-hover p-3.5 transition press"
-      title={d.title}
+      className="group flex min-w-0 gap-3.5 rounded-2xl border border-paper-100 glass card-hover p-3.5 transition press sm:gap-4 sm:p-4"
+      title={`${d.title}${d.reporter ? `\n爆料人：${d.reporter}` : ""}\n值 ${d.worth} / 不值 ${d.unworth} · 收藏 ${d.fav} · 评论 ${d.cmt}`}
     >
-      {d.img ? (
-        <img
-          src={d.img}
-          alt=""
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          className="h-[86px] w-[86px] shrink-0 rounded-xl border border-paper-100 object-cover"
-        />
-      ) : (
-        <div className="grid h-[86px] w-[86px] shrink-0 place-items-center rounded-xl border border-paper-100 bg-paper-100/60 text-paper-400">
-          <Flame size={20} />
-        </div>
-      )}
+      <div className="h-[88px] w-[88px] shrink-0 self-center sm:h-24 sm:w-24">
+        {d.img ? (
+          <img
+            src={d.img}
+            alt=""
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            className="h-full w-full rounded-xl border border-paper-100 object-cover"
+          />
+        ) : (
+          <div className="grid h-full w-full place-items-center rounded-xl border border-paper-100 bg-paper-100/60 text-paper-400">
+            <Flame size={20} />
+          </div>
+        )}
+      </div>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-start gap-1.5">
-          <h3 className="line-clamp-2 min-w-0 flex-1 text-[14px] font-semibold leading-snug text-paper-900">
-            {d.title}
+        <div className="flex items-start gap-2">
+          <h3 className="line-clamp-2 min-w-0 flex-1 break-words text-[14px] font-semibold leading-[1.45] text-paper-900 sm:text-[15px]">
+            {title}
           </h3>
           <ArrowUpRight
-            size={14}
-            className="mt-0.5 shrink-0 text-paper-400 transition group-hover:text-brand-red2"
+            size={13}
+            className="mt-1 shrink-0 text-paper-300 transition group-hover:text-brand-red2"
           />
         </div>
 
-        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          {/* 折扣徽标放价格前：它是「这条劲不劲爆」的第一眼答案，
-              比价格数字本身更有信息量（6999 元不一定是漏，3 折才是） */}
+        {/* 价格行：折扣 → 金额。说明文字单独一行（见下），不跟金额抢同一行 ——
+            手机上「1.1折 ¥2299.65（晒单返 700 元…」只剩 6 个字的位置，
+            截断成「（晒单返 70…」比不显示还乱。红色只留给「几折」和「值率」，
+            价格用墨色（压米白 12:1） */}
+        <div className="mt-2 flex items-center gap-2">
           {d.discount > 0 && (
             <span
-              className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${discountClass(d.discount)}`}
+              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-extrabold tabular-nums ${discountClass(d.discount)}`}
               title="按正文里的原价与到手价计算"
             >
               {(d.discount / 10).toFixed(1)}折
             </span>
           )}
-          {/* 价格用墨色，不再用红：本页红色已经承担「几折」与「值率」两个信号，
-              价格再用红（原 #f27a5e）就三处同色、糊成一片，反而看不清金额。
-              实测对比度：墨色 #3d2b1f 压米白 12.5:1，原红只有 2.5:1（不达 AA），
-              一眼先读到「多少钱」，红色留给「劲不劲爆」。 */}
-          <DealPrice raw={d.price} />
-          {d.mall && (
-            <span className="rounded-md bg-paper-100 px-1.5 py-0.5 text-[10px] font-medium text-paper-700">
-              {d.mall}
+          {price ? (
+            <span className="shrink-0 font-extrabold tracking-tight text-paper-900">
+              <span className="mr-px text-[11px] font-bold">¥</span>
+              <span className="text-[19px] tabular-nums">{price.num}</span>
             </span>
+          ) : (
+            <span className="shrink-0 text-[15px] font-extrabold text-paper-900">见原帖</span>
           )}
+          {/* 关注品类标记跟着价格走、靠右：放元信息行末尾时会在窄屏被挤到下一行，
+              单独一个「关注」吊在左边，看着像另一条信息 */}
           {d.cate_hit && (
-            <span
-              className="rounded-md bg-brand-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-paper-800"
-              title="命中关注品类，排序已加权"
-            >
+            <span className="shrink-0 rounded bg-brand-gold/15 px-1 py-px text-[10px] font-medium leading-3 text-paper-800">
               关注
             </span>
           )}
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-paper-600">
-          {/* 值率用红不用绿：本站语境是 A 股习惯（涨=红、跌=绿），
-              值率越高越好 → 红；配朝上的箭头，读起来就是「涨」。
-              与左侧价格同色系，一眼能连成「便宜 + 值」一组。 */}
-          <span
-            className="inline-flex items-center gap-1 font-semibold text-brand-red2"
-            title={`${d.worth} 人认为值 / ${d.unworth} 人认为不值`}
+        {price?.note && (
+          <div
+            className="mt-1 truncate text-[11px] leading-4 text-paper-700"
+            title={price.note}
           >
-            <TrendingDown size={11} className="rotate-180" />
-            {fmtPct(d.worth_pct)}% 值
-          </span>
-          <span className="inline-flex items-center gap-1" title="认为值的次数">
-            <ThumbsUp size={11} />
-            {d.worth}
-          </span>
-          <span className="inline-flex items-center gap-1" title="收藏数">
-            <Star size={11} />
-            {d.fav}
-          </span>
-          <span className="inline-flex items-center gap-1" title="评论数">
-            <MessageSquare size={11} />
-            {d.cmt}
-          </span>
-          <span className="inline-flex items-center gap-1 text-paper-500" title="首次发现时间">
-            <Clock size={11} />
-            {relTime(d.first_seen)}
-          </span>
-        </div>
-
-        {(tags.length > 0 || d.reporter) && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {tags.map((t) => (
-              <span
-                key={t}
-                className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                  isDropTag(t)
-                    ? "bg-brand-red/10 text-brand-red2"
-                    : "bg-paper-100 text-paper-700"
-                }`}
-              >
-                {t}
-              </span>
-            ))}
-            {/* 爆料人：用户要的是「个人爆料的真漏」，把谁挖的摆出来，
-                比用黑名单悄悄过滤运营号更透明 —— 他能自己判断可信度 */}
-            {d.reporter && (
-              <span className="ml-auto truncate text-[10px] text-paper-500" title={`爆料人：${d.reporter}`}>
-                {d.reporter}
-              </span>
-            )}
+            {price.note.replace(/^[（(]|[）)]$/g, "")}
           </div>
         )}
+
+        <div className="mt-1.5 flex flex-wrap items-center gap-y-1 text-[11px] leading-4 text-paper-700">
+          {meta.map((m, i) => (
+            <span key={`${m.text}-${i}`} className="whitespace-nowrap">
+              <span className={m.cls}>{m.text}</span>
+              {i < meta.length - 1 && <span className="px-1 text-paper-300">·</span>}
+            </span>
+          ))}
+        </div>
       </div>
     </a>
   );
@@ -409,15 +388,14 @@ export default function Deals() {
 
   return (
     <div className="pt-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-extrabold tracking-tight text-paper-900">捡漏</h1>
-          <p className="mt-1 text-xs text-paper-600">
-            盯「什么值得买」的手慢无 / 绝对值 / 历史低价榜，按折扣深度排序 ——
-            折得越狠越靠前。点卡片直接去原站。
+          <p className="mt-1 text-xs text-paper-700">
+            盯「什么值得买」手慢无 / 绝对值 / 历史低价榜，按折扣从深到浅排，点卡片直达原站。
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Link
             to="/deals-admin"
             className="grid h-9 w-9 place-items-center rounded-xl border border-paper-200 text-paper-700 transition hover:border-brand-gold/50 hover:bg-brand-gold/10"
@@ -438,19 +416,22 @@ export default function Deals() {
 
       {/* 统计条 */}
       {stats && (
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-paper-100 bg-paper-100/50 px-3.5 py-2 text-[11px] text-paper-700">
+        <div className="mt-4 flex flex-wrap items-center gap-x-3.5 gap-y-1 rounded-xl border border-paper-100 bg-paper-100/50 px-3.5 py-2 text-[11px] text-paper-700">
           <span>
-            今日新增 <b className="tabular-nums text-paper-900">{stats.today_added}</b> 条
+            今日新增 <b className="font-semibold tabular-nums text-paper-900">{stats.today_added}</b>
           </span>
           <span>
-            今日命中 <b className="tabular-nums text-brand-red2">{stats.today_picked}</b> 条
+            今日命中 <b className="font-semibold tabular-nums text-brand-red2">{stats.today_picked}</b>
           </span>
-          <span className="text-paper-500">
-            累计 {stats.total} 条 / 入选 {stats.picked_total} 条
+          {/* 累计口径只留给桌面：手机上它们会把「更新时间」挤到第二行，
+              而扫列表时真正要看的是「今天有没有新货」 */}
+          <span className="hidden sm:inline">
+            入库 <b className="font-semibold tabular-nums text-paper-900">{stats.total}</b>
           </span>
-          {stats.last_round && (
-            <span className="text-paper-500">最近抓取 {relTime(stats.last_round.ts)}</span>
-          )}
+          <span className="hidden sm:inline">
+            入选 <b className="font-semibold tabular-nums text-paper-900">{stats.picked_total}</b>
+          </span>
+          {stats.last_round && <span>{relTime(stats.last_round.ts)}更新</span>}
         </div>
       )}
 
@@ -471,7 +452,7 @@ export default function Deals() {
           </button>
         ))}
         {items.length > 0 && (
-          <span className="ml-auto self-center text-[11px] text-paper-500">
+          <span className="ml-auto self-center text-[11px] text-paper-700">
             共 {total} 条
           </span>
         )}
