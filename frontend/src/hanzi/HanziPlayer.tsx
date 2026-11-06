@@ -19,7 +19,7 @@ import {
 } from "./progress";
 import { loadCachedList, saveCachedList } from "./listCache";
 import { AppModal } from "../common/AppModal";
-import { ExitPresence, Modal } from "../common/Modal";
+import { ExitPresence } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import { useEscapeClose } from "../common/useEscapeClose";
 import { errText } from "../common/State";

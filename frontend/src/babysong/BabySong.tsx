@@ -15,7 +15,7 @@ import {
   Repeat,
 } from "lucide-react";
 import { AppModal } from "../common/AppModal";
-import { ExitPresence, Modal } from "../common/Modal";
+import { ExitPresence } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import { errText } from "../common/State";
 import { babysongApi, type Song as babysongApi_Song } from "./api";

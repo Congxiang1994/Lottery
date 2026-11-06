@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "../common/AdminGate";
 import { AppModal, ConfirmDialog } from "../common/AppModal";
 import { PageHeader, PrivateBadge } from "../common/PageHeader";
-import { ExitPresence, Modal } from "../common/Modal";
+import { ExitPresence } from "../common/Modal";
 import { isUnauthorized } from "../common/http";
 import { ErrorBlock, errText } from "../common/State";
 import { useModalHistory } from "../common/useModalHistory";

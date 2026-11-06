@@ -27,7 +27,7 @@
 
 > 🔒 = 密码保护的私有功能（同一把全站操作密码）。
 
-**数字一览**：6 大功能模块 · 89 算法 / 12 分类 · 518 首儿歌 · 108 节汉字课 · 2 彩种 · 免备案 HTTPS
+**数字一览**：11 个入口（6 公开 + 5 私有）· 89 算法 / 12 分类 · 518 首儿歌 · 108 节汉字课 · 2 彩种 · 免备案 HTTPS
 
 ---
 
@@ -65,7 +65,8 @@ README 分两层：**本页讲「全站」**，分册讲「各模块实现」，
 | 文档 | 内容 |
 |---|---|
 | [README.md](./README.md) | 全站定位、产品矩阵、快速开始（本页） |
-| [docs/architecture.md](./docs/architecture.md) | **架构设计**：请求链路、技术栈、目录结构、扩展新功能规范 |
+| [docs/architecture.md](./docs/architecture.md) | **架构设计**：请求链路、技术栈、**后端分层规范**（common 基础设施 + 功能域）、扩展新功能三步 + 自检清单 |
+| [docs/frontend-standards.md](./docs/frontend-standards.md) | **前端规范**：页面骨架、三态、请求、密码门、弹窗、交互基线、色调与暗色映射 —— 新页面照抄这里 |
 | [docs/deployment.md](./docs/deployment.md) | **部署与运维**：上线流程、数据目录约定、常用命令 |
 | [README_lottery.md](./README_lottery.md) | 彩票模块：算法引擎设计、数据流、定时跑批、防并发设计、API 全表 |
 | [README_hanzi.md](./README_hanzi.md) | 汉字课点播模块：列表接口、Nginx 视频静态服务、伪全屏播放器设计 |

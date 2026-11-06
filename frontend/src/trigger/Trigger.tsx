@@ -4,7 +4,7 @@ import { AppModal, ConfirmDialog } from "../common/AppModal";
 import { PageHeader, PrivateBadge } from "../common/PageHeader";
 import { Empty, ErrorBlock, errText } from "../common/State";
 import { isUnauthorized } from "../common/http";
-import { ExitPresence, Modal } from "../common/Modal";
+import { ExitPresence } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import {
   AlarmClock,
