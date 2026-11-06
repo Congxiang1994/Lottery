@@ -18,13 +18,27 @@
 """
 from __future__ import annotations
 
+import hashlib
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 issues: list[str] = []
+
+# 原版 README 的内容 md5（拆分前，2026-11-06）。归档无损校验不依赖 git，
+# 服务器副本也能跑 —— 只比「归档正文还原链接后」是否等于这份基线。
+# 若将来**有意**修订归档内容，更新这里对应的 md5 并在 commit 里说明。
+BASELINE_MD5 = {
+    "README_lottery.md": "2e4ef8413b388f05986aefe8c8e0118c",
+    "README_hanzi.md": "43dc90019db946c8fb4b993fadbd4570",
+    "README_babysong.md": "f860e5f89c52676dd9bc9ad388693f8b",
+    "README_story.md": "1d86097eb9fa8955618802df92f3fc3b",
+    "README_deals.md": "b9cfd7c59322155d845026ae8cfe1fef",
+    "README_trigger.md": "a5483ef8b74fc4ea4f3aecec11a766a5",
+    "README_access.md": "9476bd5e791bb3a80366269697c3905a",
+    "tools/xiaoe-downloader/README.md": "340eb39db6b4d96d8e7d28cde9fefd4d",
+}
 
 MODULE_FILES = [
     "README_lottery.md", "README_hanzi.md", "README_babysong.md",
@@ -124,16 +138,12 @@ def main() -> int:
         elif "保留历史全文" not in archived.read_text(encoding="utf-8")[:300]:
             fail(name, f"docs/modules/{stem}.md 首部缺归档说明")
         else:
-            # 归档无损：正文（去掉 3 行归档头）与 git HEAD 的旧 README 逐行比对，
-            # 允许且只允许「相对链接按新位置重写」造成的差异
-            old = subprocess.check_output(
-                ["git", "show", f"HEAD:{name}"], text=True, cwd=ROOT
-            ).splitlines()
-            body = archived.read_text(encoding="utf-8").splitlines()[3:]
-            # 把正文里的回指链接还原成旧写法再比
-            norm = [l.replace("](../../README.md)", "](./README.md)")
-                     .replace("](../", "](./docs/") for l in body]
-            if norm != old:
+            # 归档无损：正文（去掉 3 行归档头）还原回指链接后，与原版 md5 比对
+            body = "\n".join(archived.read_text(encoding="utf-8").splitlines()[3:]) + "\n"
+            norm = body.replace("](../../README.md)", "](./README.md)").replace(
+                "](../", "](./docs/")
+            digest = hashlib.md5(norm.encode("utf-8")).hexdigest()
+            if digest != BASELINE_MD5[name]:
                 fail(name, f"docs/modules/{stem}.md 正文与旧 README 不一致（细节可能被删改）")
 
     # 工具 README
@@ -143,11 +153,8 @@ def main() -> int:
     if not arch_tool.exists():
         fail(TOOLS_FILE, "缺 docs/modules/xiaoe-downloader.md")
     else:
-        old = subprocess.check_output(
-            ["git", "show", f"HEAD:{TOOLS_FILE}"], text=True, cwd=ROOT
-        ).splitlines()
-        body = arch_tool.read_text(encoding="utf-8").splitlines()[3:]
-        if body != old:
+        body = "\n".join(arch_tool.read_text(encoding="utf-8").splitlines()[3:]) + "\n"
+        if hashlib.md5(body.encode("utf-8")).hexdigest() != BASELINE_MD5[TOOLS_FILE]:
             fail(TOOLS_FILE, "docs/modules/xiaoe-downloader.md 正文与旧版不一致")
 
     # 根 README

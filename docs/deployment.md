@@ -55,6 +55,26 @@ sudo find /opt/lottery/backend -name '*.py' ! -perm -o=r -not -path '*/.venv/*' 
 推而广之：**部署完先看权限，再重启**。`systemctl is-active` 为 `active` 但接口 502
 时，第一件事是 `journalctl -u lottery -n 50` 找 `Permission denied`。
 
+### 2.2 文档副本同步（README 改过就必做）
+
+服务器 `/opt/lottery/` 根有 8 份 `README*.md` 供离线查阅，**不在部署集的 hashlist 里**，
+最容易长期腐化。2026-11-06 文档标准化后，同步清单扩为：
+
+```bash
+# 本地（仓库根）
+COPYFILE_DISABLE=1 tar czf - \
+  README.md README_lottery.md README_hanzi.md README_babysong.md README_story.md \
+  README_deals.md README_trigger.md README_access.md docs scripts \
+  | ssh lottery 'cat > /tmp/docs-pkg.tgz'
+# 服务器解包 → cp 到 /opt/lottery/ 对应路径 → chmod 644 → chown 501:staff
+# tools/xiaoe-downloader/README.md 也要单独 cp（工具 README 不在根目录清单里）
+```
+
+**收尾必须逐份 md5 对拍**：8 份根 README + 1 份工具 README +
+`docs/*.md` + `docs/modules/*.md` + `scripts/audit-readmes.py`，全对上才算同步完成。
+服务器上可直接跑 `cd /opt/lottery && python3 scripts/audit-readmes.py` 自检
+（脚本不依赖 git，用固化 md5 基线校验归档无损）。
+
 ## 数据目录约定
 
 | 路径 | 内容 | 重部署是否保留 |
