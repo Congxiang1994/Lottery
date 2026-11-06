@@ -45,6 +45,22 @@ export default function MyPage() {
 
 ---
 
+## 1.1 尺寸与色板的硬规则
+
+| 元素 | 规则 | 出处 |
+|---|---|---|
+| 页面级面板（直接挂在页面根下的 `.glass`） | `rounded-3xl` | `ui.ts` 的 `CARD` |
+| 页内嵌套小卡（列表项 / 统计块） | `rounded-2xl` | `ui.ts` 的 `CARD_COMPACT` |
+| 主按钮 | **品牌红渐变**，全站唯一 | `ui.ts` 的 `BTN_PRIMARY` |
+| 次级按钮 / 图标按钮 | 描边款 | `BTN_SECONDARY` / `BTN_ICON` |
+| 危险动作 | 玫红渐变 | `BTN_DANGER` |
+| 输入框 | `INPUT` / `INPUT_SM` | 别再手写 `border-paper-200 bg-white/60 …` |
+| 金色 | **只作强调色**（图标 / 描边 / 徽章 / 进度条） | 不作按钮底色 |
+
+> 为什么金色不能当按钮底色：改造前「提交/确认」有 `gold→red` 与 `red→red2` 两套，
+> 同一个动作在不同页面颜色不一样 —— 那不是设计差异，是复制粘贴的副产物。
+> 域的色调差异走 `PageHeader.iconClass` 与 `.tint-*`，**不走在按钮上**。
+
 ## 2. 三态（加载 / 空 / 错误）
 
 ```tsx
