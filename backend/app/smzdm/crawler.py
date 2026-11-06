@@ -49,7 +49,6 @@ from app.smzdm.config import (
     MIN_REQUEST_INTERVAL_SECONDS,
     PAGES_PER_ROUND,
     TAG_FEEDS,
-    TAG_PAGES_PER_ROUND,
     TOP_PATH,
     USER_AGENT,
 )
