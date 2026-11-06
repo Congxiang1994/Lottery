@@ -16,6 +16,7 @@ import {
   DealStatus,
   dealsApi,
 } from "./api";
+import { AdminGate } from "../common/AdminGate";
 import { ErrorBlock, errText } from "../common/State";
 
 /**
@@ -33,74 +34,6 @@ import { ErrorBlock, errText } from "../common/State";
 
 const inputCls =
   "w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2 text-sm text-paper-900 outline-none focus:border-brand-gold/50";
-
-/* ---------------- 密码门 ---------------- */
-
-function PasswordGate({ onPass }: { onPass: () => void }) {
-  const [pwd, setPwd] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const submit = () => {
-    if (!pwd || loading) return;
-    setLoading(true);
-    setErr(null);
-    dealsApi
-      .auth(pwd)
-      .then(() => {
-        setPwd("");
-        onPass();
-      })
-      .catch((e) => setErr(errText(e)))
-      .finally(() => setLoading(false));
-  };
-
-  return (
-    <div className="flex min-h-[60vh] items-center justify-center pt-10">
-      <div className="glass w-full max-w-sm rounded-3xl p-7 shadow-card">
-        <div className="flex items-center gap-2">
-          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-brand-red/20 to-brand-gold/10 text-brand-red2">
-            <KeyRound size={18} />
-          </span>
-          <div>
-            <h1 className="text-lg font-bold text-paper-900">捡漏设置</h1>
-            <p className="text-xs text-paper-700">私有功能 · 验证后可改阈值</p>
-          </div>
-        </div>
-        <p className="mt-4 text-xs leading-relaxed text-paper-700">
-          调整入选阈值、关注品类与黑名单，查看抓取健康度。
-        </p>
-        <input
-          type="password"
-          value={pwd}
-          onChange={(e) => setPwd(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="请输入操作密码"
-          autoFocus
-          className={`mt-4 ${inputCls}`}
-        />
-        {err && (
-          <div className="mt-2 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-            {err}
-          </div>
-        )}
-        <button
-          onClick={submit}
-          disabled={loading || !pwd}
-          className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2.5 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
-        >
-          {loading ? (
-            <>
-              <Loader2 size={14} className="animate-spin" /> 校验中…
-            </>
-          ) : (
-            "进入"
-          )}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /* ---------------- 小组件 ---------------- */
 
@@ -554,31 +487,17 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
 /* ---------------- 入口 ---------------- */
 
 export default function DealsAdmin() {
-  const [session, setSession] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    dealsApi
-      .session()
-      .then(setSession)
-      .catch(() => setSession(false));
-  }, []);
-
-  if (session === null) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 size={20} className="animate-spin text-paper-400" />
-      </div>
-    );
-  }
-
-  if (!session) return <PasswordGate onPass={() => setSession(true)} />;
-
   return (
-    <AdminPanel
-      onLogout={() => {
-        void dealsApi.logout();
-        setSession(false);
-      }}
-    />
+    <AdminGate
+      title="捡漏设置"
+      subtitle="私有功能 · 验证后可改阈值"
+      desc="调整入选阈值、关注品类与黑名单，查看抓取健康度。"
+      probe={() => dealsApi.session()}
+      login={(pwd) => dealsApi.auth(pwd)}
+      logout={() => dealsApi.logout()}
+      accent="gold"
+    >
+      {({ logout }) => <AdminPanel onLogout={logout} />}
+    </AdminGate>
   );
 }

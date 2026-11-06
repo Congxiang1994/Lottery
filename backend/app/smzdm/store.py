@@ -40,7 +40,7 @@ from app.smzdm.config import (
     DB_PATH,
 )
 
-_SCHEMA = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS deals (
     id          INTEGER PRIMARY KEY,
     title       TEXT NOT NULL,
@@ -106,10 +106,10 @@ def init() -> None:
     """建表 + 补列 + 补齐缺省配置 + 一次性迁移（幂等）。"""
     with _init_lock():
         with get_conn(DB_PATH) as con:
-            con.executescript(_SCHEMA)
+            con.executescript(SCHEMA)
             _ensure_columns(con)
             # 🔴 依赖新列的索引必须在补列**之后**建。
-            # 踩过的坑：把 `CREATE INDEX … ON deals(discount)` 写进 _SCHEMA，
+            # 踩过的坑：把 `CREATE INDEX … ON deals(discount)` 写进 SCHEMA，
             # 旧库上 `CREATE TABLE IF NOT EXISTS` 不会加列，紧接着建索引就抛
             # `sqlite3.OperationalError: no such column: discount`，
             # 结果 lifespan 里 init() 把整个应用启动打挂（线上全站 502）。

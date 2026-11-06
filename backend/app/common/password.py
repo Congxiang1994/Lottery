@@ -35,7 +35,7 @@ _SCRYPT_P = 1
 _SCRYPT_DKLEN = 32
 _MAXMEM = 128 * 1024 * 1024
 
-_SCHEMA = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS password_store (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
     pwd_hash   TEXT NOT NULL,
@@ -101,12 +101,12 @@ def _is_legacy(pwd_hash: str) -> bool:
 def init() -> None:
     """确保表存在（幂等）。"""
     with _conn() as con:
-        con.execute(_SCHEMA)
+        con.execute(SCHEMA)
 
 
 def is_configured() -> bool:
     with _conn() as con:
-        con.execute(_SCHEMA)
+        con.execute(SCHEMA)
         row = con.execute("SELECT 1 FROM password_store WHERE id=1").fetchone()
     return row is not None
 
@@ -115,7 +115,7 @@ def set_password(plain: str) -> None:
     """写入密码哈希（覆盖式）。plain 为明文，仅调用方临时持有，不落库。"""
     pwd_hash = _hash_scrypt(plain, secrets.token_bytes(16))
     with _conn() as con:
-        con.execute(_SCHEMA)
+        con.execute(SCHEMA)
         con.execute(
             "INSERT OR REPLACE INTO password_store (id, pwd_hash, salt, updated_at) "
             "VALUES (1,?,?,?)",
@@ -129,7 +129,7 @@ def verify(plain: str) -> bool:
     若库中是历史 SHA-256 格式且校验通过，顺手升级为 scrypt（失败静默忽略）。
     """
     with _conn() as con:
-        con.execute(_SCHEMA)
+        con.execute(SCHEMA)
         row = con.execute("SELECT pwd_hash, salt FROM password_store WHERE id=1").fetchone()
     if not row:
         return False

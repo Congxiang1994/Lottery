@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { AdminGate } from "../common/AdminGate";
 import { ExitPresence, Modal } from "../common/Modal";
+import { isUnauthorized } from "../common/http";
+import { ErrorBlock, errText } from "../common/State";
 import { useModalHistory } from "../common/useModalHistory";
 import { useEscapeClose } from "../common/useEscapeClose";
 import {
@@ -21,74 +24,6 @@ import ApiPanel from "./ApiPanel";
  * 每日儿童睡前故事 · 管理页 /story-admin（私有）
  * 密码门（复用全站操作密码）→ Tab1 故事增删改查 / Tab2 API 管理。
  */
-
-/* ---------------- 密码门 ---------------- */
-
-function PasswordGate({ onPass }: { onPass: () => void }) {
-  const [pwd, setPwd] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const submit = () => {
-    if (!pwd || loading) return;
-    setLoading(true);
-    setErr(null);
-    storyApi
-      .auth(pwd)
-      .then(() => {
-        setPwd("");
-        onPass();
-      })
-      .catch((e) => setErr(e.message))
-      .finally(() => setLoading(false));
-  };
-
-  return (
-    <div className="flex min-h-[60vh] items-center justify-center pt-10">
-      <div className="glass w-full max-w-sm rounded-3xl p-7 shadow-card">
-        <div className="flex items-center gap-2">
-          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-brand-red/20 to-brand-gold/10 text-brand-red2">
-            <KeyRound size={18} />
-          </span>
-          <div>
-            <h1 className="text-lg font-bold text-paper-900">睡前故事管理</h1>
-            <p className="text-xs text-paper-700">私有功能 · 验证后可增删改查</p>
-          </div>
-        </div>
-        <p className="mt-4 text-xs leading-relaxed text-paper-700">
-          维护每日睡前故事，并签发 API 密钥，供外部程序（脚本 / 定时任务）通过接口写入。
-        </p>
-        <input
-          type="password"
-          value={pwd}
-          onChange={(e) => setPwd(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="请输入操作密码"
-          autoFocus
-          className="mt-4 w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2.5 text-sm text-paper-900 outline-none focus:border-brand-gold/50"
-        />
-        {err && (
-          <div className="mt-2 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-            {err}
-          </div>
-        )}
-        <button
-          onClick={submit}
-          disabled={loading || !pwd}
-          className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2.5 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
-        >
-          {loading ? (
-            <>
-              <Loader2 size={14} className="animate-spin" /> 校验中…
-            </>
-          ) : (
-            "进入"
-          )}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /* ---------------- 通用 ---------------- */
 
@@ -388,7 +323,30 @@ function StoryModal({
 /* ---------------- 主页面 ---------------- */
 
 export default function StoryAdmin() {
-  const [authed, setAuthed] = useState<boolean | null>(null);
+  return (
+    <AdminGate
+      title="睡前故事管理"
+      subtitle="私有功能 · 验证后可增删改查"
+      desc="维护每日睡前故事，并签发 API 密钥，供外部程序（脚本 / 定时任务）通过接口写入。"
+      probe={() => storyApi.session()}
+      login={(pwd) => storyApi.auth(pwd)}
+      logout={() => storyApi.logout()}
+      accent="gold"
+    >
+      {({ onUnauthorized, logout }) => (
+        <StoryAdminPanel onUnauthorized={onUnauthorized} logout={logout} />
+      )}
+    </AdminGate>
+  );
+}
+
+function StoryAdminPanel({
+  onUnauthorized,
+  logout,
+}: {
+  onUnauthorized: () => void;
+  logout: () => void;
+}) {
   const [tab, setTab] = useState<"stories" | "api">("stories");
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(false);
@@ -439,20 +397,15 @@ export default function StoryAdmin() {
       .adminStories()
       .then((d) => setStories(d.items ?? []))
       .catch((e) => {
-        if (e.status === 401) setAuthed(false);
-        else setErr(e.message);
+        if (isUnauthorized(e)) onUnauthorized();
+        else setErr(errText(e));
       })
       .finally(() => setLoading(false));
   }, []);
 
+  /* 首个渲染即拉数据：会话已由 AdminGate 校验通过 */
   useEffect(() => {
-    storyApi
-      .session()
-      .then((valid) => {
-        setAuthed(valid);
-        if (valid) reload();
-      })
-      .catch(() => setAuthed(false));
+    reload();
   }, [reload]);
 
   const withBusy = (id: number, fn: () => Promise<unknown>) => {
@@ -460,27 +413,12 @@ export default function StoryAdmin() {
     setErr(null);
     fn()
       .then(reload)
-      .catch((e) => setErr(e.message))
+      .catch((e) => {
+        if (isUnauthorized(e)) onUnauthorized();
+        else setErr(errText(e));
+      })
       .finally(() => setBusy(null));
   };
-
-  if (authed === null) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 size={22} className="animate-spin text-paper-500" />
-      </div>
-    );
-  }
-
-  if (!authed)
-    return (
-      <PasswordGate
-        onPass={() => {
-          setAuthed(true);
-          reload();
-        }}
-      />
-    );
 
   const publishedCount = stories.filter((s) => s.published).length;
 
@@ -514,12 +452,7 @@ export default function StoryAdmin() {
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
           </button>
           <button
-            onClick={() =>
-              storyApi
-                .logout()
-                .then(() => setAuthed(false))
-                .catch(() => setAuthed(false))
-            }
+            onClick={logout}
             className="grid h-9 w-9 place-items-center rounded-xl border border-paper-200 bg-paper-100 text-paper-800 transition hover:bg-paper-200"
             title="退出登录"
           >

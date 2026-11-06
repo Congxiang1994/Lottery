@@ -7,58 +7,36 @@
   （localStorage）上报，服务端加盐 sha256 后存表去重（不存原始 ID、不碰 IP）。
   人数从功能上线之日起累计，历史访客无法回溯。
 
-存储：/data/lottery/visit_stats.db（与 lottery 数据同目录，重部署不丢）。
-本地测试可用环境变量 LOTTERY_DB_DIR 覆盖（如 /tmp/lottery_db）。
+存储与表结构见 ``app/stats/config.py``（``/data/lottery/visit_stats.db``，
+``LOTTERY_DB_DIR`` 可覆盖，重部署不丢）。
 """
 from __future__ import annotations
 
 import hashlib
-import os
 
 from fastapi import APIRouter
 
 from app.common.db import get_conn, init_schema
-from app.common.paths import db_path
+from app.stats.config import DB_PATH, SALT, get_schema
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
-
-DB_PATH = db_path("visit_stats")
-
-# 访客 ID 加盐哈希：即使 db 泄露也无法反推原始 UUID。
-# 盐来自环境变量（部署时注入），缺失时退化为固定串（仍强于明文存 ID）。
-_SALT = os.environ.get("LOTTERY_VISIT_SALT", "lottery-visit-salt")
-
-
-def _visitor_hash(visitor_id: str) -> str:
-    return hashlib.sha256((_SALT + visitor_id).encode("utf-8")).hexdigest()
-
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS visit_stats (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    total INTEGER NOT NULL DEFAULT 0
-);
-INSERT OR IGNORE INTO visit_stats (id, total) VALUES (1, 0);
-CREATE TABLE IF NOT EXISTS visit_visitors (
-    visitor_hash TEXT PRIMARY KEY,
-    first_seen   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-);
-"""
 
 _ready = False
 
 
-def _init_table_locked(con=None) -> None:
+def _visitor_hash(visitor_id: str) -> str:
+    return hashlib.sha256((SALT + visitor_id).encode("utf-8")).hexdigest()
+
+
+def _ensure_table() -> None:
     """建表（幂等 + flock 串行化，多 worker 首启不撞 database is locked）。
 
-    统一走 ``app.common.db.init_schema`` —— 这里保留函数名以兼容既有调用点，
-    实际实现已上移（其它域也是同一套，见 common/db.py 的说明）。
-    进程内 ``_ready`` 让稳态下不再反复抢锁。
+    统一走 ``app.common.db.init_schema``；进程内 ``_ready`` 让稳态下不再反复抢锁。
     """
     global _ready
     if _ready:
         return
-    init_schema(DB_PATH, _SCHEMA)
+    init_schema(DB_PATH, get_schema())
     _ready = True
 
 
@@ -80,8 +58,8 @@ def snapshot_totals() -> dict:
     try:
         if not DB_PATH.exists():
             return {"total": 0, "visitors": 0}
+        _ensure_table()
         with get_conn(DB_PATH) as con:
-            _init_table_locked(con)
             return _snapshot(con)
     except Exception:
         return {"total": 0, "visitors": 0}
@@ -90,8 +68,8 @@ def snapshot_totals() -> dict:
 @router.get("/visit")
 def get_visits():
     """读取当前累计（不计数）。返回 total=人次，visitors=去重人数。"""
+    _ensure_table()
     with get_conn(DB_PATH) as con:
-        _init_table_locked(con)
         return _snapshot(con)
 
 
@@ -102,8 +80,8 @@ def count_visit(visitor_id: str | None = None):
     visitor_id 为前端 localStorage 里的持久 UUID：首次见到则记入访客表
     （INSERT OR IGNORE 幂等去重），缺省（旧前端缓存）时只计人次。
     """
+    _ensure_table()
     with get_conn(DB_PATH) as con:
-        _init_table_locked(con)
         con.execute("UPDATE visit_stats SET total = total + 1 WHERE id = 1")
         if visitor_id:
             con.execute(

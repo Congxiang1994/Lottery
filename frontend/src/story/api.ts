@@ -1,27 +1,11 @@
+import { copyText, createApi } from "../common/http";
+
+export { copyText };
+
 const BASE = "/api/story";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, { credentials: "same-origin", ...init });
-  if (res.status === 401) {
-    const err = new Error("401") as Error & { status?: number };
-    err.status = 401;
-    throw err;
-  }
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((d) => d.detail ?? "")
-      .catch(() => "");
-    throw new Error(detail || `请求失败 ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-const json = (body: unknown): RequestInit => ({
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
+/** story 域请求统一走全站 http 客户端（401/错误体处理见 common/http.ts）。 */
+const api = createApi(BASE);
 
 export interface Story {
   id: number;
@@ -112,113 +96,59 @@ export interface ApiDoc {
 
 export const storyApi = {
   // ---------- 公开通道 ----------
-  publicList: (limit = 200) =>
-    fetch(`${BASE}/list?limit=${limit}`, { credentials: "same-origin" }).then(
-      (r) => r.json() as Promise<StoryList>,
-    ),
-  publicItem: (id: number) =>
-    fetch(`${BASE}/item/${id}`, { credentials: "same-origin" }).then(
-      (r) => r.json() as Promise<Story>,
-    ),
+  publicList: (limit = 200) => api.get<StoryList>("/list", { limit }),
+  publicItem: (id: number) => api.get<Story>(`/item/${id}`),
 
   // ---------- 管理通道 ----------
   session: () =>
-    fetch(`${BASE}/admin/session`, { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d) => d.valid as boolean),
+    api.get<{ valid: boolean }>("/admin/session").then((d) => d.valid),
 
   auth: (password: string) =>
-    request<{ ok: boolean; message: string; ttl_hours: number }>(
-      "/admin/auth",
-      json({ password }),
-    ),
+    api.post<{ ok: boolean; message: string; ttl_hours: number }>("/admin/auth", {
+      password,
+    }),
 
-  logout: () => request<{ ok: boolean }>("/admin/logout", { method: "POST" }),
+  logout: () => api.post<{ ok: boolean }>("/admin/logout"),
 
-  adminStories: (limit = 200) =>
-    request<StoryList>(`/admin/stories?limit=${limit}`),
+  adminStories: (limit = 200) => api.get<StoryList>("/admin/stories", { limit }),
 
-  createStory: (data: Partial<Story>) =>
-    request<Story>("/admin/stories", json(data)),
+  createStory: (data: Partial<Story>) => api.post<Story>("/admin/stories", data),
 
   updateStory: (id: number, data: Partial<Story>) =>
-    request<Story>(`/admin/stories/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
+    api.put<Story>(`/admin/stories/${id}`, data),
 
   setPublished: (id: number, published: boolean) =>
-    request<Story>(`/admin/stories/${id}/published`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ published }),
-    }),
+    api.put<Story>(`/admin/stories/${id}/published`, { published }),
 
-  deleteStory: (id: number) =>
-    request<{ ok: boolean }>(`/admin/stories/${id}`, { method: "DELETE" }),
+  deleteStory: (id: number) => api.del<{ ok: boolean }>(`/admin/stories/${id}`),
 
   // ---------- API 密钥 ----------
-  keys: () =>
-    request<{ keys: StoryKey[]; summary: CallsSummary }>("/admin/keys"),
+  keys: () => api.get<{ keys: StoryKey[]; summary: CallsSummary }>("/admin/keys"),
 
   createKey: (data: {
     name: string;
     daily_quota: number;
     total_quota: number;
     note: string;
-  }) => request<StoryKey>("/admin/keys", json(data)),
+  }) => api.post<StoryKey>("/admin/keys", data),
 
   updateKey: (id: number, data: Partial<StoryKey>) =>
-    request<StoryKey>(`/admin/keys/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
+    api.put<StoryKey>(`/admin/keys/${id}`, data),
 
   toggleKey: (id: number, enabled: boolean) =>
-    request<StoryKey>(`/admin/keys/${id}/enabled`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled }),
-    }),
+    api.put<StoryKey>(`/admin/keys/${id}/enabled`, { enabled }),
 
   resetKeyCalls: (id: number, scope: "today" | "all" = "today") =>
-    request<StoryKey>(`/admin/keys/${id}/reset-calls`, json({ scope })),
+    api.post<StoryKey>(`/admin/keys/${id}/reset-calls`, { scope }),
 
-  deleteKey: (id: number) =>
-    request<{ ok: boolean }>(`/admin/keys/${id}`, { method: "DELETE" }),
+  deleteKey: (id: number) => api.del<{ ok: boolean }>(`/admin/keys/${id}`),
 
   // ---------- 调用日志与文档 ----------
   calls: (limit = 50, keyId?: number) =>
-    request<{ calls: CallRow[]; summary: CallsSummary }>(
-      `/admin/calls?limit=${limit}${keyId ? `&key_id=${keyId}` : ""}`,
-    ),
+    api.get<{ calls: CallRow[]; summary: CallsSummary }>("/admin/calls", {
+      limit,
+      key_id: keyId,
+    }),
 
-  apiDoc: () => request<ApiDoc>("/admin/api-doc"),
+  apiDoc: () => api.get<ApiDoc>("/admin/api-doc"),
 };
-
-/** 复制到剪贴板（非 https / 老浏览器降级到 textarea）。 */
-export async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    /* 继续走降级 */
-  }
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
-}

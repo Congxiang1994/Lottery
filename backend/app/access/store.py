@@ -42,7 +42,7 @@ def visitor_hash(visitor_id: str) -> str:
 
 # ------------------------------------------------------------ 表结构
 
-_SCHEMA = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS access_logs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     ts         TEXT    NOT NULL,               -- 'YYYY-MM-DD HH:MM:SS' 服务器本地时间(+08)
@@ -121,7 +121,7 @@ _EMPTY_GEO = {
 
 
 #: 兼容旧库的补列 DDL。单条失败 = 列已存在，自动跳过。
-#: 🔴 依赖新列的 CREATE INDEX 一律放这里，不要写进 _SCHEMA（旧库没有新列会启动失败）。
+#: 🔴 依赖新列的 CREATE INDEX 一律放这里，不要写进 SCHEMA（旧库没有新列会启动失败）。
 _MIGRATIONS: tuple[str, ...] = ()
 
 
@@ -134,7 +134,7 @@ def init() -> None:
     → 整个 master 退出（2026-09-24 在 story.db 上实测踩到过）。
     锁由 ``app.common.db.init_schema`` 统一提供。
     """
-    init_schema(config.DB_PATH, _SCHEMA, migrations=_MIGRATIONS)
+    init_schema(config.DB_PATH, SCHEMA, migrations=_MIGRATIONS)
     # 顺手加载离线 IP 库（失败只 WARN，绝不影响启动）
     geo.load()
     _ensure_worker()

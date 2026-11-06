@@ -34,7 +34,7 @@ PROXY = os.environ.get("SONG_PROXY", "http://127.0.0.1:7890")
 YTDLP_BIN = shutil.which("yt-dlp") or "/usr/local/bin/yt-dlp"
 FFPROBE_BIN = shutil.which("ffprobe") or "/usr/bin/ffprobe"
 
-_SCHEMA = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS song_downloads (
     id          TEXT PRIMARY KEY,
     status      TEXT NOT NULL DEFAULT 'pending',  -- pending/downloading/done/failed
@@ -58,7 +58,7 @@ def _now() -> str:
 def _conn():
     """打开任务库连接（WAL），确保表存在；退出自动 commit。"""
     with get_conn(DB_PATH) as con:
-        con.execute(_SCHEMA)
+        con.execute(SCHEMA)
         yield con
 
 
@@ -244,7 +244,7 @@ def snapshot() -> list[dict]:
     """返回全部任务行（含 pid 探活修正后的状态）。"""
     recover_stale()
     with _conn() as con:
-        con.execute(_SCHEMA)
+        con.execute(SCHEMA)
         rows = con.execute(
             "SELECT id, status, error, size_bytes, duration_s, updated_at "
             "FROM song_downloads ORDER BY id"
@@ -264,7 +264,7 @@ def snapshot() -> list[dict]:
 
 def is_busy() -> bool:
     with _conn() as con:
-        con.execute(_SCHEMA)
+        con.execute(SCHEMA)
         row = con.execute(
             "SELECT pid FROM song_downloads WHERE status='downloading' LIMIT 1"
         ).fetchone()

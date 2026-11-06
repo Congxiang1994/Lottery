@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
+import { AdminGate } from "../common/AdminGate";
+import { ErrorBlock, errText } from "../common/State";
+import { isUnauthorized } from "../common/http";
 import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import { useEscapeClose } from "../common/useEscapeClose";
 import {
   AlarmClock,
   CheckCircle2,
+  Loader2,
   ChevronDown,
   Clock,
   History,
-  KeyRound,
-  Loader2,
   LogOut,
   Pencil,
   Play,
@@ -34,75 +36,6 @@ import {
  * 每日定时向大模型 API 发最小请求，点亮 5 小时用量窗口。
  * 密码门（与彩票运行全部同密码）→ 任务配置 + 执行历史。
  */
-
-/* ---------------- 密码门 ---------------- */
-
-function PasswordGate({ onPass }: { onPass: () => void }) {
-  const [pwd, setPwd] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const submit = () => {
-    if (!pwd || loading) return;
-    setLoading(true);
-    setErr(null);
-    triggerApi
-      .auth(pwd)
-      .then(() => {
-        setPwd("");
-        onPass();
-      })
-      .catch((e) => setErr(e.message))
-      .finally(() => setLoading(false));
-  };
-
-  return (
-    <div className="flex min-h-[60vh] items-center justify-center pt-10">
-      <div className="glass w-full max-w-sm rounded-3xl p-7 shadow-card">
-        <div className="flex items-center gap-2">
-          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-brand-red/20 to-brand-gold/10 text-brand-red2">
-            <KeyRound size={18} />
-          </span>
-          <div>
-            <h1 className="text-lg font-bold text-paper-900">API 用量触发器</h1>
-            <p className="text-xs text-paper-700">私有功能 · 验证后可管理定时任务</p>
-          </div>
-        </div>
-        <p className="mt-4 text-xs leading-relaxed text-paper-700">
-          到点由服务器向大模型 API 发送一次最小请求（自然短句 + 正常 token 数，模拟真实 Agent 调用），
-          按「触发时刻 = 窗口重置时刻 − 5 小时」对表，如 06:30 触发 → 11:30 重置。
-        </p>
-        <input
-          type="password"
-          value={pwd}
-          onChange={(e) => setPwd(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="请输入操作密码"
-          autoFocus
-          className="mt-4 w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2.5 text-sm text-paper-900 outline-none focus:border-brand-gold/50"
-        />
-        {err && (
-          <div className="mt-2 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-            {err}
-          </div>
-        )}
-        <button
-          onClick={submit}
-          disabled={loading || !pwd}
-          className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2.5 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
-        >
-          {loading ? (
-            <>
-              <Loader2 size={14} className="animate-spin" /> 校验中…
-            </>
-          ) : (
-            "进入"
-          )}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /* ---------------- 状态卡 ---------------- */
 
@@ -561,12 +494,36 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
 /* ---------------- 主页面 ---------------- */
 
 export default function Trigger() {
-  const [authed, setAuthed] = useState<boolean | null>(null);
+  return (
+    <AdminGate
+      title="API 用量触发器"
+      subtitle="私有功能 · 验证后可管理定时任务"
+      desc="到点由服务器向大模型 API 发送一次最小请求（自然短句 + 正常 token 数，模拟真实 Agent 调用），按「触发时刻 = 窗口重置时刻 − 5 小时」对表，如 06:30 触发 → 11:30 重置。"
+      probe={() => triggerApi.session()}
+      login={(pwd) => triggerApi.auth(pwd)}
+      logout={() => triggerApi.logout()}
+      accent="red"
+    >
+      {({ onUnauthorized, logout }) => (
+        <TriggerPanel onUnauthorized={onUnauthorized} logout={logout} />
+      )}
+    </AdminGate>
+  );
+}
+
+function TriggerPanel({
+  onUnauthorized,
+  logout,
+}: {
+  onUnauthorized: () => void;
+  logout: () => void;
+}) {
   const [tab, setTab] = useState<"tasks" | "history">("tasks");
   const [tasks, setTasks] = useState<TriggerTask[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [status, setStatus] = useState<TriggerStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [modal, setModal] = useState<{ open: boolean; editing: TriggerTask | null }>({ open: false, editing: null });
   const [historyExpanded, setHistoryExpanded] = useState(false);
 
@@ -596,27 +553,19 @@ export default function Trigger() {
         setTasks(t);
         setStatus(s);
         setHistory(h);
+        setError("");
       })
-      .catch(() => setAuthed(false))
+      .catch((e) => {
+        if (isUnauthorized(e)) onUnauthorized();
+        else setError(errText(e));
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [onUnauthorized]);
 
+  /* 首个渲染即拉数据：会话已由 AdminGate 校验通过 */
   useEffect(() => {
-    triggerApi.session().then((valid) => {
-      setAuthed(valid);
-      if (valid) reload();
-    }).catch(() => setAuthed(false));
+    reload();
   }, [reload]);
-
-  if (authed === null) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 size={22} className="animate-spin text-paper-500" />
-      </div>
-    );
-  }
-
-  if (!authed) return <PasswordGate onPass={() => { setAuthed(true); reload(); }} />;
 
   return (
     <div className="pt-8">
@@ -647,7 +596,7 @@ export default function Trigger() {
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
           </button>
           <button
-            onClick={() => triggerApi.logout().then(() => setAuthed(false)).catch(() => setAuthed(false))}
+            onClick={logout}
             className="grid h-9 w-9 place-items-center rounded-xl border border-paper-200 bg-paper-100 text-paper-800 transition hover:bg-paper-200"
             title="退出登录"
           >
@@ -655,6 +604,10 @@ export default function Trigger() {
           </button>
         </div>
       </div>
+
+      {error && (
+        <ErrorBlock message={error} onRetry={reload} className="mt-4" />
+      )}
 
       {/* 状态卡 */}
       <div className="mt-5">

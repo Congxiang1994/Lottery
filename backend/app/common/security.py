@@ -28,7 +28,7 @@ from app.common.paths import db_path
 
 DB_PATH = db_path("algo_results")  # 与算法结果同库：单文件、少一次连接
 
-_SCHEMA = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS security_lock (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
     last_verify_ts  REAL,
@@ -55,7 +55,7 @@ def init() -> None:
     global _initialized
     if _initialized:
         return
-    init_schema(DB_PATH, _SCHEMA, migrations=_MIGRATIONS)
+    init_schema(DB_PATH, SCHEMA, migrations=_MIGRATIONS)
     _initialized = True
 
 

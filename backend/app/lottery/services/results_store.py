@@ -27,7 +27,7 @@ from app.lottery.algorithms.base import CATEGORIES
 # 本地开发可用环境变量 LOTTERY_DB_DIR 覆盖（如 /tmp/lottery_db）。
 DB_PATH = db_path("algo_results")
 
-_SCHEMA = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS algo_results (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     lottery     TEXT    NOT NULL,
@@ -111,7 +111,7 @@ def _conn():
 
 
 #: 兼容旧库的补列 DDL（单条失败 = 列已存在，自动跳过）。
-#: 🔴 依赖新列的 ``CREATE INDEX`` 一律放这里，别写进 ``_SCHEMA``。
+#: 🔴 依赖新列的 ``CREATE INDEX`` 一律放这里，别写进 ``SCHEMA``。
 _MIGRATIONS = (
     "ALTER TABLE run_progress ADD COLUMN phase TEXT NOT NULL DEFAULT 'predict'",
     "ALTER TABLE security_lock ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
@@ -121,7 +121,7 @@ _MIGRATIONS = (
 
 def init() -> None:
     """建表 + 补列（flock 串行化，多 worker 首启安全）。"""
-    init_schema(DB_PATH, _SCHEMA, migrations=_MIGRATIONS)
+    init_schema(DB_PATH, SCHEMA, migrations=_MIGRATIONS)
 
 
 def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = None) -> int:

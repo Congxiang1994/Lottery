@@ -14,7 +14,7 @@ from app.common.db import get_conn, init_schema
 
 from app.trigger.config import DB_PATH, HISTORY_KEEP_DAYS
 
-_SCHEMA = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS trigger_tasks (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT    NOT NULL,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS trigger_leases (
 
 
 # missed 的按日唯一约束：同一任务同一天最多一条 missed。
-# 不能放进 _SCHEMA（老库可能已有重复，建索引会失败）——必须在 dedupe 之后建。
+# 不能放进 SCHEMA（老库可能已有重复，建索引会失败）——必须在 dedupe 之后建。
 _MISSED_UNIQUE_INDEX = (
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_history_missed_daily"
     " ON trigger_history (task_id, substr(fired_at, 1, 10)) WHERE status = 'missed'"
@@ -72,7 +72,7 @@ def _post_init(con) -> None:
 
 def init() -> None:
     """建表 + 补唯一索引（幂等，flock 串行化，多 worker 首启安全）。"""
-    init_schema(DB_PATH, _SCHEMA, after=_post_init)
+    init_schema(DB_PATH, SCHEMA, after=_post_init)
 
 
 def mask_key(key: str) -> str:

@@ -1,38 +1,13 @@
+import { createApi, query } from "../common/http";
+
 /** 访问管理接口封装（`/api/access/*`）。 */
 const BASE = "/api/access";
 
-/** 统一请求：401 单独抛出，页面据此回到密码门。 */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, { credentials: "same-origin", ...init });
-  if (res.status === 401) {
-    const err = new Error("401") as Error & { status?: number };
-    err.status = 401;
-    throw err;
-  }
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((d) => d?.detail ?? "")
-      .catch(() => "");
-    throw new Error(detail || `请求失败 ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
+/** access 域请求统一走全站 http 客户端（401/错误体处理见 common/http.ts）。 */
+const api = createApi(BASE);
 
-const json = (body: unknown): RequestInit => ({
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
-
-/** 拼 query（跳过空值与 undefined） */
-export function qs(params: Record<string, unknown>): string {
-  const s = Object.entries(params)
-    .filter(([, v]) => v !== "" && v !== undefined && v !== null && v !== false)
-    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
-    .join("&");
-  return s ? `?${s}` : "";
-}
+/** 兼容历史导出：`qs()` 原来在本文件里自实现，现已统一到 common/http。 */
+export { query as qs };
 
 /* ------------------------------ 类型 ------------------------------ */
 
@@ -252,50 +227,62 @@ export interface Maintenance {
 
 export const accessApi = {
   // ---------- 认证 ----------
-  session: () =>
-    fetch(`${BASE}/session`, { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d) => Boolean(d?.valid)),
+  session: () => api.get<{ valid: boolean }>("/session").then((d) => !!d?.valid),
 
   auth: (password: string) =>
-    request<{ ok: boolean; message: string; ttl_hours: number }>("/auth", json({ password })),
+    api.post<{ ok: boolean; message: string; ttl_hours: number }>("/auth", { password }),
 
-  logout: () => request<{ ok: boolean }>("/logout", { method: "POST" }),
+  logout: () => api.post<{ ok: boolean }>("/logout"),
 
   // ---------- 概览 ----------
   summary: (days: number, includeAuto = false) =>
-    request<Summary>(`/summary${qs({ days, include_auto: includeAuto ? 1 : 0 })}`),
+    api.get<Summary>("/summary", { days, include_auto: includeAuto ? 1 : 0 }),
 
   timeseries: (days: number, bucket: "day" | "hour", metric: string, includeAuto = false) =>
-    request<{ bucket: string; metric: string; items: SeriesItem[] }>(
-      `/timeseries${qs({ days, bucket, metric, include_auto: includeAuto ? 1 : 0 })}`,
-    ),
+    api.get<{ bucket: string; metric: string; items: SeriesItem[] }>("/timeseries", {
+      days,
+      bucket,
+      metric,
+      include_auto: includeAuto ? 1 : 0,
+    }),
 
   topPaths: (days: number, limit = 20, includeAuto = false) =>
-    request<{ items: TopPath[] }>(`/top-paths${qs({ days, limit, include_auto: includeAuto ? 1 : 0 })}`),
+    api.get<{ items: TopPath[] }>("/top-paths", {
+      days,
+      limit,
+      include_auto: includeAuto ? 1 : 0,
+    }),
 
   features: (days: number, includeAuto = false) =>
-    request<{ items: FeatureRow[] }>(`/features${qs({ days, include_auto: includeAuto ? 1 : 0 })}`),
+    api.get<{ items: FeatureRow[] }>("/features", {
+      days,
+      include_auto: includeAuto ? 1 : 0,
+    }),
 
   geo: (days: number, level: "country" | "region" | "city", includeAuto = false) =>
-    request<{ level: string; items: GeoRow[] }>(
-      `/geo${qs({ days, level, include_auto: includeAuto ? 1 : 0 })}`,
-    ),
+    api.get<{ level: string; items: GeoRow[] }>("/geo", {
+      days,
+      level,
+      include_auto: includeAuto ? 1 : 0,
+    }),
 
   isp: (days: number, includeAuto = false) =>
-    request<{ items: { name: string; requests: number; ips: number }[] }>(
-      `/isp${qs({ days, include_auto: includeAuto ? 1 : 0 })}`,
-    ),
+    api.get<{ items: { name: string; requests: number; ips: number }[] }>("/isp", {
+      days,
+      include_auto: includeAuto ? 1 : 0,
+    }),
 
   statusCodes: (days: number, includeAuto = false) =>
-    request<{ groups: { name: string; v: number }[]; items: { status: number; count: number }[] }>(
-      `/status-codes${qs({ days, include_auto: includeAuto ? 1 : 0 })}`,
-    ),
+    api.get<{
+      groups: { name: string; v: number }[];
+      items: { status: number; count: number }[];
+    }>("/status-codes", { days, include_auto: includeAuto ? 1 : 0 }),
 
   uaClasses: (days: number, includeAuto = true) =>
-    request<{ items: { name: string; requests: number; ips: number }[] }>(
-      `/ua-classes${qs({ days, include_auto: includeAuto ? 1 : 0 })}`,
-    ),
+    api.get<{ items: { name: string; requests: number; ips: number }[] }>("/ua-classes", {
+      days,
+      include_auto: includeAuto ? 1 : 0,
+    }),
 
   // ---------- IP / 访客 ----------
   ips: (p: {
@@ -307,62 +294,69 @@ export const accessApi = {
     tag?: string;
     includeAuto?: boolean;
   }) =>
-    request<{ total: number; items: IpRow[] }>(
-      `/ips${qs({
-        days: p.days,
-        limit: p.limit ?? 30,
-        offset: p.offset ?? 0,
-        sort: p.sort ?? "requests",
-        q: p.q ?? "",
-        tag: p.tag ?? "",
-        include_auto: p.includeAuto ? 1 : 0,
-      })}`,
-    ),
+    api.get<{ total: number; items: IpRow[] }>("/ips", {
+      days: p.days,
+      limit: p.limit ?? 30,
+      offset: p.offset ?? 0,
+      sort: p.sort ?? "requests",
+      q: p.q ?? "",
+      tag: p.tag ?? "",
+      include_auto: p.includeAuto ? 1 : 0,
+    }),
 
   ipDetail: (ip: string, days: number, includeAuto = false, limit = 100, offset = 0) =>
-    request<IpDetail>(
-      `/ips/${encodeURIComponent(ip)}${qs({ days, include_auto: includeAuto ? 1 : 0, limit, offset })}`,
-    ),
+    api.get<IpDetail>(`/ips/${encodeURIComponent(ip)}`, {
+      days,
+      include_auto: includeAuto ? 1 : 0,
+      limit,
+      offset,
+    }),
 
   updateIp: (ip: string, data: { note?: string; tag?: string }) =>
-    request<{ ip: string; note: string; tag: string }>(`/ips/${encodeURIComponent(ip)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
-
-  visitors: (p: { days: number; limit?: number; offset?: number; sort?: string; includeAuto?: boolean }) =>
-    request<{ total: number; items: VisitorRow[] }>(
-      `/visitors${qs({
-        days: p.days,
-        limit: p.limit ?? 30,
-        offset: p.offset ?? 0,
-        sort: p.sort ?? "requests",
-        include_auto: p.includeAuto ? 1 : 0,
-      })}`,
+    api.put<{ ip: string; note: string; tag: string }>(
+      `/ips/${encodeURIComponent(ip)}`,
+      data,
     ),
+
+  visitors: (p: {
+    days: number;
+    limit?: number;
+    offset?: number;
+    sort?: string;
+    includeAuto?: boolean;
+  }) =>
+    api.get<{ total: number; items: VisitorRow[] }>("/visitors", {
+      days: p.days,
+      limit: p.limit ?? 30,
+      offset: p.offset ?? 0,
+      sort: p.sort ?? "requests",
+      include_auto: p.includeAuto ? 1 : 0,
+    }),
 
   visitorDetail: (visitor: string, days: number, includeAuto = false, limit = 100, offset = 0) =>
-    request<VisitorDetail>(
-      `/visitors/${visitor}${qs({ days, include_auto: includeAuto ? 1 : 0, limit, offset })}`,
-    ),
-
-  updateVisitor: (visitor: string, data: { name?: string; note?: string }) =>
-    request<{ visitor: string; name: string; note: string }>(`/visitors/${visitor}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+    api.get<VisitorDetail>(`/visitors/${visitor}`, {
+      days,
+      include_auto: includeAuto ? 1 : 0,
+      limit,
+      offset,
     }),
 
-  // ---------- 明细 ----------
-  logs: (p: Record<string, unknown>) =>
-    request<{ total: number; items: LogRow[] }>(`/logs${qs(p)}`),
+  updateVisitor: (visitor: string, data: { name?: string; note?: string }) =>
+    api.put<{ visitor: string; name: string; note: string }>(
+      `/visitors/${visitor}`,
+      data,
+    ),
 
-  exportUrl: (p: Record<string, unknown>) => `${BASE}/export.csv${qs(p)}`,
+  // ---------- 明细 ----------
+  logs: (p: Record<string, string | number | boolean | undefined>) =>
+    api.get<{ total: number; items: LogRow[] }>("/logs", p),
+
+  exportUrl: (p: Record<string, string | number | boolean | undefined>) =>
+    `${BASE}/export.csv${query(p)}`,
 
   // ---------- 维护 ----------
-  maintenance: () => request<Maintenance>("/maintenance"),
-  purge: (before: string) => request<{ removed: number }>("/maintenance/purge", json({ before })),
-  backfill: () => request<{ updated: number; ips?: number }>("/maintenance/backfill", json({})),
-  purgeAll: () => request<{ removed: number }>("/maintenance/purge-all", { method: "POST" }),
+  maintenance: () => api.get<Maintenance>("/maintenance"),
+  purge: (before: string) => api.post<{ removed: number }>("/maintenance/purge", { before }),
+  backfill: () => api.post<{ updated: number; ips?: number }>("/maintenance/backfill", {}),
+  purgeAll: () => api.post<{ removed: number }>("/maintenance/purge-all"),
 };

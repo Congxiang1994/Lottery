@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+
+import { AdminGate } from "../common/AdminGate";
+import { createApi, isUnauthorized } from "../common/http";
+import { ErrorBlock, errText } from "../common/State";
 import {
   CheckCircle2,
   Clock,
@@ -43,26 +47,8 @@ interface DlResp {
 
 const BASE = "/api/babysong/admin";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, {
-    credentials: "same-origin",
-    ...init,
-  });
-  if (res.status === 401) {
-    const err = new Error("401") as Error & { status?: number };
-    err.status = 401;
-    throw err;
-  }
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((d) => d.detail ?? "")
-      .catch(() => "");
-    throw new Error(detail || `请求失败 ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
+/** babysong 管理端请求统一走全站 http 客户端。 */
+const api = createApi(BASE);
 function fmtSize(bytes: number) {
   if (!bytes) return "—";
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -84,11 +70,30 @@ const STATUS_META: Record<Status, { label: string; cls: string }> = {
 };
 
 export default function BabySongAdmin() {
-  const [authed, setAuthed] = useState<boolean | null>(null);
-  const [password, setPassword] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [authBusy, setAuthBusy] = useState(false);
+  return (
+    <AdminGate
+      title="儿歌下载管理"
+      subtitle="私有功能 · 验证后可管理本地下载"
+      desc="用 yt-dlp 把 YouTube 儿歌爬取到服务器本地（/data/song），下载完成的歌会自动在播放列表页出现「本地」按钮。"
+      probe={() => api.get<{ valid: boolean }>("/session").then((d) => !!d.valid)}
+      login={(pwd) => api.post("/auth", { password: pwd })}
+      logout={() => api.post("/logout")}
+      accent="red"
+    >
+      {({ onUnauthorized, logout }) => (
+        <DownloadPanel onUnauthorized={onUnauthorized} logout={logout} />
+      )}
+    </AdminGate>
+  );
+}
 
+function DownloadPanel({
+  onUnauthorized,
+  logout,
+}: {
+  onUnauthorized: () => void;
+  logout: () => void;
+}) {
   const [data, setData] = useState<DlResp | null>(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"all" | Status>("all");
@@ -96,37 +101,25 @@ export default function BabySongAdmin() {
   const [toast, setToast] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* 会话探测 */
-  useEffect(() => {
-    fetch(`${BASE}/session`, { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d) => setAuthed(!!d.valid))
-      .catch(() => setAuthed(false));
-  }, []);
-
   const load = useCallback(async () => {
     try {
-      const d = await request<DlResp>("/downloads");
+      const d = await api.get<DlResp>("/downloads");
       setData(d);
       setError("");
     } catch (e: unknown) {
-      const err = e as Error & { status?: number };
-      if (err.status === 401) {
-        setAuthed(false);
-      } else {
-        setError(err.message || "加载失败");
-      }
+      if (isUnauthorized(e)) onUnauthorized();
+      else setError(errText(e));
     }
   }, []);
 
   /* 首次加载 + 有任务时轮询（3s），空闲时停轮询 */
+  /* 首个渲染即拉数据：会话已由 AdminGate 校验通过 */
   useEffect(() => {
-    if (!authed) return;
     load();
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [authed, load]);
+  }, [load]);
 
   useEffect(() => {
     const active =
@@ -154,47 +147,17 @@ export default function BabySongAdmin() {
     }
   }, [data]);
 
-  const doAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthBusy(true);
-    setAuthError("");
-    try {
-      await request("/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      setAuthed(true);
-      setPassword("");
-    } catch (err) {
-      setAuthError((err as Error).message || "验证失败");
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
-  const doLogout = async () => {
-    await request("/logout", { method: "POST" }).catch(() => {});
-    setAuthed(false);
-    setData(null);
-  };
-
   const download = async (ids: string[]) => {
     if (!ids.length) return;
     setActionBusy(true);
     try {
-      await request("/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
+      await api.post("/download", { ids });
       justFinished.current = true;
       await load();
       setToast(ids.length === 1 ? "已加入下载队列" : `已加入 ${ids.length} 首到下载队列`);
     } catch (e) {
-      const err = e as Error & { status?: number };
-      if (err.status === 401) setAuthed(false);
-      else setToast(err.message || "触发下载失败");
+      if (isUnauthorized(e)) onUnauthorized();
+      else setToast(errText(e));
     } finally {
       setActionBusy(false);
     }
@@ -210,56 +173,6 @@ export default function BabySongAdmin() {
     if (!data) return [];
     return tab === "all" ? data.items : data.items.filter((x) => x.status === tab);
   }, [data, tab]);
-
-  if (authed === null) {
-    return (
-      <div className="grid place-items-center py-32 text-paper-500">
-        <Loader2 size={26} className="animate-spin" />
-      </div>
-    );
-  }
-
-  /* ===== 密码门 ===== */
-  if (!authed) {
-    return (
-      <div className="grid place-items-center py-24">
-        <form
-          onSubmit={doAuth}
-          className="w-full max-w-sm rounded-2xl border border-paper-200 bg-paper-50 p-7 shadow-sm"
-        >
-          <div className="mb-5 text-center">
-            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-brand-red/10 text-brand-red2">
-              <DownloadCloud size={22} />
-            </div>
-            <h1 className="text-lg font-bold">儿歌下载管理</h1>
-            <p className="mt-1 text-xs text-paper-600">私有功能，请输入操作密码（同触发器）</p>
-          </div>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="操作密码"
-            autoFocus
-            className="w-full rounded-xl border border-paper-200 bg-paper-50 px-4 py-2.5 text-sm outline-none transition focus:border-brand-red/50 focus:bg-white"
-          />
-          {authError && <p className="mt-2 text-xs text-red-600">{authError}</p>}
-          <button
-            type="submit"
-            disabled={authBusy || !password}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 py-2.5 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
-          >
-            {authBusy ? <Loader2 size={15} className="animate-spin" /> : null} 解锁
-          </button>
-          <Link
-            to="/babysong"
-            className="mt-4 block text-center text-xs text-paper-500 transition hover:text-brand-red"
-          >
-            ← 返回儿歌列表
-          </Link>
-        </form>
-      </div>
-    );
-  }
 
   /* ===== 管理主界面 ===== */
   const counts = data?.counts ?? {};
@@ -305,7 +218,7 @@ export default function BabySongAdmin() {
             <Music size={15} /> 播放列表
           </Link>
           <button
-            onClick={doLogout}
+            onClick={logout}
             title="退出登录"
             className="inline-flex items-center gap-1.5 rounded-xl border border-paper-200 px-3.5 py-2.5 text-sm text-paper-600 transition hover:border-red-300 hover:text-red-600"
           >

@@ -18,18 +18,10 @@ import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import { useEscapeClose } from "../common/useEscapeClose";
 import { errText } from "../common/State";
+import { babysongApi, type Song as babysongApi_Song } from "./api";
 
-interface Song {
-  id: string;
-  title: string;
-  channel: string;
-  youtube_url: string;
-  cover: string;
-  bilibili_bvid?: string; // 哔哩哔哩视频 BV 号（抓取所得，可能为空）
-  seq: number; // 全局序号（1..N），按目录顺序，搜索/分页不改变
-  local?: boolean; // 服务器已有本地视频文件（/data/song/{id}.mp4）
-  local_url?: string; // 本地播放地址（nginx /song/ 静态服务）
-}
+/** 儿歌条目 = 后端字段 + 前端按目录顺序补的全局序号（搜索/分页不改变）。 */
+type Song = babysongApi_Song & { seq: number };
 
 const PAGE_SIZE = 48;
 const PLAYED_KEY = "babysong_played_v1";
@@ -168,11 +160,11 @@ export default function BabySong() {
   };
 
   const fetchList = useCallback((report = false) => {
-    return fetch("/api/babysong/list")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    return babysongApi
+      .list()
       .then((d) => {
         const list: Song[] = (Array.isArray(d.songs) ? d.songs : []).map(
-          (s: Omit<Song, "seq">, i: number) => ({ ...s, seq: i + 1 })
+          (s, i) => ({ ...s, seq: i + 1 }),
         );
         setSongs(list);
       })

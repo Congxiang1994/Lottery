@@ -1,4 +1,4 @@
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, Inbox, Loader2, RefreshCw } from "lucide-react";
 
 /**
  * 全站统一的「加载失败 + 重试」提示条。
@@ -63,21 +63,87 @@ export function RouteFallback() {
   );
 }
 
-/** 把任意异常转成一句能给人看的话。
- *  fetch 抛出来的原文是 `TypeError: Failed to fetch`、`请求失败 500: {"detail":"..."}`
- *  这类，直接甩到界面上既不友好也读不懂 —— 这里统一收敛一遍。 */
+/**
+ * 全站统一的「加载中」行内提示。
+ *
+ * 约定：**任何页面/面板的加载态都用它**，别再手写
+ * ``<Loader2 className="animate-spin" /> 加载中…`` —— 全仓曾有 8 处手写，
+ * 字体色、加载点大小、省略号（…/...）三处不一致。
+ *
+ * @param label 文案，默认「加载中…」
+ * @param className 追加的外层类（多数场景用于居中/间距）
+ */
+export function Loading({
+  label = "加载中…",
+  className = "",
+}: {
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      className={`flex items-center justify-center gap-2 text-xs text-paper-600 ${className}`}
+    >
+      <Loader2 size={14} className="animate-spin" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+/**
+ * 全站统一的「空数据」提示。
+ *
+ * 约定：空态必须说清「为什么空」或「空之后会有什么」，能传 hint 就传 ——
+ * 只有「暂无数据」的空态，用户没法判断是自己筛太窄还是功能没数据。
+ */
+export function Empty({
+  text = "暂无数据",
+  hint,
+  icon: Icon = Inbox,
+  className = "",
+}: {
+  text?: string;
+  hint?: string;
+  icon?: typeof Inbox;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col items-center justify-center gap-1.5 py-10 text-center ${className}`}>
+      <Icon size={26} className="text-paper-300" />
+      <p className="text-xs font-medium text-paper-600">{text}</p>
+      {hint && <p className="max-w-xs text-[11px] leading-relaxed text-paper-500">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * 把任意异常转成一句能给人看的话。
+ *
+ * ⚠️ 现在所有请求都走 ``common/http.ts``，它抛的是 :class:`ApiError`：
+ * ``message`` 已经是「后端 detail 中文 / 网络失败提示 / 请求失败 N」三者之一，
+ * 所以这里**优先直接用它**，不再去 message 里正则捞 JSON ——
+ * 那段正则只对改造前「把整个响应体拼进 message」的旧客户端有意义。
+ *
+ * 保留下来的兜底：非 ApiError 的未知异常（渲染错误、第三方库）走原文截断。
+ */
 export function errText(e: unknown): string {
   const raw = (e instanceof Error ? e.message : String(e ?? "")).trim();
   if (!raw) return "未知错误";
-  // 后端统一错误体 `{"detail":"..."}`：里面的中文通常是给人看的，优先取它
+  // 服务端 5xx：不把内部细节甩给用户（detail 里可能是堆栈/英文异常）
+  const status = (e as { status?: number })?.status;
+  if (typeof status === "number" && status >= 500) return `服务端异常，请稍后重试`;
+  if (e instanceof Error && e.name === "ApiError") return raw.slice(0, 80);
+  // 兜底：旧格式 `请求失败 500: {...}`
   const detail = raw.match(/\{"detail"\s*:\s*"([^"]{1,80})"\}/);
   if (detail) return detail[1];
+  if (/Failed to fetch|NetworkError|Load failed|Network request failed/i.test(raw)) {
+    return "网络连接失败，请检查网络";
+  }
   const code = raw.match(/请求失败\s+(\d{3})/);
   if (code) {
     return Number(code[1]) >= 500 ? "服务端异常，请稍后重试" : `请求失败（${code[1]}）`;
-  }
-  if (/Failed to fetch|NetworkError|Load failed|Network request failed/i.test(raw)) {
-    return "网络连接失败，请检查网络";
   }
   return raw.slice(0, 60);
 }

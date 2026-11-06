@@ -1,24 +1,9 @@
+import { createApi } from "../common/http";
+
 const BASE = "/api/trigger";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, {
-    credentials: "same-origin",
-    ...init,
-  });
-  if (res.status === 401) {
-    const err = new Error("401") as Error & { status?: number };
-    err.status = 401;
-    throw err;
-  }
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((d) => d.detail ?? "")
-      .catch(() => "");
-    throw new Error(detail || `请求失败 ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
+/** trigger 域请求统一走全站 http 客户端（401/错误体处理见 common/http.ts）。 */
+const api = createApi(BASE);
 
 export interface TriggerTask {
   id: number;
@@ -72,57 +57,36 @@ export interface TriggerStatus {
 }
 
 export const triggerApi = {
-  session: () =>
-    fetch(`${BASE}/session`, { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d) => d.valid as boolean),
+  session: () => api.get<{ valid: boolean }>("/session").then((d) => d.valid),
 
   auth: (password: string) =>
-    request<{ ok: boolean; message: string; ttl_hours: number }>("/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    }),
+    api.post<{ ok: boolean; message: string; ttl_hours: number }>("/auth", { password }),
 
-  logout: () => request<{ ok: boolean }>("/logout", { method: "POST" }),
+  logout: () => api.post<{ ok: boolean }>("/logout"),
 
-  tasks: () => request<TriggerTask[]>("/tasks"),
+  tasks: () => api.get<TriggerTask[]>("/tasks"),
 
   createTask: (data: Partial<TriggerTask> & { api_key: string }) =>
-    request<TriggerTask>("/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
+    api.post<TriggerTask>("/tasks", data),
 
   updateTask: (id: number, data: Partial<TriggerTask> & { api_key?: string }) =>
-    request<TriggerTask>(`/tasks/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
+    api.put<TriggerTask>(`/tasks/${id}`, data),
 
   toggleTask: (id: number, enabled: boolean) =>
-    request<TriggerTask>(`/tasks/${id}/enabled`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled }),
-    }),
+    api.put<TriggerTask>(`/tasks/${id}/enabled`, { enabled }),
 
-  deleteTask: (id: number) =>
-    request<{ ok: boolean }>(`/tasks/${id}`, { method: "DELETE" }),
+  deleteTask: (id: number) => api.del<{ ok: boolean }>(`/tasks/${id}`),
 
-  fireNow: (id: number) =>
-    request<{ ok: boolean }>(`/tasks/${id}/fire`, { method: "POST" }),
+  fireNow: (id: number) => api.post<{ ok: boolean }>(`/tasks/${id}/fire`),
 
   testConnection: (baseUrl: string, apiKey: string, model: string) =>
-    request<{ ok: boolean; message: string }>("/test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model }),
+    api.post<{ ok: boolean; message: string }>("/test", {
+      base_url: baseUrl,
+      api_key: apiKey,
+      model,
     }),
 
-  history: (limit = 100) => request<HistoryRow[]>(`/history?limit=${limit}`),
+  history: (limit = 100) => api.get<HistoryRow[]>("/history", { limit }),
 
-  status: () => request<TriggerStatus>("/status"),
+  status: () => api.get<TriggerStatus>("/status"),
 };

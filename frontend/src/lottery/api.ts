@@ -1,3 +1,4 @@
+import { query, request, type Query } from "../common/http";
 import type {
   AlgoCatalog,
   AlgoResult,
@@ -18,14 +19,9 @@ import type {
 
 const BASE = "/api/v1";
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(BASE + path);
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`请求失败 ${res.status}: ${text}`);
-  }
-  return res.json() as Promise<T>;
-}
+/** 彩票站请求统一走全站 http 客户端（错误体/401/网络失败的处理见 common/http.ts）。 */
+const get = <T>(path: string, params?: Query): Promise<T> =>
+  request<T>(BASE + path + (params ? query(params) : ""));
 
 export const api = {
   lotteries: () => get<LotteryInfo[]>("/lotteries"),
@@ -34,25 +30,22 @@ export const api = {
   stats: (k: string) => get<Stats>(`/${k}/stats`),
   history: (k: string, page: number, pageSize: number) =>
     get<{ lottery: string; page: number; page_size: number; total: number; draws: Draw[] }>(
-      `/${k}/history?page=${page}&page_size=${pageSize}`
+      `/${k}/history`,
+      { page, page_size: pageSize },
     ),
   historyPredictions: (k: string, page: number, pageSize: number) =>
-    get<HistoryPredictions>(
-      `/${k}/history-predictions?page=${page}&page_size=${pageSize}`
-    ),
+    get<HistoryPredictions>(`/${k}/history-predictions`, { page, page_size: pageSize }),
   predict: (k: string) => get<Predict>(`/${k}/predict`),
   // ---- 算法引擎
   algorithms: () => get<AlgoCatalog>("/algorithms"),
   runAlgo: (k: string, id: string) =>
     get<AlgoResult & { lottery: string; issue_base: string }>(`/${k}/algorithms/${id}`),
   runBatch: (k: string, maxCost: number, ids?: string) =>
-    get<BatchAlgoResponse>(
-      `/${k}/algorithms?max_cost=${maxCost}${ids ? `&ids=${ids}` : ""}`
-    ),
+    get<BatchAlgoResponse>(`/${k}/algorithms`, { max_cost: maxCost, ids }),
   combined: (k: string, maxCost = 2) =>
-    get<CombinedResult>(`/${k}/combined?max_cost=${maxCost}`),
+    get<CombinedResult>(`/${k}/combined`, { max_cost: maxCost }),
   backtest: (k: string, folds = 5, maxCost = 1) =>
-    get<BacktestResult>(`/${k}/backtest?folds=${folds}&max_cost=${maxCost}`),
+    get<BacktestResult>(`/${k}/backtest`, { folds, max_cost: maxCost }),
   // ---- 定时入库结果（纯缓存展示，不触发实时计算）
   algoSummary: () => get<AlgoSummary[]>("/algo-summary"),
   savedLatest: (k: string) =>
@@ -62,16 +55,9 @@ export const api = {
   // ---- 全量运行（与定时任务同一逻辑，结果落 sqlite；双色球+大乐透一起跑）
   // 密码由 run-all 端到端校验（后端带失败计数锁定流控），无需先单独校验。
   runAll: (password: string) =>
-    fetch(`${BASE}/run-all`, {
+    request<{ started: boolean; message: string }>(`${BASE}/run-all`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    }).then(async (r) => {
-      if (!r.ok) {
-        const detail = await r.json().then((d) => d.detail ?? "").catch(() => "");
-        throw new Error(detail || `请求失败 ${r.status}`);
-      }
-      return r.json();
+      json: { password },
     }),
   runStatus: () => get<AllRunStatus>(`/run-status`),
 };

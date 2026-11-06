@@ -24,7 +24,7 @@ from app.story.config import (
     KEY_PREFIX,
 )
 
-_SCHEMA = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS stories (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     title       TEXT    NOT NULL,
@@ -93,7 +93,7 @@ def init() -> None:
     2026-09-24 首次上线实测踩到（systemd 靠 restart 才拉起来，属侥幸）。
     SQLite 的 ``busy_timeout`` 对 ``PRAGMA journal_mode`` 不生效，只能靠外部锁。
     """
-    init_schema(DB_PATH, _SCHEMA)
+    init_schema(DB_PATH, SCHEMA)
 
 
 # ------------------------------------------------------------ 故事 CRUD

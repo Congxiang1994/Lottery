@@ -28,6 +28,7 @@ import {
 
 import { ExitPresence } from "../common/Modal";
 import { ErrorBlock, errText } from "../common/State";
+import { AdminGate } from "../common/AdminGate";
 import { useModalHistory } from "../common/useModalHistory";
 import { useTheme } from "../common/useTheme";
 import {
@@ -94,21 +95,37 @@ const SELECT_CLS =
 /* ============================== 页面 ============================== */
 
 export default function Access() {
+  return (
+    <AdminGate
+      title="访问管理"
+      subtitle="私有功能 · 验证后可查看全部访问记录"
+      desc="记录每位访客的时间、IP、地区、客户端与访问过的接口 / 功能页，支持按 IP 与访客聚合、图表分析与 CSV 导出。"
+      probe={() => accessApi.session()}
+      login={(pwd) => accessApi.auth(pwd)}
+      logout={() => accessApi.logout()}
+      accent="red"
+    >
+      {({ onUnauthorized, logout }) => (
+        <AccessPanel onUnauthorized={onUnauthorized} logout={logout} />
+      )}
+    </AdminGate>
+  );
+}
+
+function AccessPanel({
+  onUnauthorized,
+  logout,
+}: {
+  onUnauthorized: () => void;
+  logout: () => void;
+}) {
   const { night } = useTheme();
-  const [authed, setAuthed] = useState<boolean | null>(null);
   const [days, setDays] = useState(7);
   const [includeAuto, setIncludeAuto] = useState(false);
   const [tab, setTab] = useState<TabKey>("overview");
   const [reloadKey, setReloadKey] = useState(0);
   const [ipOpen, setIpOpen] = useState<string | null>(null);
   const [visitorOpen, setVisitorOpen] = useState<string | null>(null);
-
-  useEffect(() => {
-    accessApi
-      .session()
-      .then(setAuthed)
-      .catch(() => setAuthed(false));
-  }, []);
 
   const ipModal = useModalHistory("accessIp", useCallback(() => setIpOpen(null), []));
   const visitorModal = useModalHistory("accessVisitor", useCallback(() => setVisitorOpen(null), []));
@@ -131,28 +148,7 @@ export default function Access() {
   };
 
   const refresh = () => setReloadKey((k) => k + 1);
-  const onUnauth = useCallback(() => setAuthed(false), []);
-
-  if (authed === null) {
-    return (
-      <div className="grid min-h-[60vh] place-items-center">
-        <span className="flex items-center gap-2 text-sm text-paper-600">
-          <Loader2 size={16} className="animate-spin" /> 正在确认会话…
-        </span>
-      </div>
-    );
-  }
-
-  if (!authed) {
-    return (
-      <PasswordGate
-        onPass={() => {
-          setAuthed(true);
-          refresh();
-        }}
-      />
-    );
-  }
+  const onUnauth = onUnauthorized;
 
   return (
     <div className="pt-8 sm:pt-10">
@@ -191,9 +187,7 @@ export default function Access() {
           </button>
           <button
             type="button"
-            onClick={() =>
-              accessApi.logout().finally(() => setAuthed(false))
-            }
+            onClick={logout}
             title="退出"
             className="press grid h-8 w-8 place-items-center rounded-lg border border-paper-200 text-paper-700 transition hover:bg-paper-100"
           >
@@ -271,76 +265,6 @@ export default function Access() {
           />
         )}
       </ExitPresence>
-    </div>
-  );
-}
-
-/* ============================== 密码门 ============================== */
-
-function PasswordGate({ onPass }: { onPass: () => void }) {
-  const [pwd, setPwd] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const submit = () => {
-    if (!pwd || loading) return;
-    setLoading(true);
-    setErr(null);
-    accessApi
-      .auth(pwd)
-      .then(() => {
-        setPwd("");
-        onPass();
-      })
-      .catch((e) => setErr(errText(e)))
-      .finally(() => setLoading(false));
-  };
-
-  return (
-    <div className="flex min-h-[60vh] items-center justify-center pt-10">
-      <div className="glass w-full max-w-sm rounded-3xl p-7 shadow-card">
-        <div className="flex items-center gap-2">
-          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-brand-red/20 to-brand-gold/10 text-brand-red2">
-            <KeyRound size={18} />
-          </span>
-          <div>
-            <h1 className="text-lg font-bold text-paper-900">访问管理</h1>
-            <p className="text-xs text-paper-700">私有功能 · 验证后可查看全部访问记录</p>
-          </div>
-        </div>
-        <p className="mt-4 text-xs leading-relaxed text-paper-700">
-          记录每位访客的时间、IP、地区、客户端与访问过的接口 / 功能页，
-          支持按 IP 与访客聚合、图表分析与 CSV 导出。
-        </p>
-        <input
-          type="password"
-          value={pwd}
-          onChange={(e) => setPwd(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="请输入操作密码"
-          autoFocus
-          className="mt-4 w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2.5 text-sm text-paper-900 outline-none focus:border-brand-gold/50"
-        />
-        {err && (
-          <div className="mt-2 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-            {err}
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={submit}
-          disabled={loading || !pwd}
-          className="press mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
-        >
-          {loading ? (
-            <>
-              <Loader2 size={14} className="animate-spin" /> 校验中…
-            </>
-          ) : (
-            "进入"
-          )}
-        </button>
-      </div>
     </div>
   );
 }

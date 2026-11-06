@@ -22,16 +22,9 @@ import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import { useEscapeClose } from "../common/useEscapeClose";
 import { errText } from "../common/State";
+import { hanziApi, type VideoItem as hanziApi_VideoItem } from "./api";
 
-interface VideoItem {
-  id: number | null;
-  num: number | null;
-  title: string;
-  pinyin: string;
-  pinyin_first: string;
-  filename: string;
-  url: string;
-}
+type VideoItem = hanziApi_VideoItem;
 
 /* 楷体字体栈 */
 const KAI: React.CSSProperties = {
@@ -76,8 +69,8 @@ export default function HanziPlayer() {
     }
     setLoading(true);
     setError("");
-    fetch("/api/hanzi/list")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    hanziApi
+      .list()
       .then((d) => {
         const list = Array.isArray(d.videos) ? d.videos : [];
         setVideos(list);

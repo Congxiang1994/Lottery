@@ -1,33 +1,9 @@
+import { createApi } from "../common/http";
+
 const BASE = "/api/deals";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, { credentials: "same-origin", ...init });
-  if (res.status === 401) {
-    const err = new Error("401") as Error & { status?: number };
-    err.status = 401;
-    throw err;
-  }
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((d) => d.detail ?? "")
-      .catch(() => "");
-    throw new Error(detail || `请求失败 ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-const json = (body: unknown): RequestInit => ({
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
-
-const put = (body: unknown): RequestInit => ({
-  method: "PUT",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
+/** deals 域请求统一走全站 http 客户端（401/错误体处理见 common/http.ts）。 */
+const api = createApi(BASE);
 
 export interface Deal {
   id: number;
@@ -161,51 +137,42 @@ export interface DealStatus {
 
 export const dealsApi = {
   // ---------- 公开 ----------
-  list: (params: { limit?: number; hours?: number; q?: string; cate?: string } = {}) => {
-    const qs = new URLSearchParams();
-    qs.set("limit", String(params.limit ?? 60));
-    if (params.hours) qs.set("hours", String(params.hours));
-    if (params.q) qs.set("q", params.q);
-    if (params.cate) qs.set("cate", params.cate);
-    return fetch(`${BASE}/list?${qs}`, { credentials: "same-origin" }).then(
-      (r) => r.json() as Promise<DealList>,
-    );
-  },
+  list: (params: { limit?: number; hours?: number; q?: string; cate?: string } = {}) =>
+    api.get<DealList>("/list", {
+      limit: params.limit ?? 60,
+      hours: params.hours,
+      q: params.q,
+      cate: params.cate,
+    }),
 
-  stats: () =>
-    fetch(`${BASE}/stats`, { credentials: "same-origin" }).then(
-      (r) => r.json() as Promise<DealStats>,
-    ),
+  stats: () => api.get<DealStats>("/stats"),
 
   // ---------- 管理 ----------
   session: () =>
-    fetch(`${BASE}/admin/session`, { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d) => d.valid as boolean),
+    api.get<{ valid: boolean }>("/admin/session").then((d) => d.valid),
 
   auth: (password: string) =>
-    request<{ ok: boolean; message: string; ttl_hours: number }>(
-      "/admin/auth",
-      json({ password }),
-    ),
+    api.post<{ ok: boolean; message: string; ttl_hours: number }>("/admin/auth", {
+      password,
+    }),
 
-  logout: () => request<{ ok: boolean }>("/admin/logout", { method: "POST" }),
+  logout: () => api.post<{ ok: boolean }>("/admin/logout"),
 
-  config: () => request<DealConfig>("/admin/config"),
+  config: () => api.get<DealConfig>("/admin/config"),
 
   saveConfig: (patch: Record<string, string | number>) =>
-    request<{
+    api.put<{
       ok: boolean;
       cookie_set: boolean;
       cookie_masked: string;
       /** 改了阈值时后端会顺手重算全库，这里回传重算结果 */
       picked?: number;
       changed?: number;
-    }>("/admin/config", put(patch)),
+    }>("/admin/config", patch),
 
-  status: () => request<DealStatus>("/admin/status"),
+  status: () => api.get<DealStatus>("/admin/status"),
 
-  fetchNow: () => request<{ ok: boolean; message: string }>("/admin/fetch", json({})),
+  fetchNow: () => api.post<{ ok: boolean; message: string }>("/admin/fetch", {}),
 
-  unban: () => request<{ ok: boolean }>("/admin/unban", json({})),
+  unban: () => api.post<{ ok: boolean }>("/admin/unban", {}),
 };
