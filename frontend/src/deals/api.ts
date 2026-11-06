@@ -138,23 +138,10 @@ export interface DealSettings {
   newbie_discount: string;
   newbie_price: string;
   // ---------------- 数码垂类（2026-11-06）----------------
-  /** 判定模式：digital（数码垂类）| legacy（旧的全品类判据，应急回滚用） */
-  filter_mode: string;
-  /** 品类白名单，逗号分隔 */
+  /** 品类白名单，逗号分隔。**唯一可编辑项** ——
+   *  信号词表 / 品牌白名单 / 权重 / 判据模式已硬编码进后端 config.py，
+   *  后端不再返回这些键（用户 2026-11-06 要求：不会有人改，页面也别暴露）。 */
   cate_allow: string;
-  /** 非商品词表（会员/券/课程…），`|` 分隔 */
-  junk_words: string;
-  /** 活动帖词表（清单/汇总/预告…），`|` 分隔 */
-  activity_words: string;
-  /** T1 真漏信号词表，`|` 分隔 */
-  signal_t1: string;
-  /** T2 补贴信号词表，`|` 分隔 */
-  signal_t2: string;
-  /** 品牌白名单，逗号分隔 */
-  brand_allow: string;
-  signal_t1_weight: string;
-  signal_t2_weight: string;
-  brand_weight: string;
   cookie: string;
   cookie_ua: string;
 }

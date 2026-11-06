@@ -32,6 +32,26 @@
 
 ## 3. 判定规则（按执行顺序）
 
+### 3.0 配置在哪改
+
+**只有品类白名单是配置项**（管理页点选 chip，存 `settings.cate_allow`）。
+
+信号词表、品牌白名单、权重、判据模式**全部硬编码在 `backend/app/smzdm/config.py`
+的常量里**（2026-11-06 用户明确要求：不会有人改这些，设置页也不要暴露）。
+
+要调整就直接改常量再发版 —— **不要再往 `DEFAULT_SETTINGS` 里加回去**：
+那会让设置页多出一堆没人看得懂、改了也不生效的输入框，而管理页的
+「怎么筛的」区块已经把这些规则用人话写清楚了。
+
+| 想改什么 | 改哪个常量 |
+|---|---|
+| 信号词 | `SIGNAL_T1` / `SIGNAL_T2` |
+| 排除词 | `JUNK_WORDS` / `ACTIVITY_WORDS` |
+| 品牌加成 | `BRAND_ALLOW` / `BRAND_WEIGHT` |
+| 信号权重 | `SIGNAL_T1_WEIGHT` / `SIGNAL_T2_WEIGHT` |
+| 价格档 | `PRICE_TIERS` / `PRICE_TIER_TOP` |
+| 整体回退旧判据 | `FILTER_MODE = "legacy"` |
+
 ### 3.1 模式开关
 
 `filter_mode` = `digital`（默认）| `legacy`。

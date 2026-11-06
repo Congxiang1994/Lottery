@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
-  ChevronRight,
   KeyRound,
   Loader2,
   LogOut,
@@ -167,47 +166,11 @@ function NumField({
   );
 }
 
-/**
- * 词表 / 名单输入框。
- *
- * 用 textarea 而不是 input：词表动辄二三十项、上百字符，单行 input 里根本看不清
- * 自己在改哪一段。行数按内容长度自适应，避免固定高度要么太空要么滚动。
- */
-function TextField({
-  label,
-  hint,
-  value,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  hint: string;
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <label className={`block ${disabled ? "opacity-50" : ""}`}>
-      <span className="text-[11px] font-medium text-paper-800">{label}</span>
-      <textarea
-        value={value}
-        disabled={disabled}
-        rows={Math.min(4, Math.max(2, Math.ceil((value || "").length / 60)))}
-        onChange={(e) => onChange(e.target.value)}
-        className={`mt-1 w-full resize-y rounded-lg border border-paper-200 bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed text-paper-900 outline-none transition focus:border-brand-gold/60`}
-      />
-      <span className="mt-1 block text-[10px] leading-snug text-paper-500">{hint}</span>
-    </label>
-  );
-}
-
 /* ---------------- 主面板 ---------------- */
 function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const [status, setStatus] = useState<DealStatus | null>(null);
   const [config, setConfig] = useState<DealConfig | null>(null);
   const [form, setForm] = useState<DealSettings | null>(null);
-  /** 高级区默认收起：日常只需要「选品类」，其余是排障时才看的东西。 */
-  const [advOpen, setAdvOpen] = useState(false);
   /** 品类 chip 默认只露数码相关的几个，其余折叠 */
   const [showAllCate, setShowAllCate] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -308,34 +271,6 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const saveDigital = async () => {
-    if (!form) return;
-    setBusy(true);
-    try {
-      const res = await dealsApi.saveConfig({
-        filter_mode: form.filter_mode,
-        cate_allow: form.cate_allow,
-        junk_words: form.junk_words,
-        activity_words: form.activity_words,
-        signal_t1: form.signal_t1,
-        signal_t2: form.signal_t2,
-        brand_allow: form.brand_allow,
-        signal_t1_weight: form.signal_t1_weight,
-        signal_t2_weight: form.signal_t2_weight,
-        brand_weight: form.brand_weight,
-      });
-      flash(`已保存，全库重算后共 ${res.picked ?? 0} 条入选`);
-      await refresh();
-      // 后端会把词表规范化（`,` → `|`、去空项），必须回填，否则输入框
-      // 还显示着用户原始写法，下次保存又把脏格式发上去。
-      const cfg = await dealsApi.config();
-      setForm((f) => (f ? { ...f, ...cfg.settings } : cfg.settings));
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
 
 
@@ -350,23 +285,6 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
 
 
   /** 标签流开关：点 chip 加入/移出。存的是 slug（中文名会 301，后端也会挡）。 */
-  const toggleTag = async (slug: string) => {
-    if (!form) return;
-    const cur = form.tag_feeds.split(",").map((x) => x.trim()).filter(Boolean);
-    const next = cur.includes(slug) ? cur.filter((x) => x !== slug) : [...cur, slug];
-    const val = next.join(",");
-    setBusy(true);
-    try {
-      await dealsApi.saveConfig({ tag_feeds: val });
-      setForm((f) => (f ? { ...f, tag_feeds: val } : f));
-      flash(next.length ? `已启用 ${next.length} 个标签流` : "已关闭标签流，只保留首页推荐流");
-      await refresh();
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const fetchNow = async () => {
     setBusy(true);
@@ -579,183 +497,51 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         )}
       </Section>
 
-      {/* 高级：默认收起，日常不用碰 */}
-      <Section
-        title="高级"
-        desc="平时不用改。改完点保存会立刻重算全库。"
-        right={
-          <button
-            onClick={() => setAdvOpen((v) => !v)}
-            className="press inline-flex items-center gap-1 rounded-lg border border-paper-200 px-2.5 py-1 text-[11px] text-paper-700 transition hover:bg-paper-100"
-          >
-            {advOpen ? "收起" : "展开"}
-            <ChevronRight
-              size={12}
-              className={`transition ${advOpen ? "rotate-90" : ""}`}
-            />
-          </button>
-        }
-      >
-        {!advOpen ? (
-          <p className="text-[11px] leading-relaxed text-paper-600">
-            信号词、品牌白名单、权重、抓取页数都在里面。当前：
-            T1 {form.signal_t1_weight} / T2 {form.signal_t2_weight} / 品牌 {form.brand_weight}，
-            标签流 {form.tag_feeds.split(",").filter(Boolean).length} 个 × {form.tag_pages || 0} 页。
-          </p>
-        ) : (
-          <div className="space-y-4">
-            <div>
-              <div className="text-[11px] font-medium text-paper-800">筛选模式</div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                {(
-                  [
-                    ["digital", "数码垂类"],
-                    ["legacy", "旧判据（全品类）"],
-                  ] as const
-                ).map(([val, label]) => (
-                  <button
-                    key={val}
-                    onClick={() => set({ filter_mode: val })}
-                    className={`press rounded-lg border px-2.5 py-1 text-[11px] transition ${
-                      form.filter_mode === val
-                        ? "border-brand-red/40 bg-brand-red/10 font-medium text-brand-red2"
-                        : "border-paper-200 text-paper-700 hover:bg-paper-100"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              <TextField
-                label="真漏信号（T1）"
-                hint="命中即入选，权重最高。看站点标签与标题。"
-                value={form.signal_t1}
-                onChange={(v) => set({ signal_t1: v })}
-                disabled={form.filter_mode !== "digital"}
-              />
-              <TextField
-                label="补贴信号（T2）"
-                hint="也入选，排在 T1 之后。只说明渠道有补贴，不代表史低。"
-                value={form.signal_t2}
-                onChange={(v) => set({ signal_t2: v })}
-                disabled={form.filter_mode !== "digital"}
-              />
-              {/* 这两个必须分开编辑。合并成一个框时，「新加的活动帖词」没法判断
-                  该归哪张表 —— 之前那版会把它错归到非商品表，而两张表的语义完全不同
-                  （一个挡「不是商品」，一个挡「不是单个商品」）。 */}
-              <TextField
-                label="排除：不是商品"
-                hint="会员、年卡、券、课程、网盘 —— 混进数码池的实测约 10%。"
-                value={form.junk_words}
-                onChange={(v) => set({ junk_words: v })}
-                disabled={form.filter_mode !== "digital"}
-              />
-              <TextField
-                label="排除：是活动帖"
-                hint="清单、汇总、预告、焕新季 —— 整场活动的入口，不是单个商品。"
-                value={form.activity_words}
-                onChange={(v) => set({ activity_words: v })}
-                disabled={form.filter_mode !== "digital"}
-              />
-              <TextField
-                label="品牌白名单"
-                hint="命中则价值分加成，让认可度高的牌子压过同价杂牌。不是否决项。"
-                value={form.brand_allow}
-                onChange={(v) => set({ brand_allow: v })}
-                disabled={form.filter_mode !== "digital"}
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <NumField
-                label="T1 权重"
-                hint=""
-                value={form.signal_t1_weight}
-                onChange={(v) => set({ signal_t1_weight: v })}
-                min={0.1}
-                max={5}
-                step={0.1}
-                disabled={form.filter_mode !== "digital"}
-              />
-              <NumField
-                label="T2 权重"
-                hint=""
-                value={form.signal_t2_weight}
-                onChange={(v) => set({ signal_t2_weight: v })}
-                min={0.1}
-                max={5}
-                step={0.1}
-                disabled={form.filter_mode !== "digital"}
-              />
-              <NumField
-                label="品牌系数"
-                hint=""
-                value={form.brand_weight}
-                onChange={(v) => set({ brand_weight: v })}
-                min={1}
-                max={3}
-                step={0.1}
-                disabled={form.filter_mode !== "digital"}
-              />
-            </div>
-
-            <div>
-              <div className="text-[11px] font-medium text-paper-800">抓取来源</div>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {config.constants.tag_feeds.map((t) => {
-                  const on = form.tag_feeds
-                    .split(",")
-                    .map((x) => x.trim())
-                    .filter(Boolean)
-                    .includes(t.slug);
-                  return (
-                    <button
-                      key={t.slug}
-                      onClick={() => void toggleTag(t.slug)}
-                      disabled={busy}
-                      className={`press rounded-full border px-2.5 py-1 text-[11px] transition disabled:opacity-50 ${
-                        on
-                          ? "border-brand-red/40 bg-brand-red/10 font-medium text-brand-red2"
-                          : "border-paper-200 text-paper-700 hover:bg-paper-100"
-                      }`}
-                    >
-                      {t.name}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-3">
-                <NumField
-                  label="每个标签抓几页"
-                  hint="0 = 关闭标签流"
-                  value={form.tag_pages}
-                  onChange={(v) => set({ tag_pages: v })}
-                  min={0}
-                  max={3}
-                />
-                <NumField
-                  label="精选流页数"
-                  hint="默认 0。全量爆料流水，实测无用"
-                  value={form.pages_per_round}
-                  onChange={(v) => set({ pages_per_round: v })}
-                  min={0}
-                  max={8}
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={() => void saveDigital()}
-              disabled={busy}
-              className="press inline-flex items-center gap-1.5 rounded-xl bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-            >
-              <Save size={12} /> 保存高级设置
-            </button>
-          </div>
-        )}
+      {/* 规则说明：把判定逻辑用人话摊开，替代原来的「高级」配置区。
+          用户 2026-11-06 明确：不会有人来这里改配置，真要调直接改代码。
+          所以这里只解释「为什么这条能上、那条不能」，不给任何可编辑控件。 */}
+      <Section title="怎么筛的" desc="规则固定在代码里，不需要你调。">
+        <ol className="space-y-2.5 text-[11px] leading-relaxed text-paper-700">
+          <li className="flex gap-2">
+            <span className="mt-px grid h-4 w-4 shrink-0 place-items-center rounded-full bg-paper-200 text-[9px] font-bold text-paper-800">1</span>
+            <span>
+              <b className="font-semibold text-paper-900">只看选中的品类。</b>
+              不在「关注品类」里的东西直接丢掉，连下面几步都不进。
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-px grid h-4 w-4 shrink-0 place-items-center rounded-full bg-paper-200 text-[9px] font-bold text-paper-800">2</span>
+            <span>
+              <b className="font-semibold text-paper-900">不是实物的踢掉。</b>
+              会员卡、年卡、优惠券、课程、网盘这类不算商品；「清单」「汇总」「预告」
+              这种整场活动的入口也不算单个商品。
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-px grid h-4 w-4 shrink-0 place-items-center rounded-full bg-paper-200 text-[9px] font-bold text-paper-800">3</span>
+            <span>
+              <b className="font-semibold text-paper-900">必须带「便宜信号」。</b>
+              站点自己打了标签的才算数，只有两种：
+              <span className="mx-1 rounded bg-brand-red/10 px-1 py-px font-medium text-brand-red2">真漏</span>
+              （绝对值 / 历史低价 / 手慢无 / 新低 / 直降 / 清仓）
+              和
+              <span className="mx-1 rounded border border-brand-gold/45 bg-brand-gold/10 px-1 py-px font-medium text-brand-gold">补贴</span>
+              （百亿补贴 / 国家补贴 / 国补 / 一键补贴）。
+              两个都没有的，哪怕价格再低也不收。
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-px grid h-4 w-4 shrink-0 place-items-center rounded-full bg-paper-200 text-[9px] font-bold text-paper-800">4</span>
+            <span>
+              <b className="font-semibold text-paper-900">按「值不值得买」排序。</b>
+              先看价格档（越贵的大件分越高，500 元的充电器和 8000 元的笔记本不是一个量级），
+              再乘信号强度（真漏 ×1.0 压过补贴 ×0.8）和品牌加成（小米 / 苹果 / 索尼这类 ×1.3）。
+              <span className="mt-1 block text-paper-600">
+                所以便宜的小配件也会收，只是排在后面 —— 榜单要的是「值得买的东西」，不是「折数最漂亮」。
+              </span>
+            </span>
+          </li>
+        </ol>
       </Section>
 
       <p className="pb-4 text-center text-[10px] text-paper-500">

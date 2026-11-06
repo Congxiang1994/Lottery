@@ -182,10 +182,14 @@ PRICE_TIERS: tuple[tuple[float, float], ...] = (
 )
 PRICE_TIER_TOP = 1.2
 
-# 信号权重 / 品牌系数默认值（可被 settings 覆盖）
+# 信号权重 / 品牌系数（硬编码，不再开放配置）
 SIGNAL_T1_WEIGHT = 1.0
 SIGNAL_T2_WEIGHT = 0.8
 BRAND_WEIGHT = 1.3
+
+# 判定模式。改成 "legacy" 即整体退回 2026-10-29 的全品类「折扣优先」判据
+# （临时想看旧口径时改这一行，不用发版之外的任何操作）。
+FILTER_MODE = "digital"
 
 DEFAULT_SETTINGS: dict[str, str] = {
     # 值率下限（%，= 值 / (值+不值) * 100）
@@ -249,22 +253,14 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "newbie_discount": "10",
     "newbie_price": "5",
     # ================= 数码垂类（2026-11-06，见 docs/deals-digital-spec.md）=================
-    # 判定模式：digital = 数码垂类判据；legacy = 完全退回 2026-10-29 的全品类
-    # 「折扣优先」判据。留这个开关是为了「先看看效果」不满意时一键回滚，不用发版。
-    "filter_mode": "digital",
-    # 品类白名单（digital 模式）。命中 cate1 或 cate2 才算候选，否则直接否决。
+    # **这里只剩一个可调项**。信号词表 / 品牌白名单 / 权重 / 判据模式都已
+    # 硬编码成上方常量（品牌 2026-11-06 明确要求「不会有人改这些」，
+    # 真要调整直接改 config.py 的常量，不要再往 settings 里加回去 ——
+    # 那会让设置页又多出一堆没人看得懂、改了也不生效的输入框）。
+    #
+    # 品类白名单：管理页用点选 chip 编辑，是唯一需要日常调整的东西。
+    # 命中 cate1 或 cate2 才算候选，否则直接否决。
     "cate_allow": CATE_ALLOW_DEFAULT,
-    # 非商品词 / 活动帖词：命中即否决
-    "junk_words": JUNK_WORDS,
-    "activity_words": ACTIVITY_WORDS,
-    # 信号词表：T1 直接入选（权重 1.0），T2 也入选但排在 T1 后（权重 0.8）
-    "signal_t1": SIGNAL_T1,
-    "signal_t2": SIGNAL_T2,
-    # 品牌白名单正则 + 系数
-    "brand_allow": BRAND_ALLOW,
-    "signal_t1_weight": str(SIGNAL_T1_WEIGHT),
-    "signal_t2_weight": str(SIGNAL_T2_WEIGHT),
-    "brand_weight": str(BRAND_WEIGHT),
 }
 
 # 分类快捷选项（均在 /fenlei/ 实测存在；「手机通讯」「数码配件」是电脑数码下的二级）

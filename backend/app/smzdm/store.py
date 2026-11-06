@@ -31,6 +31,7 @@ from app.smzdm.config import (
     CATE_BOOST_DEFAULT,
     DEALS_KEEP_DAYS,
     DEFAULT_SETTINGS,
+    FILTER_MODE,
     HEAT_WEIGHTS,
     JUNK_WORDS,
     LOG_KEEP_DAYS,
@@ -354,8 +355,8 @@ def signal_of(title: str, feed_tags: str, st: dict[str, str]) -> tuple[int, str]
     T1 允许来自 feed_tags —— 那是站点标签页的归属，比标题里的营销词可信。
     T2 只看标题：它本质是渠道活动词，出现在正文/标签里意义不同。
     """
-    t1 = _alt_pattern(st.get("signal_t1", SIGNAL_T1))
-    t2 = _alt_pattern(st.get("signal_t2", SIGNAL_T2))
+    t1 = _alt_pattern(SIGNAL_T1)
+    t2 = _alt_pattern(SIGNAL_T2)
     for src in (feed_tags or "", title or ""):
         if t1 and src:
             m = t1.search(src)
@@ -383,13 +384,13 @@ def value_score(price: float, tier: int, title: str, st: dict[str, str]) -> floa
                 pw = coef
                 break
     if tier == 1:
-        sw = _as_float(st, "signal_t1_weight", SIGNAL_T1_WEIGHT)
+        sw = SIGNAL_T1_WEIGHT
     elif tier == 2:
-        sw = _as_float(st, "signal_t2_weight", SIGNAL_T2_WEIGHT)
+        sw = SIGNAL_T2_WEIGHT
     else:
         sw = 0.0
-    brand = _alt_pattern(st.get("brand_allow", BRAND_ALLOW))
-    bw = _as_float(st, "brand_weight", BRAND_WEIGHT) if brand and brand.search(title or "") else 1.0
+    brand = _alt_pattern(BRAND_ALLOW)
+    bw = BRAND_WEIGHT if brand and brand.search(title or "") else 1.0
     return round(pw * sw * bw, 3)
 
 
@@ -414,10 +415,10 @@ def judge_digital(deal: Any, st: dict[str, str]) -> tuple[bool, str, int]:
     if in_blacklist(cate1, cate2, st):
         return False, "", 0
 
-    junk = _alt_pattern(st.get("junk_words", JUNK_WORDS))
+    junk = _alt_pattern(JUNK_WORDS)
     if junk and junk.search(title):
         return False, "", 0
-    activity = _alt_pattern(st.get("activity_words", ACTIVITY_WORDS))
+    activity = _alt_pattern(ACTIVITY_WORDS)
     if activity and activity.search(title):
         return False, "", 0
 
@@ -447,7 +448,7 @@ def evaluate(deal: Any, st: dict[str, str]) -> tuple[bool, str, int, float]:
         return False, reason, 0, 0.0
     # 入选的条目必然有 tier；legacy 模式下没有信号概念，tier 记 0 但分数照算，
     # 让排序在回滚后仍按「价格档 × 品牌」走，不至于退化成纯时间序。
-    if str(st.get("filter_mode", "digital")) == "digital":
+    if FILTER_MODE == "digital":
         _, _, tier = judge_digital(deal, st)
     else:
         tier = 0
@@ -488,7 +489,7 @@ def judge(deal: Any, st: dict[str, str]) -> tuple[bool, str]:
     ⚠️ 2026-11-06 起默认走 ``digital`` 模式（``judge_digital``），本节描述的是
     ``filter_mode=legacy`` 时的行为。数码垂类判据见 docs/deals-digital-spec.md。
     """
-    if str(st.get("filter_mode", "digital")) == "digital":
+    if FILTER_MODE == "digital":
         return judge_digital(deal, st)[:2]
 
     cate1 = getattr(deal, "cate1", "") or ""
@@ -760,7 +761,7 @@ def list_deals(
     # boost 拼成数字字面量而不是绑定参数：WHERE 的 args 已按顺序排好，
     # 插一个占位符就得重排索引，容易错位；而 boost 是自己解析的 float，不可能是注入载体。
     st = get_settings()
-    mode = str(st.get("filter_mode", "digital"))
+    mode = FILTER_MODE
     boost = min(max(_as_float(st, "cate_boost", CATE_BOOST_DEFAULT), 1.0), 5.0)
     if mode == "digital":
         # 数码垂类排序（2026-11-06）：价值分（价格档×信号权重×品牌）降序，
@@ -835,7 +836,7 @@ def stats() -> dict[str, Any]:
     """
     today = datetime.now().strftime("%Y-%m-%d")
     st = get_settings()
-    mode = str(st.get("filter_mode", "digital"))
+    mode = FILTER_MODE
     with get_conn(DB_PATH) as con:
         total = con.execute("SELECT COUNT(*) FROM deals").fetchone()[0]
         picked_total = con.execute(
@@ -863,8 +864,10 @@ def stats() -> dict[str, Any]:
         # 否则用户看到空列表会以为抓取坏了。文案全部由这里驱动，不写死在前端。
         "filter_mode": mode,
         "cate_allow": st.get("cate_allow", CATE_ALLOW_DEFAULT),
-        "signal_t1": st.get("signal_t1", SIGNAL_T1),
-        "signal_t2": st.get("signal_t2", SIGNAL_T2),
+        # 词表已硬编码（用户明确要求「不会有人改这里」），下发只为让页面
+        # 用人话说明「在等什么信号」，不是可编辑项。
+        "signal_t1": SIGNAL_T1,
+        "signal_t2": SIGNAL_T2,
         # 阈值一并下发：公开页的空态要说明「为什么空」，
         # 硬编码「值率 ≥85% 且三项取二」会在用户改完阈值后变成假话。
         "thresholds": {
