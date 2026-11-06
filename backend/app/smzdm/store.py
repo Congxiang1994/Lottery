@@ -24,11 +24,22 @@ from typing import Any, Iterable
 
 from app.common.db import get_conn
 from app.smzdm.config import (
+    ACTIVITY_WORDS,
+    BRAND_ALLOW,
+    BRAND_WEIGHT,
+    CATE_ALLOW_DEFAULT,
     CATE_BOOST_DEFAULT,
     DEALS_KEEP_DAYS,
     DEFAULT_SETTINGS,
     HEAT_WEIGHTS,
+    JUNK_WORDS,
     LOG_KEEP_DAYS,
+    PRICE_TIER_TOP,
+    PRICE_TIERS,
+    SIGNAL_T1,
+    SIGNAL_T1_WEIGHT,
+    SIGNAL_T2,
+    SIGNAL_T2_WEIGHT,
     DB_PATH,
 )
 
@@ -155,6 +166,25 @@ def init() -> None:
                     "INSERT OR REPLACE INTO settings (key, value) VALUES ('feed_v3','1')"
                 )
 
+            # 数码垂类迁移（2026-11-06）：库里 5953 条旧记录的 value_score /
+            # signal_tier 全是 0，必须重算一次才有排序与 chip。
+            # 🔴 用 INSERT OR IGNORE 抢标记：多 worker 同时 init 时只有一个能
+            # 拿到 rowcount=1，避免 2 个 worker 各扫一遍全表。
+            # 重算放在 flock 之外（下面）—— 它自己开连接写库，套在锁里会自锁。
+            cur = con.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES ('digital_v1','1')"
+            )
+            need_rejudge = cur.rowcount == 1
+
+    if need_rejudge:
+        # 失败不能让启动挂掉：算不出排序只是「新列全 0、排序退化成时间序」，
+        # 页面仍可用；而抛出去会让 gunicorn worker 起不来 → 全站 502。
+        try:
+            with _init_lock():
+                rejudge(get_settings())
+        except sqlite3.Error as e:  # noqa: BLE001
+            print(f"[smzdm] 数码垂类初始化重算失败（不影响启动）：{e}", flush=True)
+
 
 def _ensure_columns(con: sqlite3.Connection) -> None:
     """给已存在的表补新列。
@@ -182,6 +212,18 @@ def _ensure_columns(con: sqlite3.Connection) -> None:
         ("feed_tags", "TEXT NOT NULL DEFAULT ''"),
         # source：tag / home / jingxuan / top，排查「这条从哪来」用
         ("source", "TEXT NOT NULL DEFAULT ''"),
+        # ---------------- 2026-11-06 数码垂类 ----------------
+        # value_score：价值分（价格档 × 信号权重 × 品牌系数），**落库而不是每次查表**。
+        # 理由同 cate_hit：列表查询不该重新解析配置与跑正则。
+        # 代价是改配置必须走 rejudge() 重算，这与现有 update_settings→rejudge 链路一致。
+        ("value_score", "REAL NOT NULL DEFAULT 0"),
+        # signal_tier：1 = T1 真漏（绝对值/历史低价），2 = T2 补贴，0 = 无信号（不入选）。
+        # 前端用它决定 chip 颜色与文案；也用于「T1 必须排在 T2 之前」的自证。
+        ("signal_tier", "INTEGER NOT NULL DEFAULT 0"),
+        # price_num：到手价数值，仅供排序的次级键。
+        # 为什么单存一列：SQLite 的 CAST(price AS REAL) 虽然能解析前导数字，
+        # 但每行都要现算；且「见原帖」这类会得 0，排序语义得单独处理。
+        ("price_num", "REAL NOT NULL DEFAULT 0"),
     ):
         if name not in cols:
             con.execute(f"ALTER TABLE deals ADD COLUMN {name} {ddl}")
@@ -280,6 +322,138 @@ def in_blacklist(cate1: str, cate2: str, st: dict[str, str]) -> bool:
     return cate1 in blocked or cate2 in blocked
 
 
+# ---------------------------------------------------------------- 数码垂类判定
+# 完整规格见 docs/deals-digital-spec.md。要点：数码两品类实测 94% 没有折扣数据、
+# 92% 没有投票，所以不能用「折扣率 / 值率」判，改用**站点自己打的信号标签**
+# （feed_tags 里的绝对值/历史低价/手慢无 + 标题里的百亿补贴/国补）。
+
+_WS = re.compile(r"\s+")
+
+
+def _csv(raw: str) -> list[str]:
+    return [x.strip() for x in str(raw or "").split(",") if x.strip()]
+
+
+def _alt_pattern(words: str) -> re.Pattern[str] | None:
+    """把「a|b|c」词表编译成正则。
+
+    容错到「配置被写坏也不崩」：用户可能在管理页把 piped 词表改成逗号分隔，
+    或者留下空项 `a||b` —— 直接 join 成 `a||b` 会匹配空串，导致**所有条目都命中**，
+    等于筛选完全失效且不报错。这里统一两种分隔符并丢掉空项。
+    """
+    items = [w for w in re.split(r"[|,]", str(words or "")) if w.strip()]
+    if not items:
+        return None
+    return re.compile("|".join(re.escape(w.strip()) for w in items), re.I)
+
+
+def signal_of(title: str, feed_tags: str, st: dict[str, str]) -> tuple[int, str]:
+    """返回 (tier, 命中的词)。tier: 1=T1 真漏，2=T2 补贴，0=无信号。
+
+    T1 先判：同时命中时按 T1 计（信号更强）。
+    T1 允许来自 feed_tags —— 那是站点标签页的归属，比标题里的营销词可信。
+    T2 只看标题：它本质是渠道活动词，出现在正文/标签里意义不同。
+    """
+    t1 = _alt_pattern(st.get("signal_t1", SIGNAL_T1))
+    t2 = _alt_pattern(st.get("signal_t2", SIGNAL_T2))
+    for src in (feed_tags or "", title or ""):
+        if t1 and src:
+            m = t1.search(src)
+            if m:
+                return 1, m.group(0)
+    if t2 and title:
+        m = t2.search(title)
+        if m:
+            return 2, m.group(0)
+    return 0, ""
+
+
+def value_score(price: float, tier: int, title: str, st: dict[str, str]) -> float:
+    """价值分 = 价格档 × 信号权重 × 品牌系数。越大越靠前。
+
+    价格档分段而不是连续：用户扫列表只需知道「是不是大件」。
+    price <= 0（解析不出到手价）给最低档 0，避免脏数据被顶上来。
+    """
+    if price <= 0:
+        pw = 0.0
+    else:
+        pw = PRICE_TIER_TOP
+        for cap, coef in PRICE_TIERS:
+            if price < cap:
+                pw = coef
+                break
+    if tier == 1:
+        sw = _as_float(st, "signal_t1_weight", SIGNAL_T1_WEIGHT)
+    elif tier == 2:
+        sw = _as_float(st, "signal_t2_weight", SIGNAL_T2_WEIGHT)
+    else:
+        sw = 0.0
+    brand = _alt_pattern(st.get("brand_allow", BRAND_ALLOW))
+    bw = _as_float(st, "brand_weight", BRAND_WEIGHT) if brand and brand.search(title or "") else 1.0
+    return round(pw * sw * bw, 3)
+
+
+def judge_digital(deal: Any, st: dict[str, str]) -> tuple[bool, str, int]:
+    """数码垂类判定，返回 (是否入选, 原因, tier)。
+
+    顺序（每步都是硬否决，短路越早越省）：
+      ① 品类白名单      不在 cate_allow 里 → 否决
+      ② 品类黑名单      再兜一道（legacy 配置遗留下来的）
+      ③ 非商品 / 活动帖 会员、券、课程、清单、汇总…
+      ④ 价格有效        解析不出到手价的 → 否决
+      ⑤ 信号            无 T1/T2 → 否决
+    """
+    cate1 = getattr(deal, "cate1", "") or ""
+    cate2 = getattr(deal, "cate2", "") or ""
+    title = getattr(deal, "title", "") or ""
+    feed_tags = getattr(deal, "feed_tags", "") or ""
+
+    allow = _csv(st.get("cate_allow", CATE_ALLOW_DEFAULT))
+    if allow and not (cate1 in allow or cate2 in allow):
+        return False, "", 0
+    if in_blacklist(cate1, cate2, st):
+        return False, "", 0
+
+    junk = _alt_pattern(st.get("junk_words", JUNK_WORDS))
+    if junk and junk.search(title):
+        return False, "", 0
+    activity = _alt_pattern(st.get("activity_words", ACTIVITY_WORDS))
+    if activity and activity.search(title):
+        return False, "", 0
+
+    price = float(getattr(deal, "cur_price", 0) or 0)
+    if price <= 0:
+        return False, "", 0
+
+    tier, word = signal_of(title, feed_tags, st)
+    if tier == 0:
+        return False, "", 0
+
+    label = ("历史低价" if tier == 1 else "补贴") if not word else word
+    return True, label, tier
+
+
+def evaluate(deal: Any, st: dict[str, str]) -> tuple[bool, str, int, float]:
+    """统一判定入口：返回 (是否入选, 原因, tier, 价值分)。
+
+    所有写入路径（抓取入库 / 全库重算）都走这里，保证三条派生值口径一致 ——
+    分开算过一次，结果 upsert 里算出的 tier 与 rejudge 里的不一样，
+    页面排序在「刚抓到」和「刚重算」之后会跳一下。
+    """
+    ok, reason = judge(deal, st)
+    price = float(getattr(deal, "cur_price", 0) or 0)
+    title = getattr(deal, "title", "") or ""
+    if not ok:
+        return False, reason, 0, 0.0
+    # 入选的条目必然有 tier；legacy 模式下没有信号概念，tier 记 0 但分数照算，
+    # 让排序在回滚后仍按「价格档 × 品牌」走，不至于退化成纯时间序。
+    if str(st.get("filter_mode", "digital")) == "digital":
+        _, _, tier = judge_digital(deal, st)
+    else:
+        tier = 0
+    return ok, reason, tier, value_score(price, tier, title, st)
+
+
 def judge(deal: Any, st: dict[str, str]) -> tuple[bool, str]:
     """按当前阈值判定一条好价是否「超值」。返回 (是否入选, 原因)。
 
@@ -310,7 +484,13 @@ def judge(deal: Any, st: dict[str, str]) -> tuple[bool, str]:
 
     为什么关注品类只影响排序：数码在好价流里只占 0.6%，硬过滤等于一天 1 条；
     全品类都参与判定、命中关注品类乘权重往前排，既拿到了量也不会把数码漏掉。
+
+    ⚠️ 2026-11-06 起默认走 ``digital`` 模式（``judge_digital``），本节描述的是
+    ``filter_mode=legacy`` 时的行为。数码垂类判据见 docs/deals-digital-spec.md。
     """
+    if str(st.get("filter_mode", "digital")) == "digital":
+        return judge_digital(deal, st)[:2]
+
     cate1 = getattr(deal, "cate1", "") or ""
     cate2 = getattr(deal, "cate2", "") or ""
 
@@ -402,7 +582,8 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
     with get_conn(DB_PATH) as con:
         for r in rows:
             heat = heat_of(r["worth"], r["fav"], r["cmt"])
-            # 判定需要 worth_pct / discount / cur_price，这里构造轻量对象喂给 judge
+            # 判定需要 title / feed_tags / cur_price —— digital 模式的信号词就打在
+            # 标题与 feed_tags 上，三个字段缺一个都会让判定恒为「无信号」。
             obj = type(
                 "_D",
                 (),
@@ -416,9 +597,11 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
                     "cate2": r.get("cate2", ""),
                     "discount": r.get("discount", 0),
                     "cur_price": price_number(r.get("price", "")),
+                    "title": r.get("title", ""),
+                    "feed_tags": r.get("feed_tags", ""),
                 },
             )()
-            ok, reason = judge(obj, st)
+            ok, reason, tier, score = evaluate(obj, st)
             if ok:
                 picked += 1
             hit = int(cate_hit(r.get("cate1", ""), r.get("cate2", ""), st))
@@ -432,8 +615,9 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
                 INSERT INTO deals (id,title,url,price,mall,cate1,cate2,tags,img,
                     worth,unworth,fav,cmt,worth_pct,heat,cate_hit,hhmm,
                     discount,reporter,feed_tags,source,
+                    value_score,signal_tier,price_num,
                     first_seen,last_seen,picked,pick_reason)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     title=excluded.title, price=excluded.price, mall=excluded.mall,
                     cate1=excluded.cate1, cate2=excluded.cate2, tags=excluded.tags,
@@ -447,6 +631,9 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
                     reporter=excluded.reporter,
                     feed_tags=excluded.feed_tags,
                     source=excluded.source,
+                    value_score=excluded.value_score,
+                    signal_tier=excluded.signal_tier,
+                    price_num=excluded.price_num,
                     picked=excluded.picked, pick_reason=excluded.pick_reason
                 """,
                 (
@@ -457,6 +644,7 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
                     r["worth_pct"], heat, hit, r.get("hhmm", ""),
                     r.get("discount", 0), r.get("reporter", ""),
                     r.get("feed_tags", ""), r.get("source", ""),
+                    score, tier, r.get("cur_price", 0.0) or price_number(r.get("price", "")),
                     now, now, int(ok), reason,
                 ),
             )
@@ -471,17 +659,20 @@ def rejudge(st: dict[str, str]) -> tuple[int, int]:
     为什么需要：阈值改了之后，库里已有记录不会自己变 —— 若只等下一轮抓取，
     用户要盯着「改完没反应」撑 20 分钟才知道调对了没有。这里让它立刻生效。
     关注品类 / 加权系数改动后也要走这里，否则 ``cate_hit`` 与排序还停在旧配置上。
+    2026-11-06 起还要重算 ``value_score`` / ``signal_tier`` / ``price_num`` ——
+    排序与卡片 chip 都读这三列，漏了就会出现「改完判定变了、但顺序和标签没变」。
     """
     picked = 0
     changed = 0
     with get_conn(DB_PATH) as con:
         rows = con.execute(
             "SELECT id,worth,unworth,fav,cmt,worth_pct,picked,cate1,cate2,cate_hit,"
-            "discount,price FROM deals"
+            "discount,price,title,feed_tags,value_score,signal_tier FROM deals"
         ).fetchall()
         for r in rows:
             c1 = r[7] or ""
             c2 = r[8] or ""
+            price = price_number(r[11] or "")
             obj = type(
                 "_D",
                 (),
@@ -490,18 +681,26 @@ def rejudge(st: dict[str, str]) -> tuple[int, int]:
                     "cmt": r[4], "worth_pct": r[5],
                     "cate1": c1, "cate2": c2,
                     "discount": r[10] or 0,
-                    "cur_price": price_number(r[11] or ""),
+                    "cur_price": price,
+                    "title": r[12] or "",
+                    "feed_tags": r[13] or "",
                 },
             )()
-            ok, reason = judge(obj, st)
+            ok, reason, tier, score = evaluate(obj, st)
             if ok:
                 picked += 1
             hit = int(cate_hit(c1, c2, st))
-            if bool(r[6]) != ok or int(r[9] or 0) != hit:
+            if (
+                bool(r[6]) != ok
+                or int(r[9] or 0) != hit
+                or int(r[15] or 0) != tier
+                or abs(float(r[14] or 0) - score) > 1e-6
+            ):
                 changed += 1
             con.execute(
-                "UPDATE deals SET picked=?, pick_reason=?, cate_hit=? WHERE id=?",
-                (int(ok), reason, hit, r[0]),
+                "UPDATE deals SET picked=?, pick_reason=?, cate_hit=?, "
+                "value_score=?, signal_tier=?, price_num=? WHERE id=?",
+                (int(ok), reason, hit, score, tier, price, r[0]),
             )
     return picked, changed
 
@@ -561,20 +760,28 @@ def list_deals(
     # boost 拼成数字字面量而不是绑定参数：WHERE 的 args 已按顺序排好，
     # 插一个占位符就得重排索引，容易错位；而 boost 是自己解析的 float，不可能是注入载体。
     st = get_settings()
+    mode = str(st.get("filter_mode", "digital"))
     boost = min(max(_as_float(st, "cate_boost", CATE_BOOST_DEFAULT), 1.0), 5.0)
-    order = (
-        f"(discount > 0) DESC, "
-        f"CASE WHEN discount > 0 THEN discount * 1.0 / "
-        f"(CASE WHEN cate_hit=1 THEN {round(boost, 2)} ELSE 1.0 END) ELSE 0 END ASC, "
-        f"heat DESC, first_seen DESC"
-    )
+    if mode == "digital":
+        # 数码垂类排序（2026-11-06）：价值分（价格档×信号权重×品牌）降序，
+        # 同分按到手价降序（大件优先），再按发现时间。
+        # 为什么不再按折扣：数码 94% 没有折扣数据，discount 恒为 0 时该键完全失效。
+        order = "value_score DESC, price_num DESC, first_seen DESC"
+    else:
+        # legacy：2026-10-29 的「折扣深度优先」，保留用于回滚对照。
+        order = (
+            f"(discount > 0) DESC, "
+            f"CASE WHEN discount > 0 THEN discount * 1.0 / "
+            f"(CASE WHEN cate_hit=1 THEN {round(boost, 2)} ELSE 1.0 END) ELSE 0 END ASC, "
+            f"heat DESC, first_seen DESC"
+        )
     with get_conn(DB_PATH) as con:
         total = con.execute(f"SELECT COUNT(*) FROM deals {clause}", args).fetchone()[0]
         rows = con.execute(
             f"SELECT id,title,url,price,mall,cate1,cate2,tags,img,"
             f"worth,unworth,fav,cmt,"
             f"worth_pct,heat,hhmm,first_seen,picked,pick_reason,cate_hit,"
-            f"discount,reporter,feed_tags,source "
+            f"discount,reporter,feed_tags,source,value_score,signal_tier "
             f"FROM deals {clause} ORDER BY {order} LIMIT ? OFFSET ?",
             [*args, max(1, min(limit, 200)), max(0, offset)],
         ).fetchall()
@@ -590,6 +797,9 @@ def list_deals(
             "reporter": r[21] or "",
             "feed_tags": r[22] or "",
             "source": r[23] or "",
+            "value_score": r[24] or 0,
+            # 0 = legacy 模式（无信号概念），1/2 = T1/T2。前端据此决定 chip。
+            "signal_tier": int(r[25] or 0),
         }
         for r in rows
     ]
@@ -625,6 +835,7 @@ def stats() -> dict[str, Any]:
     """
     today = datetime.now().strftime("%Y-%m-%d")
     st = get_settings()
+    mode = str(st.get("filter_mode", "digital"))
     with get_conn(DB_PATH) as con:
         total = con.execute("SELECT COUNT(*) FROM deals").fetchone()[0]
         picked_total = con.execute(
@@ -648,6 +859,12 @@ def stats() -> dict[str, Any]:
         "today_picked": today_picked,
         "cate_filter": st.get("cate_filter", ""),
         "cate_boost": min(max(_as_float(st, "cate_boost", CATE_BOOST_DEFAULT), 1.0), 5.0),
+        # 数码垂类口径（2026-11-06）：空态要能说清「现在只看这两类、并且必须有信号」，
+        # 否则用户看到空列表会以为抓取坏了。文案全部由这里驱动，不写死在前端。
+        "filter_mode": mode,
+        "cate_allow": st.get("cate_allow", CATE_ALLOW_DEFAULT),
+        "signal_t1": st.get("signal_t1", SIGNAL_T1),
+        "signal_t2": st.get("signal_t2", SIGNAL_T2),
         # 阈值一并下发：公开页的空态要说明「为什么空」，
         # 硬编码「值率 ≥85% 且三项取二」会在用户改完阈值后变成假话。
         "thresholds": {

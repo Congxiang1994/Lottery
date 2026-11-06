@@ -166,8 +166,41 @@ function NumField({
   );
 }
 
-/* ---------------- 主面板 ---------------- */
+/**
+ * 词表 / 名单输入框。
+ *
+ * 用 textarea 而不是 input：词表动辄二三十项、上百字符，单行 input 里根本看不清
+ * 自己在改哪一段。行数按内容长度自适应，避免固定高度要么太空要么滚动。
+ */
+function TextField({
+  label,
+  hint,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className={`block ${disabled ? "opacity-50" : ""}`}>
+      <span className="text-[11px] font-medium text-paper-800">{label}</span>
+      <textarea
+        value={value}
+        disabled={disabled}
+        rows={Math.min(4, Math.max(2, Math.ceil((value || "").length / 60)))}
+        onChange={(e) => onChange(e.target.value)}
+        className={`mt-1 w-full resize-y rounded-lg border border-paper-200 bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed text-paper-900 outline-none transition focus:border-brand-gold/60`}
+      />
+      <span className="mt-1 block text-[10px] leading-snug text-paper-500">{hint}</span>
+    </label>
+  );
+}
 
+/* ---------------- 主面板 ---------------- */
 function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const [status, setStatus] = useState<DealStatus | null>(null);
   const [config, setConfig] = useState<DealConfig | null>(null);
@@ -218,6 +251,35 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
   // 等回调能直接闭包引用，不必把定义顺序倒过来。
   const blockNow = blockDraft.split(",").map((x) => x.trim()).filter(Boolean);
   const watchNow = cateDraft.split(",").map((x) => x.trim()).filter(Boolean);
+
+  const saveDigital = async () => {
+    if (!form) return;
+    setBusy(true);
+    try {
+      const res = await dealsApi.saveConfig({
+        filter_mode: form.filter_mode,
+        cate_allow: form.cate_allow,
+        junk_words: form.junk_words,
+        activity_words: form.activity_words,
+        signal_t1: form.signal_t1,
+        signal_t2: form.signal_t2,
+        brand_allow: form.brand_allow,
+        signal_t1_weight: form.signal_t1_weight,
+        signal_t2_weight: form.signal_t2_weight,
+        brand_weight: form.brand_weight,
+      });
+      flash(`已保存，全库重算后共 ${res.picked ?? 0} 条入选`);
+      await refresh();
+      // 后端会把词表规范化（`,` → `|`、去空项），必须回填，否则输入框
+      // 还显示着用户原始写法，下次保存又把脏格式发上去。
+      const cfg = await dealsApi.config();
+      setForm((f) => (f ? { ...f, ...cfg.settings } : cfg.settings));
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const saveThresholds = async () => {
     if (!form) return;
@@ -529,6 +591,128 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
             </table>
           </div>
         )}
+      </Section>
+
+      {/* 数码垂类（2026-11-06 起的主判据） */}
+      <Section
+        title="数码垂类"
+        desc="只看指定品类，并且要求标题或标签里带「真漏 / 补贴」信号。改完保存会立刻重算全库。"
+        right={
+          <button
+            onClick={() => void saveDigital()}
+            disabled={busy}
+            className="press inline-flex items-center gap-1.5 rounded-xl bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+          >
+            <Save size={12} /> 保存
+          </button>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          {(
+            [
+              ["digital", "数码垂类", "只看下面这些品类 + 必须有信号"],
+              ["legacy", "旧判据", "全品类 + 折扣优先（应急回滚用）"],
+            ] as const
+          ).map(([val, label, hint]) => (
+            <button
+              key={val}
+              onClick={() => set({ filter_mode: val })}
+              title={hint}
+              className={`press rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                form.filter_mode === val
+                  ? "border-brand-red/40 bg-brand-red/10 text-brand-red2"
+                  : "border-paper-200 text-paper-700 hover:bg-paper-100"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <span className="text-[10px] text-paper-500">
+            当前：{form.filter_mode === "digital" ? "数码垂类" : "旧判据"}
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          <TextField
+            label="品类白名单（逗号分隔）"
+            hint="只有这些一级/二级分类能入选。实测 98% 的数码条目 cate1 就是「电脑数码」。"
+            value={form.cate_allow}
+            onChange={(v) => set({ cate_allow: v })}
+            disabled={form.filter_mode !== "digital"}
+          />
+          <TextField
+            label="真漏信号词（T1，`|` 分隔）"
+            hint="命中即入选，权重最高。看 feed_tags 与标题，如「绝对值」「历史低价」「手慢无」。"
+            value={form.signal_t1}
+            onChange={(v) => set({ signal_t1: v })}
+            disabled={form.filter_mode !== "digital"}
+          />
+          <TextField
+            label="补贴信号词（T2，`|` 分隔）"
+            hint="也入选但排在 T1 之后。只说明渠道有补贴，不代表史低。"
+            value={form.signal_t2}
+            onChange={(v) => set({ signal_t2: v })}
+            disabled={form.filter_mode !== "digital"}
+          />
+          <TextField
+            label="非商品词（否决，`|` 分隔）"
+            hint="会员 / 年卡 / 券 / 课程 / 网盘 —— 这些混进数码池的实测占比约 10%。"
+            value={form.junk_words}
+            onChange={(v) => set({ junk_words: v })}
+            disabled={form.filter_mode !== "digital"}
+          />
+          <TextField
+            label="活动帖词（否决，`|` 分隔）"
+            hint="清单 / 汇总 / 预告 / 焕新季 —— 不是单个商品，是整场活动的入口。"
+            value={form.activity_words}
+            onChange={(v) => set({ activity_words: v })}
+            disabled={form.filter_mode !== "digital"}
+          />
+          <TextField
+            label="品牌白名单（逗号分隔）"
+            hint="命中则价值分 ×品牌系数，让认可度高的牌子压过同价杂牌。不是否决项。"
+            value={form.brand_allow}
+            onChange={(v) => set({ brand_allow: v })}
+            disabled={form.filter_mode !== "digital"}
+          />
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-3">
+          <NumField
+            label="T1 权重"
+            hint="真漏信号的乘数"
+            value={form.signal_t1_weight}
+            onChange={(v) => set({ signal_t1_weight: v })}
+            min={0.1}
+            max={5}
+            step={0.1}
+            disabled={form.filter_mode !== "digital"}
+          />
+          <NumField
+            label="T2 权重"
+            hint="补贴信号的乘数（应小于 T1）"
+            value={form.signal_t2_weight}
+            onChange={(v) => set({ signal_t2_weight: v })}
+            min={0.1}
+            max={5}
+            step={0.1}
+            disabled={form.filter_mode !== "digital"}
+          />
+          <NumField
+            label="品牌系数"
+            hint="命中品牌白名单时乘它"
+            value={form.brand_weight}
+            onChange={(v) => set({ brand_weight: v })}
+            min={1}
+            max={3}
+            step={0.1}
+            disabled={form.filter_mode !== "digital"}
+          />
+        </div>
+        <p className="mt-3 text-[10px] leading-relaxed text-paper-500">
+          排序 = 价格档（&lt;50 元 0.3 / &lt;200 元 0.6 / &lt;1000 元 1.0 / 其余 1.2）× 信号权重 × 品牌系数。
+          ⚠️ 信号强不等于一定排前面：2,300 元的 T2 大件会压过 258 元的 T1 配件 —— 榜单要的是「值得买的东西」，不是「词最漂亮」。
+        </p>
       </Section>
 
       {/* 折扣判定（主力判据） */}

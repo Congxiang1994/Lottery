@@ -60,13 +60,54 @@ function isDropTag(t: string): boolean {
 }
 
 /**
- * 折扣档位样式。三档而不是连续渐变 ——
- * 用户扫列表时只关心「这是不是狠漏」，不需要精确到小数点。
+ * 信号 chip：数码垂类的主判据（2026-11-06 起）。
+ *
+ * 为什么不再显示折扣：数码两品类实测 94% 没有折扣数据，discount 恒为 0 时
+ * 「几折」这个 chip 根本不出现，卡片上最重要的一格就是空的。
+ * 换成信号档后每条都有东西可看：
+ *   T1 = 站点把它归到「绝对值/历史低价/手慢无」→ 红底，最劲爆
+ *   T2 = 只是「百亿补贴/国补」这类渠道补贴 → 金边，次一档
  */
-function discountClass(d: number): string {
-  if (d <= 30) return "bg-brand-red text-white";
-  if (d <= 50) return "bg-brand-red/12 text-brand-red2 border border-brand-red/30";
-  return "bg-paper-100 text-paper-700";
+function SignalChip({ tier, label }: { tier: number; label: string }) {
+  if (tier === 1) {
+    return (
+      <span
+        className="shrink-0 rounded-md bg-brand-red px-1.5 py-0.5 text-[11px] font-extrabold text-white"
+        title="站点把它归入「绝对值 / 历史低价 / 手慢无」——真漏信号"
+      >
+        {label}
+      </span>
+    );
+  }
+  if (tier === 2) {
+    return (
+      <span
+        className="shrink-0 rounded-md border border-brand-gold/45 bg-brand-gold/12 px-1.5 py-0.5 text-[11px] font-bold text-brand-gold"
+        title="渠道补贴（百亿补贴 / 国补）—— 只说明有补贴，不代表史低"
+      >
+        {label}
+      </span>
+    );
+  }
+  return null;
+}
+
+/**
+ * 卡片上那枚 chip 显示哪个词。
+ *
+ * 优先用后端 `pick_reason`（它就是**实际**命中的那个词，如「历史低价」「百亿补贴」）——
+ * 这样 chip 和「为什么入选」永远一致。取不到才按档位给个通用词。
+ * ⚠️ 别在这里自己重新匹配词表：前端词表与后端配置不同步时，
+ *    会出现「chip 写历史低价、但后端其实是因为百亿补贴才放进来的」。
+ */
+function pickSignalLabel(d: Deal): string {
+  const r = (d.pick_reason || "").trim();
+  if (r) {
+    // pick_reason 形如「历史低价」「百亿补贴 · 关注品类」，取第一段
+    const first = r.split(/[·|]/)[0].trim();
+    if (first) return first;
+  }
+  return d.signal_tier === 1 ? "真漏" : "补贴";
 }
 
 /** 值率显示。后端已 round 到 1 位，这里再兜一道 ——
@@ -119,13 +160,15 @@ function DealCard({ d }: { d: Deal }) {
   const tags = useMemo(() => pickTags(d), [d.feed_tags, d.tags]);
   const { title, cond } = useMemo(() => splitTitle(d.title), [d.title]);
   const price = splitPrice(d.price);
-  const dropTag = tags.find(isDropTag);
 
   // 元信息只留「在哪买 / 什么时候 / 值不值」三类。上一版一排 5 个图标 + 3 个
   // 彩色 pill 是最大噪音源；值为 0 时也不再显示「0% 值」（新爆料还没人投票，
   // 显示 0% 会被误读成「大家都觉得不值」）。收藏/评论/值数收进卡片 title 提示。
+  //
+  // ⚠️ 信号词（绝对值/历史低价/百亿补贴）**只出现在 chip 上**，不再重复进元信息行：
+  // 2026-11-06 实测同一张卡上「绝对值」出现两次，而窄屏下第二行还会被折行，
+  // 看起来像两条不同的信息。
   const meta: { text: string; cls?: string }[] = [];
-  if (dropTag) meta.push({ text: dropTag, cls: "font-semibold text-brand-red2" });
   if (cond) meta.push({ text: cond });
   if (d.mall) meta.push({ text: d.mall });
   meta.push({ text: relTime(d.first_seen) });
@@ -171,13 +214,19 @@ function DealCard({ d }: { d: Deal }) {
             截断成「（晒单返 70…」比不显示还乱。红色只留给「几折」和「值率」，
             价格用墨色（压米白 12:1） */}
         <div className="mt-2 flex items-center gap-2">
-          {d.discount > 0 && (
-            <span
-              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-extrabold tabular-nums ${discountClass(d.discount)}`}
-              title="按正文里的原价与到手价计算"
-            >
-              {(d.discount / 10).toFixed(1)}折
-            </span>
+          {/* 主 chip：数码垂类下用「信号档」（历史低价/绝对值/百亿补贴/国补）。
+              legacy 模式仍显示折扣 —— 两种模式的 chip 语义不同，不能混用。 */}
+          {d.signal_tier > 0 ? (
+            <SignalChip tier={d.signal_tier} label={pickSignalLabel(d)} />
+          ) : (
+            d.discount > 0 && (
+              <span
+                className="shrink-0 rounded-md bg-paper-100 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-paper-700"
+                title="按正文里的原价与到手价计算"
+              >
+                {(d.discount / 10).toFixed(1)}折
+              </span>
+            )
           )}
           {price ? (
             <span className="shrink-0 font-extrabold tracking-tight text-paper-900">
@@ -220,18 +269,41 @@ function DealCard({ d }: { d: Deal }) {
 
 /* ------------------------------ 空态 ------------------------------ */
 
+/** 词表缩短显示：后端下发的是「绝对值|历史低价|手慢无|…」这种长串，
+ *  空态里全列出来会撑成三行。只取前 3 个 + 「等」。 */
+function shortWords(raw?: string): string {
+  const parts = String(raw || "")
+    .split(/[|,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.length) return "—";
+  return parts.slice(0, 3).join(" / ") + (parts.length > 3 ? " 等" : "");
+}
+
 function EmptyState({ stats }: { stats: DealStats | null }) {
   const last = stats?.last_round;
   const t = stats?.thresholds;
+  const digital = stats?.filter_mode === "digital";
   return (
     <div className="rounded-2xl border border-paper-100 glass p-8 text-center">
       <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-brand-red/10 text-brand-red2">
         <Flame size={22} />
       </div>
-      <h3 className="mt-3 text-base font-semibold text-paper-900">这个时段还没有达到门槛的好价</h3>
-      {/* 阈值从接口取而不是写死：用户改完阈值后，写死的文案会变成假话 */}
-      <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-paper-600">
-        {t ? (
+      <h3 className="mt-3 text-base font-semibold text-paper-900">
+        {digital ? "这个时段没有带信号的数码好价" : "这个时段还没有达到门槛的好价"}
+      </h3>
+      {/* 文案从接口取而不是写死：用户改完配置后，写死的文案会变成假话 */}
+      <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-paper-700">
+        {digital ? (
+          <>
+            现在只看「{stats?.cate_allow || "电脑数码,数码配件"}」，并且要求标题或标签里带
+            <b className="mx-0.5 font-semibold text-paper-900">真漏信号</b>
+            （{shortWords(stats?.signal_t1)}）或
+            <b className="mx-0.5 font-semibold text-paper-900">补贴信号</b>
+            （{shortWords(stats?.signal_t2)}）。
+            没有这些词的条目一律不入选 —— 空着是真的没漏，不是抓取坏了。
+          </>
+        ) : t ? (
           t.discount_mode ? (
             <>
               当前门槛：正文里能算出折数的，{(t.discount_direct / 10).toFixed(1)} 折以内直接入选、
@@ -249,8 +321,8 @@ function EmptyState({ stats }: { stats: DealStats | null }) {
           "判定门槛较高，放宽条件或换个时间范围再看看。"
         )}
       </p>
-      {stats?.cate_filter ? (
-        <p className="mx-auto mt-2 max-w-md text-[11px] leading-relaxed text-paper-500">
+      {!digital && stats?.cate_filter ? (
+        <p className="mx-auto mt-2 max-w-md text-[11px] leading-relaxed text-paper-700">
           关注品类「{stats.cate_filter}」只影响排序（命中会往前排 ×{stats.cate_boost}），
           不再限制入选 —— 所以列表空着是真的没有够格的好价，不是品类太窄。
         </p>
@@ -392,7 +464,9 @@ export default function Deals() {
         <div className="min-w-0">
           <h1 className="text-2xl font-extrabold tracking-tight text-paper-900">捡漏</h1>
           <p className="mt-1 text-xs text-paper-700">
-            盯「什么值得买」手慢无 / 绝对值 / 历史低价榜，按折扣从深到浅排，点卡片直达原站。
+            {stats?.filter_mode === "digital"
+              ? "只盯电脑数码 / 数码配件里带真漏信号（绝对值 / 历史低价 / 手慢无）或补贴信号的条目，点卡片直达原站。"
+              : "盯「什么值得买」手慢无 / 绝对值 / 历史低价榜，按折扣从深到浅排，点卡片直达原站。"}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

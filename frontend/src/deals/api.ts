@@ -63,6 +63,11 @@ export interface Deal {
   feed_tags: string;
   /** tag / home / jingxuan / top */
   source: string;
+  /** 价值分 = 价格档 × 信号权重 × 品牌系数（后端算好落库）。列表就是按它降序。 */
+  value_score: number;
+  /** 信号档：1 = T1 真漏（绝对值/历史低价/手慢无），2 = T2 补贴（百亿补贴/国补），
+   *  0 = 无信号（仅 legacy 模式会出现）。前端据此决定 chip 文案与配色。 */
+  signal_tier: number;
 }
 
 export interface DealList {
@@ -77,6 +82,13 @@ export interface DealStats {
   today_picked: number;
   cate_filter: string;
   cate_boost: number;
+  /** digital = 数码垂类（只看 cate_allow 且必须有信号）；legacy = 旧的全品类判据 */
+  filter_mode: string;
+  /** 品类白名单（逗号分隔），digital 模式下只有这些品类能入选 */
+  cate_allow: string;
+  /** T1 真漏词表（`|` 分隔），空态要能展示「在等什么信号」 */
+  signal_t1: string;
+  signal_t2: string;
   thresholds: {
     worth_pct_min: number;
     worth_min: number;
@@ -125,6 +137,24 @@ export interface DealSettings {
   /** 新人价护栏：折扣低于此值（%）且到手价低于 newbie_price 时否决 */
   newbie_discount: string;
   newbie_price: string;
+  // ---------------- 数码垂类（2026-11-06）----------------
+  /** 判定模式：digital（数码垂类）| legacy（旧的全品类判据，应急回滚用） */
+  filter_mode: string;
+  /** 品类白名单，逗号分隔 */
+  cate_allow: string;
+  /** 非商品词表（会员/券/课程…），`|` 分隔 */
+  junk_words: string;
+  /** 活动帖词表（清单/汇总/预告…），`|` 分隔 */
+  activity_words: string;
+  /** T1 真漏信号词表，`|` 分隔 */
+  signal_t1: string;
+  /** T2 补贴信号词表，`|` 分隔 */
+  signal_t2: string;
+  /** 品牌白名单，逗号分隔 */
+  brand_allow: string;
+  signal_t1_weight: string;
+  signal_t2_weight: string;
+  brand_weight: string;
   cookie: string;
   cookie_ua: string;
 }

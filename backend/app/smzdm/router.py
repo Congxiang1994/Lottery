@@ -331,6 +331,63 @@ def _validate_config(patch: dict[str, Any]) -> dict[str, Any]:
     if "enabled" in patch:
         out["enabled"] = "1" if str(patch["enabled"]) in ("1", "true", "True") else "0"
 
+    # ---------------- 数码垂类（2026-11-06）----------------
+    if "filter_mode" in patch:
+        v = str(patch["filter_mode"]).strip().lower()
+        if v not in ("digital", "legacy"):
+            raise HTTPException(
+                status_code=422,
+                detail="筛选模式只能是 digital（数码垂类）或 legacy（旧的全品类判据）",
+            )
+        out["filter_mode"] = v
+
+    # 逗号分隔的名单型配置（品类白名单 / 品牌表）
+    for key, label, cap in (
+        ("cate_allow", "品类白名单", 12),
+        ("brand_allow", "品牌名单", 200),
+    ):
+        if key in patch:
+            parts = [p.strip() for p in str(patch[key] or "").split(",") if p.strip()]
+            if len(parts) > cap:
+                raise HTTPException(status_code=422, detail=f"{label}最多 {cap} 项")
+            out[key] = ",".join(parts)
+
+    # 词表型配置：接受 `|` 或 `,` 分隔，统一存成 `|`。
+    # ⚠️ 必须挡住空项：`a||b` 编译成正则会匹配空串 → 所有条目都命中，
+    # 筛选完全失效且**不报错**，是最难查的一类。这里先清洗再存。
+    for key, label in (
+        ("junk_words", "非商品词表"),
+        ("activity_words", "活动帖词表"),
+        ("signal_t1", "T1 信号词表"),
+        ("signal_t2", "T2 信号词表"),
+    ):
+        if key in patch:
+            parts = [
+                w.strip() for w in re.split(r"[|,]", str(patch[key] or "")) if w.strip()
+            ]
+            if not parts:
+                raise HTTPException(status_code=422, detail=f"{label}不能为空")
+            if any(len(w) > 30 for w in parts):
+                raise HTTPException(status_code=422, detail=f"{label}里有单词过长")
+            if len(parts) > 60:
+                raise HTTPException(status_code=422, detail=f"{label}最多 60 个词")
+            out[key] = "|".join(parts)
+
+    # 权重：T1/T2 信号权重、品牌系数
+    for key, label, lo, hi in (
+        ("signal_t1_weight", "T1 信号权重", 0.1, 5.0),
+        ("signal_t2_weight", "T2 信号权重", 0.1, 5.0),
+        ("brand_weight", "品牌系数", 1.0, 3.0),
+    ):
+        if key in patch:
+            try:
+                v = float(patch[key])
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail=f"{label}必须是数字")
+            if not (lo <= v <= hi):
+                raise HTTPException(status_code=422, detail=f"{label}应在 {lo}~{hi} 之间")
+            out[key] = str(round(v, 2))
+
     return out
 
 
@@ -395,6 +452,18 @@ def admin_update_config(payload: dict, deals_session: str | None = Cookie(defaul
             "discount_assist",
             "newbie_discount",
             "newbie_price",
+            # 数码垂类（2026-11-06）：这些全都决定 picked / value_score / signal_tier，
+            # 漏一个就会出现「改完页面没反应、下一轮抓取后又变了」的灵异现象。
+            "filter_mode",
+            "cate_allow",
+            "junk_words",
+            "activity_words",
+            "signal_t1",
+            "signal_t2",
+            "brand_allow",
+            "signal_t1_weight",
+            "signal_t2_weight",
+            "brand_weight",
         )
     ):
         picked, changed = store.rejudge(st)
