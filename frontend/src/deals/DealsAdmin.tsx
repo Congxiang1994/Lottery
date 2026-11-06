@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
+  ChevronRight,
   KeyRound,
   Loader2,
   LogOut,
@@ -205,8 +206,10 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const [status, setStatus] = useState<DealStatus | null>(null);
   const [config, setConfig] = useState<DealConfig | null>(null);
   const [form, setForm] = useState<DealSettings | null>(null);
-  const [cateDraft, setCateDraft] = useState("");
-  const [blockDraft, setBlockDraft] = useState("");
+  /** 高级区默认收起：日常只需要「选品类」，其余是排障时才看的东西。 */
+  const [advOpen, setAdvOpen] = useState(false);
+  /** 品类 chip 默认只露数码相关的几个，其余折叠 */
+  const [showAllCate, setShowAllCate] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -224,11 +227,6 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
       setStatus(st);
       setConfig(cfg);
       setForm((prev) => prev ?? cfg.settings);
-      // 分类输入框必须以库里为准回填。之前这里是读 form.cate_filter，
-      // 但 form 在本次 render 里还是 null（setForm 是异步的），
-      // 结果输入框恒为空 → 分类 chips 永远不高亮，用户以为没保存上。
-      setCateDraft(cfg.settings.cate_filter ?? "");
-      setBlockDraft(cfg.settings.cate_blacklist ?? "");
       setErr(null);
       return st;
     } catch (e) {
@@ -247,10 +245,68 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const set = (patch: Partial<DealSettings>) =>
     setForm((f) => (f ? { ...f, ...patch } : f));
 
-  // 两个清单的当前值 —— 放在这里而不是渲染前，是为了让下方 toggleBlock
-  // 等回调能直接闭包引用，不必把定义顺序倒过来。
-  const blockNow = blockDraft.split(",").map((x) => x.trim()).filter(Boolean);
-  const watchNow = cateDraft.split(",").map((x) => x.trim()).filter(Boolean);
+  /** 当前选中的品类（唯一必填项）。点 chip 即改即存。 */
+  const allowNow = (form?.cate_allow || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  /**
+   * 品类 chip 列表 = 近 72 小时抓到过的 + 已选中但窗口内没供给的。
+   * 后者不能省：三天没出货时它不在 cateStats 里，只读配置根本看不出
+   * 「我到底还开着哪些品类」，而这是唯一决定收不收东西的开关。
+   */
+  const cateOrdered: { cate: string; count: number | null; picked: number | null }[] = (() => {
+    const seen = status?.cates ?? [];
+    const list = seen.map((c) => ({
+      cate: c.cate,
+      count: c.count as number | null,
+      picked: c.picked as number | null,
+    }));
+    // 选中的排前面，方便看
+    list.sort((a, b) => {
+      const aa = allowNow.includes(a.cate) ? 0 : 1;
+      const bb = allowNow.includes(b.cate) ? 0 : 1;
+      return aa - bb || (b.count ?? 0) - (a.count ?? 0);
+    });
+    for (const n of allowNow) {
+      if (!list.some((c) => c.cate === n)) list.push({ cate: n, count: null, picked: null });
+    }
+    return list;
+  })();
+
+  // 哪些品类算「数码相关」——用于决定默认露出哪几个。
+  // 这里刻意写成关键词匹配而不是写死名单：站点会调分类层级
+  // （2026-10-28 实测「手机通讯」「数码配件」就是「电脑数码」下的二级），
+  // 写死会在层级变动后静默漏掉新分类。
+  const DIGITAL_CATE = /数码|电脑|手机|智能|家电|电器|影音|配件/;
+
+  const cateShown = showAllCate
+    ? cateOrdered
+    : cateOrdered.filter((c) => allowNow.includes(c.cate) || DIGITAL_CATE.test(c.cate));
+  const cateHidden = cateOrdered.filter((c) => !cateShown.includes(c));
+
+  /** 点品类：加/减关注范围，立即保存并重算。 */
+  const toggleCate = async (name: string) => {
+    const next = allowNow.includes(name)
+      ? allowNow.filter((x) => x !== name)
+      : [...allowNow, name];
+    setBusy(true);
+    try {
+      const res = await dealsApi.saveConfig({ cate_allow: next.join(",") });
+      set({ cate_allow: next.join(",") });
+      flash(
+        next.length === 0
+          ? "已清空关注品类 —— 现在不会有任何条目入选"
+          : `已保存，全库重算后共 ${res.picked ?? 0} 条入选`,
+      );
+      await refresh();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const saveDigital = async () => {
     if (!form) return;
@@ -281,71 +337,8 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const saveThresholds = async () => {
-    if (!form) return;
-    setBusy(true);
-    try {
-      const res = await dealsApi.saveConfig({
-        worth_pct_min: form.worth_pct_min,
-        worth_min: form.worth_min,
-        fav_min: form.fav_min,
-        cmt_min: form.cmt_min,
-        need_hits: form.need_hits,
-        pages_per_round: form.pages_per_round,
-        enabled: form.enabled,
-        discount_mode: form.discount_mode,
-        discount_direct: form.discount_direct,
-        discount_assist: form.discount_assist,
-        newbie_discount: form.newbie_discount,
-        newbie_price: form.newbie_price,
-      });
-      flash(`已保存，全库重算后共 ${res.picked ?? 0} 条入选`);
-      const st = await refresh();
-      if (st) {
-        // 用后端规范化后的值回填（如 "85.0" → "85"），避免输入框和实际生效值不一致
-        const cfg = await dealsApi.config();
-        setForm((f) => (f ? { ...f, ...cfg.settings } : cfg.settings));
-      }
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
-  const saveCate = async (value: string) => {
-    setBusy(true);
-    try {
-      const res = await dealsApi.saveConfig({ cate_filter: value });
-      setForm((f) => (f ? { ...f, cate_filter: value } : f));
-      setCateDraft(value);
-      flash(
-        value
-          ? `已保存，当前共 ${res.picked ?? 0} 条入选（命中关注品类的排前面）`
-          : "已清空关注品类，榜单不再加权",
-      );
-      await refresh();
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
-  const saveBlacklist = async (value: string) => {
-    setBusy(true);
-    try {
-      const res = await dealsApi.saveConfig({ cate_blacklist: value });
-      setForm((f) => (f ? { ...f, cate_blacklist: value } : f));
-      setBlockDraft(value);
-      flash(`黑名单已更新，全库重算后共 ${res.picked ?? 0} 条入选`);
-      await refresh();
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   /**
    * 点 chip 切换黑名单（与关注品类同一套交互）。
@@ -354,57 +347,7 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
    * 留着只会让页面出现「既关注又否决」的自相矛盾状态，用户还得自己猜哪个生效。
    * 反向不动 —— 移出黑名单不代表想加权，那得由用户自己决定。
    */
-  const toggleBlock = async (name: string) => {
-    const isOn = blockNow.includes(name);
-    const nextBlock = isOn ? blockNow.filter((x) => x !== name) : [...blockNow, name];
-    const hadWatch = !isOn && watchNow.includes(name);
-    const nextWatch = hadWatch ? watchNow.filter((x) => x !== name) : watchNow;
-    const blockVal = nextBlock.join(",");
-    const cateVal = nextWatch.join(",");
 
-    setBusy(true);
-    try {
-      const res = await dealsApi.saveConfig(
-        hadWatch
-          ? { cate_blacklist: blockVal, cate_filter: cateVal }
-          : { cate_blacklist: blockVal },
-      );
-      setForm((f) =>
-        f ? { ...f, cate_blacklist: blockVal, cate_filter: cateVal } : f,
-      );
-      setBlockDraft(blockVal);
-      if (hadWatch) setCateDraft(cateVal);
-      flash(
-        isOn
-          ? `「${name}」已移出黑名单`
-          : hadWatch
-            ? `「${name}」已加入黑名单，并同时移出关注品类（全库重算后 ${res.picked ?? 0} 条入选）`
-            : `「${name}」已加入黑名单，全库重算后 ${res.picked ?? 0} 条入选`,
-      );
-      await refresh();
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const saveBoost = async (value: string) => {
-    setBusy(true);
-    try {
-      await dealsApi.saveConfig({ cate_boost: value });
-      // 用后端规范化后的值回填（"1.60" → "1.6"）。不回填的话输入框和实际生效值
-      // 不一致，下次失焦又会被判成「改过了」再存一遍。
-      const cfg = await dealsApi.config();
-      setForm((f) => (f ? { ...f, cate_boost: cfg.settings.cate_boost } : cfg.settings));
-      flash(`加权系数已设为 ${cfg.settings.cate_boost}`);
-      await refresh();
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   /** 标签流开关：点 chip 加入/移出。存的是 slug（中文名会 301，后端也会挡）。 */
   const toggleTag = async (slug: string) => {
@@ -468,16 +411,6 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
 
   const s = status.scheduler;
   const cates = status.cates;
-
-  // 黑名单的 chip 来源有两个：近 72 小时实际抓到的品类 + 已配置但窗口内没供给的。
-  // 后者不能省 —— 三天没出现过某品类时它不在 cates 里，只读输入框根本看不出
-  // 「我到底还拦着什么」，而黑名单是否决语义，漏看代价比关注品类大。
-  const blockChips: { cate: string; count: number | null }[] = [
-    ...cates.map((c) => ({ cate: c.cate, count: c.count as number | null })),
-    ...blockNow
-      .filter((n) => !cates.some((c) => c.cate === n))
-      .map((n) => ({ cate: n, count: null })),
-  ];
 
   return (
     <div className="space-y-4 pt-8">
@@ -593,451 +526,234 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
         )}
       </Section>
 
-      {/* 数码垂类（2026-11-06 起的主判据） */}
+      {/* 关注范围：整个页面唯一的必填项 */}
       <Section
-        title="数码垂类"
-        desc="只看指定品类，并且要求标题或标签里带「真漏 / 补贴」信号。改完保存会立刻重算全库。"
+        title="关注品类"
+        desc="只收这些品类的商品，其余一律不入选。点一下就能加/减。"
         right={
-          <button
-            onClick={() => void saveDigital()}
-            disabled={busy}
-            className="press inline-flex items-center gap-1.5 rounded-xl bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-          >
-            <Save size={12} /> 保存
-          </button>
+          <span className="text-[11px] text-paper-600">
+            {allowNow.length > 0
+              ? `${allowNow.length} 个品类`
+              : "未选（会没有结果）"}
+          </span>
         }
       >
-        <div className="flex flex-wrap items-center gap-2">
-          {(
-            [
-              ["digital", "数码垂类", "只看下面这些品类 + 必须有信号"],
-              ["legacy", "旧判据", "全品类 + 折扣优先（应急回滚用）"],
-            ] as const
-          ).map(([val, label, hint]) => (
-            <button
-              key={val}
-              onClick={() => set({ filter_mode: val })}
-              title={hint}
-              className={`press rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                form.filter_mode === val
-                  ? "border-brand-red/40 bg-brand-red/10 text-brand-red2"
-                  : "border-paper-200 text-paper-700 hover:bg-paper-100"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-          <span className="text-[10px] text-paper-500">
-            当前：{form.filter_mode === "digital" ? "数码垂类" : "旧判据"}
-          </span>
-        </div>
-
-        <div className="mt-4 grid gap-3">
-          <TextField
-            label="品类白名单（逗号分隔）"
-            hint="只有这些一级/二级分类能入选。实测 98% 的数码条目 cate1 就是「电脑数码」。"
-            value={form.cate_allow}
-            onChange={(v) => set({ cate_allow: v })}
-            disabled={form.filter_mode !== "digital"}
-          />
-          <TextField
-            label="真漏信号词（T1，`|` 分隔）"
-            hint="命中即入选，权重最高。看 feed_tags 与标题，如「绝对值」「历史低价」「手慢无」。"
-            value={form.signal_t1}
-            onChange={(v) => set({ signal_t1: v })}
-            disabled={form.filter_mode !== "digital"}
-          />
-          <TextField
-            label="补贴信号词（T2，`|` 分隔）"
-            hint="也入选但排在 T1 之后。只说明渠道有补贴，不代表史低。"
-            value={form.signal_t2}
-            onChange={(v) => set({ signal_t2: v })}
-            disabled={form.filter_mode !== "digital"}
-          />
-          <TextField
-            label="非商品词（否决，`|` 分隔）"
-            hint="会员 / 年卡 / 券 / 课程 / 网盘 —— 这些混进数码池的实测占比约 10%。"
-            value={form.junk_words}
-            onChange={(v) => set({ junk_words: v })}
-            disabled={form.filter_mode !== "digital"}
-          />
-          <TextField
-            label="活动帖词（否决，`|` 分隔）"
-            hint="清单 / 汇总 / 预告 / 焕新季 —— 不是单个商品，是整场活动的入口。"
-            value={form.activity_words}
-            onChange={(v) => set({ activity_words: v })}
-            disabled={form.filter_mode !== "digital"}
-          />
-          <TextField
-            label="品牌白名单（逗号分隔）"
-            hint="命中则价值分 ×品牌系数，让认可度高的牌子压过同价杂牌。不是否决项。"
-            value={form.brand_allow}
-            onChange={(v) => set({ brand_allow: v })}
-            disabled={form.filter_mode !== "digital"}
-          />
-        </div>
-
-        <div className="mt-3 grid grid-cols-3 gap-3">
-          <NumField
-            label="T1 权重"
-            hint="真漏信号的乘数"
-            value={form.signal_t1_weight}
-            onChange={(v) => set({ signal_t1_weight: v })}
-            min={0.1}
-            max={5}
-            step={0.1}
-            disabled={form.filter_mode !== "digital"}
-          />
-          <NumField
-            label="T2 权重"
-            hint="补贴信号的乘数（应小于 T1）"
-            value={form.signal_t2_weight}
-            onChange={(v) => set({ signal_t2_weight: v })}
-            min={0.1}
-            max={5}
-            step={0.1}
-            disabled={form.filter_mode !== "digital"}
-          />
-          <NumField
-            label="品牌系数"
-            hint="命中品牌白名单时乘它"
-            value={form.brand_weight}
-            onChange={(v) => set({ brand_weight: v })}
-            min={1}
-            max={3}
-            step={0.1}
-            disabled={form.filter_mode !== "digital"}
-          />
-        </div>
-        <p className="mt-3 text-[10px] leading-relaxed text-paper-500">
-          排序 = 价格档（&lt;50 元 0.3 / &lt;200 元 0.6 / &lt;1000 元 1.0 / 其余 1.2）× 信号权重 × 品牌系数。
-          ⚠️ 信号强不等于一定排前面：2,300 元的 T2 大件会压过 258 元的 T1 配件 —— 榜单要的是「值得买的东西」，不是「词最漂亮」。
-        </p>
-      </Section>
-
-      {/* 折扣判定（主力判据） */}
-      <Section
-        title="折扣判定"
-        desc="从正文里的「原价 → 到手价」算出折数。折扣够深就直接入选，不看投票 —— 刚发布的好价没人投过票，但折扣是客观的。这是唯一与曝光无关的判据。"
-        right={
-          <button
-            onClick={() => void saveThresholds()}
-            disabled={busy}
-            className="press inline-flex items-center gap-1.5 rounded-xl bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-          >
-            <Save size={12} /> 保存
-          </button>
-        }
-      >
-        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-paper-800">
-          <input
-            type="checkbox"
-            checked={form.discount_mode === "1"}
-            onChange={(e) => set({ discount_mode: e.target.checked ? "1" : "0" })}
-            className="h-3.5 w-3.5 accent-[#c0453e]"
-          />
-          启用折扣优先
-          <span className="font-normal text-paper-500">
-            （关掉则退回纯热度判据，应急回滚用）
-          </span>
-        </label>
-
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <NumField
-            label="直接入选：折扣 ≤（%）"
-            hint="50 = 5 折及以内，不看投票直接入选"
-            value={form.discount_direct}
-            onChange={(v) => set({ discount_direct: v })}
-            min={1}
-            max={100}
-            disabled={form.discount_mode !== "1"}
-          />
-          <NumField
-            label="需热度：折扣 ≤（%）"
-            hint="70 = 5~7 折之间，需至少一项热度达标"
-            value={form.discount_assist}
-            onChange={(v) => set({ discount_assist: v })}
-            min={1}
-            max={100}
-            disabled={form.discount_mode !== "1"}
-          />
-          <NumField
-            label="新人价：折扣 <（%）"
-            hint="低于此折扣且金额很小 → 判为首购礼金"
-            value={form.newbie_discount}
-            onChange={(v) => set({ newbie_discount: v })}
-            min={0}
-            max={100}
-            disabled={form.discount_mode !== "1"}
-          />
-          <NumField
-            label="新人价：到手价 <（元）"
-            hint="0.4 折 0.59 元这种是新人补贴，限购 1 件"
-            value={form.newbie_price}
-            onChange={(v) => set({ newbie_price: v })}
-            min={0}
-            max={1000}
-            step={0.01}
-            disabled={form.discount_mode !== "1"}
-          />
-        </div>
-        <p className="mt-3 text-[10px] leading-relaxed text-paper-500">
-          折扣来自列表正文里的原价声明（「活动售价 505 元…到手 254 元」）。
-          约一半条目正文没写原价，那些自动走下面的热度判据 —— 所以两套都要维护。
-        </p>
-      </Section>
-
-      {/* 抓取来源 */}
-      <Section
-        title="抓取来源"
-        desc="标签流是主力入口：时间序、带正文与爆料人，实测入选率约为首页推荐流的 5~20 倍。首页推荐流作为兜底保留，排行榜每 3 轮补充一次数码品类。"
-      >
+        {/* 默认只露「数码类 + 已选中」的 chip。
+            站点实际有近 20 个一级品类，全铺开一屏都是按钮，而其中 17 个
+            在当前模式下永远选不上（选了也会被排除词/信号条件过滤）。
+            真正可能扩展的只有数码相关的几个，其余收进「更多品类」。 */}
         <div className="flex flex-wrap gap-1.5">
-          {config.constants.tag_feeds.map((t) => {
-            const on = form.tag_feeds
-              .split(",")
-              .map((x) => x.trim())
-              .filter(Boolean)
-              .includes(t.slug);
+          {cateShown.map((c) => {
+            const on = allowNow.includes(c.cate);
             return (
               <button
-                key={t.slug}
-                onClick={() => void toggleTag(t.slug)}
+                key={c.cate}
+                onClick={() => void toggleCate(c.cate)}
                 disabled={busy}
-                className={`press rounded-full border px-2.5 py-1 text-[11px] transition disabled:opacity-50 ${
+                className={`press rounded-full border px-3 py-1.5 text-xs transition disabled:opacity-50 ${
                   on
-                    ? "border-brand-red/40 bg-brand-red/10 font-medium text-brand-red2"
-                    : "border-paper-200 text-paper-700 hover:bg-paper-100"
+                    ? "border-brand-red/45 bg-brand-red/10 font-semibold text-brand-red2"
+                    : "border-paper-200 text-paper-700 hover:border-brand-gold/45 hover:bg-paper-100"
                 }`}
-                title={on ? "点击关闭该标签流" : "点击启用该标签流"}
+                title={`近 72 小时抓到 ${c.count ?? 0} 条，其中 ${c.picked ?? 0} 条达标 —— 点击${on ? "取消" : "选中"}`}
               >
-                {t.name}
+                {c.cate}
+                <span className="ml-1 tabular-nums opacity-55">{c.count ?? 0}</span>
               </button>
             );
           })}
+          {/* ⚠️ 条件是 `showAllCate || cateHidden.length > 0`，不能只判后者：
+              展开后 cateHidden 变空，若按它渲染，按钮会消失 → 用户再也收不回去。
+              （这一版第一稿就是这么错的，实测点开「更多品类 17」后无路可退。） */}
+          {(showAllCate || cateHidden.length > 0) && (
+            <button
+              onClick={() => setShowAllCate((v) => !v)}
+              className="press rounded-full border border-dashed border-paper-300 px-3 py-1.5 text-xs text-paper-600 transition hover:bg-paper-100"
+            >
+              {showAllCate ? "收起" : `更多品类 ${cateHidden.length}`}
+            </button>
+          )}
         </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <NumField
-            label="每个标签抓几页"
-            hint="默认 2。0 = 完全关闭标签流"
-            value={form.tag_pages}
-            onChange={(v) => set({ tag_pages: v })}
-            min={0}
-            max={3}
-          />
-          <div className="col-span-2 self-center text-[10px] leading-relaxed text-paper-500">
-            每轮约请求{" "}
-            <b className="tabular-nums text-paper-800">
-              {form.tag_feeds.split(",").filter(Boolean).length *
-                Number(form.tag_pages || 0) +
-                config.constants.home_pages_per_round +
-                1}
-            </b>{" "}
-            次（含排行榜，每 {config.constants.top_every_n_rounds} 轮一次），
-            间隔 {config.constants.min_request_interval_seconds} 秒。
-          </div>
-        </div>
-      </Section>
-
-      {/* 阈值 */}
-      <Section
-        title="热度阈值（算不出折数时使用）"
-        desc="正文没写原价的条目（约一半），按值率 + 值/收藏/评论三项判定。保存后立即重算全库。"
-        right={
-          <button
-            onClick={() => void saveThresholds()}
-            disabled={busy}
-            className="press inline-flex items-center gap-1.5 rounded-xl bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-          >
-            <Save size={12} /> 保存
-          </button>
-        }
-      >
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <NumField
-            label="值率下限（%）"
-            hint="真人投票结果，最硬的信号"
-            value={form.worth_pct_min}
-            onChange={(v) => set({ worth_pct_min: v })}
-            min={0}
-            max={100}
-          />
-          <NumField
-            label="值数下限"
-            hint="认为「值」的人次"
-            value={form.worth_min}
-            onChange={(v) => set({ worth_min: v })}
-            min={0}
-            max={100000}
-          />
-          <NumField
-            label="收藏数下限"
-            hint="收藏比点赞更接近「要买」"
-            value={form.fav_min}
-            onChange={(v) => set({ fav_min: v })}
-            min={0}
-            max={100000}
-          />
-          <NumField
-            label="评论数下限"
-            hint="讨论热度（注意争议品也高）"
-            value={form.cmt_min}
-            onChange={(v) => set({ cmt_min: v })}
-            min={0}
-            max={100000}
-          />
-          <NumField
-            label="需命中项数"
-            hint="三项里至少满足几项（1~3）"
-            value={form.need_hits}
-            onChange={(v) => set({ need_hits: v })}
-            min={1}
-            max={3}
-          />
-          <NumField
-            label="每轮额外抓几页精选流"
-            hint="默认 0 = 不抓。精选流是时间序的全量爆料流水，值/收藏中位数接近 0，实测 100 条里 0 条能过阈值 —— 它不是「精挑好价」，调大只会多抓请求、多灌库"
-            value={form.pages_per_round}
-            onChange={(v) => set({ pages_per_round: v })}
-            min={0}
-            max={8}
-          />
-        </div>
-      </Section>
-
-      {/* 关注品类：只影响排序 */}
-      <Section
-        title="关注品类"
-        desc={`只影响排序，不影响入选 —— 命中这些品类的综合热度 ×${form.cate_boost} 往前排，其它品类照样入选。留空 = 不加权。下方数字是近 72 小时实际抓到的条数（红色为达标数）。`}
-        right={
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-paper-600">权重</span>
-            <input
-              type="number"
-              step="0.1"
-              min={1}
-              max={5}
-              value={form.cate_boost}
-              onChange={(e) => set({ cate_boost: e.target.value })}
-              onBlur={(e) => {
-                const v = e.target.value;
-                if (v && v !== config.settings.cate_boost) void saveBoost(v);
-              }}
-              className="w-16 rounded-lg border border-paper-200 bg-white/60 px-2 py-1 text-[11px] tabular-nums text-paper-900 outline-none focus:border-brand-gold/50"
-              title="1.0 = 不加权，越大越靠前"
-            />
-          </div>
-        }
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={cateDraft}
-            onChange={(e) => setCateDraft(e.target.value)}
-            placeholder="如：电脑数码,家用电器（逗号分隔，留空为不加权）"
-            className={`min-w-0 flex-1 ${inputCls}`}
-          />
-          <button
-            onClick={() => void saveCate(cateDraft.trim())}
-            disabled={busy}
-            className="press inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand-red px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-          >
-            <Save size={12} /> 保存
-          </button>
-        </div>
-
-        {cates.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {cates.map((c) => {
-              const isBlocked = blockNow.includes(c.cate);
-              return (
-                <button
-                  key={c.cate}
-                  onClick={() => {
-                    const cur = cateDraft.split(",").map((x) => x.trim()).filter(Boolean);
-                    const next = cur.includes(c.cate)
-                      ? cur.filter((x) => x !== c.cate)
-                      : [...cur, c.cate];
-                    const joined = next.join(",");
-                    setCateDraft(joined);
-                    void saveCate(joined);
-                  }}
-                  className={`press rounded-full border px-2.5 py-1 text-[11px] transition ${
-                    isBlocked
-                      ? "border-paper-200 text-paper-400 line-through"
-                      : watchNow.includes(c.cate)
-                        ? "border-brand-red/40 bg-brand-red/10 text-brand-red2"
-                        : "border-paper-200 text-paper-700 hover:bg-paper-100"
-                  }`}
-                  title={
-                    isBlocked
-                      ? `近 72 小时 ${c.count} 条 —— 该品类在黑名单里，即使加入关注也会被否决`
-                      : `近 72 小时抓到 ${c.count} 条，其中 ${c.picked} 条达标 —— 点击加入/移出关注品类`
-                  }
-                >
-                  {c.cate} <span className="tabular-nums opacity-60">{c.count}</span>
-                  {c.picked > 0 && (
-                    <span className="ml-1 tabular-nums text-brand-red2">·{c.picked}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+        {cateOrdered.length === 0 && (
+          <p className="text-xs text-paper-600">还没有抓到过数据，等一轮抓取后再来选。</p>
         )}
       </Section>
 
-      {/* 品类黑名单：直接否决 */}
+      {/* 高级：默认收起，日常不用碰 */}
       <Section
-        title="品类黑名单"
-        desc="命中即直接否决，连阈值都不看。专挡「不是商品」的帖子 —— 好价流里混着「每日领京豆」「签到领红包」这类羊毛帖，热度很高但不属于捡漏。点下方品类即可加入/移出。"
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={blockDraft}
-            onChange={(e) => setBlockDraft(e.target.value)}
-            placeholder="如：金融服务（逗号分隔，留空为不拦截）"
-            className={`min-w-0 flex-1 ${inputCls}`}
-          />
+        title="高级"
+        desc="平时不用改。改完点保存会立刻重算全库。"
+        right={
           <button
-            onClick={() => void saveBlacklist(blockDraft.trim())}
-            disabled={busy}
-            className="press inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand-red px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            onClick={() => setAdvOpen((v) => !v)}
+            className="press inline-flex items-center gap-1 rounded-lg border border-paper-200 px-2.5 py-1 text-[11px] text-paper-700 transition hover:bg-paper-100"
           >
-            <Save size={12} /> 保存
+            {advOpen ? "收起" : "展开"}
+            <ChevronRight
+              size={12}
+              className={`transition ${advOpen ? "rotate-90" : ""}`}
+            />
           </button>
-        </div>
+        }
+      >
+        {!advOpen ? (
+          <p className="text-[11px] leading-relaxed text-paper-600">
+            信号词、品牌白名单、权重、抓取页数都在里面。当前：
+            T1 {form.signal_t1_weight} / T2 {form.signal_t2_weight} / 品牌 {form.brand_weight}，
+            标签流 {form.tag_feeds.split(",").filter(Boolean).length} 个 × {form.tag_pages || 0} 页。
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <div className="text-[11px] font-medium text-paper-800">筛选模式</div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                {(
+                  [
+                    ["digital", "数码垂类"],
+                    ["legacy", "旧判据（全品类）"],
+                  ] as const
+                ).map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => set({ filter_mode: val })}
+                    className={`press rounded-lg border px-2.5 py-1 text-[11px] transition ${
+                      form.filter_mode === val
+                        ? "border-brand-red/40 bg-brand-red/10 font-medium text-brand-red2"
+                        : "border-paper-200 text-paper-700 hover:bg-paper-100"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {blockChips.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {blockChips.map((c) => {
-              const on = blockNow.includes(c.cate);
-              const inWatch = watchNow.includes(c.cate);
-              return (
-                <button
-                  key={c.cate}
-                  onClick={() => void toggleBlock(c.cate)}
-                  disabled={busy}
-                  className={`press rounded-full border px-2.5 py-1 text-[11px] transition disabled:opacity-50 ${
-                    on
-                      ? "border-paper-300 bg-paper-200 text-paper-500 line-through"
-                      : "border-paper-200 text-paper-700 hover:border-paper-300 hover:bg-paper-100"
-                  }`}
-                  title={
-                    on
-                      ? `近 72 小时 ${c.count ?? "未出现"} 条 —— 已拦截，点击移出黑名单`
-                      : inWatch
-                        ? `近 72 小时 ${c.count ?? "未出现"} 条 —— 当前在关注品类里，加入黑名单会同时移出关注`
-                        : `近 72 小时 ${c.count ?? "未出现"} 条 —— 点击加入黑名单`
-                  }
-                >
-                  {c.cate}
-                  <span className="ml-1 tabular-nums opacity-60">{c.count ?? "—"}</span>
-                  {inWatch && !on && (
-                    <span className="ml-1 text-[10px] text-brand-red2">关注中</span>
-                  )}
-                </button>
-              );
-            })}
+            <div className="grid gap-3">
+              <TextField
+                label="真漏信号（T1）"
+                hint="命中即入选，权重最高。看站点标签与标题。"
+                value={form.signal_t1}
+                onChange={(v) => set({ signal_t1: v })}
+                disabled={form.filter_mode !== "digital"}
+              />
+              <TextField
+                label="补贴信号（T2）"
+                hint="也入选，排在 T1 之后。只说明渠道有补贴，不代表史低。"
+                value={form.signal_t2}
+                onChange={(v) => set({ signal_t2: v })}
+                disabled={form.filter_mode !== "digital"}
+              />
+              {/* 这两个必须分开编辑。合并成一个框时，「新加的活动帖词」没法判断
+                  该归哪张表 —— 之前那版会把它错归到非商品表，而两张表的语义完全不同
+                  （一个挡「不是商品」，一个挡「不是单个商品」）。 */}
+              <TextField
+                label="排除：不是商品"
+                hint="会员、年卡、券、课程、网盘 —— 混进数码池的实测约 10%。"
+                value={form.junk_words}
+                onChange={(v) => set({ junk_words: v })}
+                disabled={form.filter_mode !== "digital"}
+              />
+              <TextField
+                label="排除：是活动帖"
+                hint="清单、汇总、预告、焕新季 —— 整场活动的入口，不是单个商品。"
+                value={form.activity_words}
+                onChange={(v) => set({ activity_words: v })}
+                disabled={form.filter_mode !== "digital"}
+              />
+              <TextField
+                label="品牌白名单"
+                hint="命中则价值分加成，让认可度高的牌子压过同价杂牌。不是否决项。"
+                value={form.brand_allow}
+                onChange={(v) => set({ brand_allow: v })}
+                disabled={form.filter_mode !== "digital"}
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <NumField
+                label="T1 权重"
+                hint=""
+                value={form.signal_t1_weight}
+                onChange={(v) => set({ signal_t1_weight: v })}
+                min={0.1}
+                max={5}
+                step={0.1}
+                disabled={form.filter_mode !== "digital"}
+              />
+              <NumField
+                label="T2 权重"
+                hint=""
+                value={form.signal_t2_weight}
+                onChange={(v) => set({ signal_t2_weight: v })}
+                min={0.1}
+                max={5}
+                step={0.1}
+                disabled={form.filter_mode !== "digital"}
+              />
+              <NumField
+                label="品牌系数"
+                hint=""
+                value={form.brand_weight}
+                onChange={(v) => set({ brand_weight: v })}
+                min={1}
+                max={3}
+                step={0.1}
+                disabled={form.filter_mode !== "digital"}
+              />
+            </div>
+
+            <div>
+              <div className="text-[11px] font-medium text-paper-800">抓取来源</div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {config.constants.tag_feeds.map((t) => {
+                  const on = form.tag_feeds
+                    .split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .includes(t.slug);
+                  return (
+                    <button
+                      key={t.slug}
+                      onClick={() => void toggleTag(t.slug)}
+                      disabled={busy}
+                      className={`press rounded-full border px-2.5 py-1 text-[11px] transition disabled:opacity-50 ${
+                        on
+                          ? "border-brand-red/40 bg-brand-red/10 font-medium text-brand-red2"
+                          : "border-paper-200 text-paper-700 hover:bg-paper-100"
+                      }`}
+                    >
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <NumField
+                  label="每个标签抓几页"
+                  hint="0 = 关闭标签流"
+                  value={form.tag_pages}
+                  onChange={(v) => set({ tag_pages: v })}
+                  min={0}
+                  max={3}
+                />
+                <NumField
+                  label="精选流页数"
+                  hint="默认 0。全量爆料流水，实测无用"
+                  value={form.pages_per_round}
+                  onChange={(v) => set({ pages_per_round: v })}
+                  min={0}
+                  max={8}
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={() => void saveDigital()}
+              disabled={busy}
+              className="press inline-flex items-center gap-1.5 rounded-xl bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            >
+              <Save size={12} /> 保存高级设置
+            </button>
           </div>
         )}
       </Section>

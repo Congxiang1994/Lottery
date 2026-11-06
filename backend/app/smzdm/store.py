@@ -900,6 +900,7 @@ def cate_stats(hours: int = 72) -> list[dict[str, Any]]:
     否则只会看到「页面一直没东西」而不知道该调阈值还是该换品类。
     """
     since = (datetime.now() - timedelta(hours=max(1, hours))).strftime("%Y-%m-%d %H:%M:%S")
+    allow = set(_csv(get_settings().get("cate_allow", CATE_ALLOW_DEFAULT)))
     with get_conn(DB_PATH) as con:
         rows = con.execute(
             "SELECT cate1, COUNT(*), SUM(picked) FROM deals WHERE first_seen >= ? "
@@ -907,7 +908,14 @@ def cate_stats(hours: int = 72) -> list[dict[str, Any]]:
             (since,),
         ).fetchall()
     return [
-        {"cate": r[0] or "(未识别)", "count": r[1], "picked": r[2] or 0} for r in rows
+        {
+            "cate": r[0] or "(未识别)",
+            "count": r[1],
+            "picked": r[2] or 0,
+            # 管理页的品类多选直接用这个标记，不必再拿 cate_allow 字符串去前端拆
+            "allowed": (r[0] or "") in allow,
+        }
+        for r in rows
     ]
 
 
