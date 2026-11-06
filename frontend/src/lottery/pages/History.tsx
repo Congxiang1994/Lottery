@@ -7,7 +7,8 @@ import LotteryTabs from "../components/LotteryTabs";
 import PredictionMatrix from "../components/PredictionMatrix";
 import Reveal from "../components/Reveal";
 import { ErrorBlock, errText } from "../../common/State";
-import { Table2, TrendingUp } from "lucide-react";
+import { PageHeader } from "../../common/PageHeader";
+import { History as HistoryIcon, Table2, TrendingUp } from "lucide-react";
 
 const PAGE_SIZE = 15;
 
@@ -61,13 +62,13 @@ export default function History() {
 
   return (
     <div className="pt-8">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">历史开奖</h1>
-          <p className="mt-1 text-sm text-paper-700">共 {total.toLocaleString()} 期 · 算法对照 + 明细</p>
-        </div>
-        <LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />
-      </div>
+      <PageHeader
+        title="历史开奖"
+        subtitle={`共 ${total.toLocaleString()} 期 · 算法对照 + 明细`}
+        icon={HistoryIcon}
+        iconClass="text-brand-red"
+        actions={<LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />}
+      />
 
       {/* 视图切换：算法对照（默认）/ 开奖明细 */}
       <Reveal className="mt-6">

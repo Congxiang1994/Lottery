@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AdminGate } from "../common/AdminGate";
+import { PageHeader, PrivateBadge } from "../common/PageHeader";
 import { createApi, isUnauthorized } from "../common/http";
-import { ErrorBlock, errText } from "../common/State";
+import { Empty, ErrorBlock, errText } from "../common/State";
 import {
   CheckCircle2,
   Clock,
@@ -185,17 +186,12 @@ function DownloadPanel({
     <div className="pt-10">
       {/* Hero */}
       <section className="text-center">
-        <div className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-paper-200 bg-paper-100 px-4 py-1.5 text-xs text-paper-700">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-          私有 · 密码保护
-        </div>
-        <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
-          <span className="gradient-text">儿歌下载</span> 管理
-        </h1>
-        <p className="mx-auto mt-3 max-w-xl text-sm text-paper-700">
-          用 yt-dlp 把 YouTube 儿歌爬取到服务器本地（/data/song），
-          下载完成的歌会自动在播放列表页出现「本地」按钮，站内秒开不跳转。
-        </p>
+        <PageHeader
+          size="hero"
+          title={<><span className="gradient-text">儿歌下载</span> 管理</>}
+          badge={<PrivateBadge />}
+          subtitle="用 yt-dlp 把 YouTube 儿歌爬取到服务器本地（/data/song），下载完成的歌会自动在播放列表页出现「本地」按钮，站内秒开不跳转。"
+        />
         <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
           <button
             onClick={() => download(pendingIds)}
@@ -274,8 +270,13 @@ function DownloadPanel({
           </div>
         )}
         {!error && data && filtered.length === 0 && (
-          <div className="rounded-2xl border border-paper-200 bg-paper-50 px-5 py-12 text-center text-sm text-paper-700">
-            这个状态下暂无歌曲
+          <div className="rounded-2xl border border-paper-200 bg-paper-50 px-5 py-4">
+            <Empty
+              icon={Music}
+              text="这个状态下暂无歌曲"
+              hint="切换上方的状态筛选，或用「下载全部待下载」把尚未入库的歌拉下来。"
+              className="py-8"
+            />
           </div>
         )}
         {!error && filtered.length > 0 && (

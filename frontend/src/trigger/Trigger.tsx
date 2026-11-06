@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "../common/AdminGate";
-import { ErrorBlock, errText } from "../common/State";
+import { PageHeader, PrivateBadge } from "../common/PageHeader";
+import { Empty, ErrorBlock, errText } from "../common/State";
 import { isUnauthorized } from "../common/http";
 import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
@@ -440,9 +441,13 @@ function formatDateTime(s: string | null | undefined): string {
 function HistoryTable({ rows }: { rows: HistoryRow[] }) {
   if (rows.length === 0) {
     return (
-      <div className="glass mt-4 rounded-2xl p-10 text-center shadow-card">
-        <History size={28} className="mx-auto text-paper-300" />
-        <p className="mt-3 text-sm text-paper-700">暂无执行记录</p>
+      <div className="glass mt-4 rounded-2xl p-4 shadow-card">
+        <Empty
+          icon={History}
+          text="暂无执行记录"
+          hint="任务到点触发后会在这里出现一条记录，也可以点任务行的「立即触发」先跑一次。"
+          className="py-8"
+        />
       </div>
     );
   }
@@ -570,15 +575,14 @@ function TriggerPanel({
   return (
     <div className="pt-8">
       {/* 页头 */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-3xl font-extrabold tracking-tight">
-            <Zap size={26} className="text-brand-red" /> API 用量触发器
-          </h1>
-          <p className="mt-1 text-sm text-paper-700">
-            每日定时点亮大模型 5 小时用量窗口 · 触发时刻 = 重置时刻 − 5h
-          </p>
-        </div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <PageHeader
+          title="API 用量触发器"
+          subtitle="每日定时点亮大模型 5 小时用量窗口 · 触发时刻 = 重置时刻 − 5h"
+          icon={Zap}
+          iconClass="text-brand-red"
+          badge={<PrivateBadge />}
+        />
         <div className="flex items-center gap-2">
           {tab === "tasks" && (
             <button

@@ -20,7 +20,7 @@ import {
 import { ChevronLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
 
 import { Modal } from "../common/Modal";
-import { ErrorBlock, errText } from "../common/State";
+import { Empty, ErrorBlock, Loading, errText } from "../common/State";
 import { useEscapeClose } from "../common/useEscapeClose";
 import { accessApi, IpDetail, IpRow, LogRow, SeriesItem, VisitorDetail, VisitorRow } from "./api";
 
@@ -177,7 +177,7 @@ export function BarList({
   max?: number;
   empty?: string;
 }) {
-  if (!items.length) return <p className="py-6 text-center text-xs text-paper-500">{empty}</p>;
+  if (!items.length) return <Empty text={empty} className="py-6" />;
   const max = Math.max(1, maxProp ?? Math.max(...items.map((i) => i.value)));
   return (
     <ul className="space-y-2">
@@ -240,7 +240,7 @@ const STATUS_TONES: Record<string, string> = {
 
 export function StatusBar({ groups }: { groups: { name: string; v: number }[] }) {
   const total = groups.reduce((a, b) => a + b.v, 0);
-  if (!total) return <p className="py-6 text-center text-xs text-paper-500">暂无数据</p>;
+  if (!total) return <Empty className="py-6" />;
   return (
     <div>
       <div className="flex h-3 w-full overflow-hidden rounded-full bg-paper-200">
@@ -333,7 +333,7 @@ export function FeatureDonut({
 }) {
   const t = chartTheme(night);
   const total = items.reduce((a, b) => a + b.requests, 0);
-  if (!total) return <p className="py-10 text-center text-xs text-paper-500">暂无数据</p>;
+  if (!total) return <Empty className="py-10" />;
   return (
     <div>
       <div className="relative h-44 w-full">
@@ -558,7 +558,7 @@ const PAGE_SIZE = 30;
 
 /** 时间线（IP / 访客详情共用） */
 function Timeline({ rows }: { rows: LogRow[] }) {
-  if (!rows.length) return <p className="py-6 text-center text-xs text-paper-500">暂无记录</p>;
+  if (!rows.length) return <Empty text="暂无记录" className="py-6" />;
   return (
     <ul className="space-y-1">
       {rows.map((r) => (
@@ -695,13 +695,11 @@ export function IpModal({
       }
     >
       {loading && !data ? (
-        <p className="flex items-center justify-center gap-2 py-12 text-xs text-paper-600">
-          <Loader2 size={14} className="animate-spin" /> 加载中…
-        </p>
+        <Loading className="py-12" />
       ) : err ? (
         <ErrorBlock message={err} onRetry={load} />
       ) : !data?.found ? (
-        <p className="py-12 text-center text-xs text-paper-500">这个 IP 在所选时间窗内没有记录。</p>
+        <Empty text="这个 IP 在所选时间窗内没有记录。" className="py-12" />
       ) : (
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -833,13 +831,11 @@ export function VisitorModal({
       }
     >
       {loading && !data ? (
-        <p className="flex items-center justify-center gap-2 py-12 text-xs text-paper-600">
-          <Loader2 size={14} className="animate-spin" /> 加载中…
-        </p>
+        <Loading className="py-12" />
       ) : err ? (
         <ErrorBlock message={err} onRetry={load} />
       ) : !data?.found ? (
-        <p className="py-12 text-center text-xs text-paper-500">该访客在所选时间窗内没有记录。</p>
+        <Empty text="该访客在所选时间窗内没有记录。" className="py-12" />
       ) : (
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -864,7 +860,7 @@ export function VisitorModal({
                   </li>
                 ))}
                 {!(data.ips ?? []).length && (
-                  <li className="py-4 text-center text-xs text-paper-500">无 IP 记录</li>
+                  <li><Empty text="无 IP 记录" className="py-4" /></li>
                 )}
               </ul>
             </Card>

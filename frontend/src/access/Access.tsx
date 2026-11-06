@@ -27,8 +27,9 @@ import {
 } from "lucide-react";
 
 import { ExitPresence } from "../common/Modal";
-import { ErrorBlock, errText } from "../common/State";
+import { Empty as EmptyState, ErrorBlock, Loading, errText } from "../common/State";
 import { AdminGate } from "../common/AdminGate";
+import { PageHeader, PrivateBadge } from "../common/PageHeader";
 import { useModalHistory } from "../common/useModalHistory";
 import { useTheme } from "../common/useTheme";
 import {
@@ -154,20 +155,13 @@ function AccessPanel({
     <div className="pt-8 sm:pt-10">
       {/* 页头 */}
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-gold">
-            Private Console
-          </div>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-extrabold tracking-tight">
-            访问管理
-            <span className="rounded-full border border-amber-600/25 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-              私有
-            </span>
-          </h1>
-          <p className="mt-1 text-xs text-paper-600">
-            记录访客、接口与地区访问明细，支持按 IP / 访客聚合与图表分析。
-          </p>
-        </div>
+        <PageHeader
+          size="compact"
+          title="访问管理"
+          eyebrow="Private Console"
+          badge={<PrivateBadge />}
+          subtitle="记录访客、接口与地区访问明细，支持按 IP / 访客聚合与图表分析。"
+        />
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100/70 p-1">
@@ -329,24 +323,15 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[], onUnauth: () => void)
   return { data, err, loading, retry: () => setNonce((n) => n + 1) };
 }
 
+/** 概览三态：统一走 common/State 的 Loading / Empty / ErrorBlock 标准件。 */
 function Initial({ loading, err, retry }: { loading: boolean; err: string; retry: () => void }) {
   if (err) return <ErrorBlock message={err} onRetry={retry} />;
-  if (loading)
-    return (
-      <p className="flex items-center justify-center gap-2 py-16 text-xs text-paper-600">
-        <Loader2 size={14} className="animate-spin" /> 加载中…
-      </p>
-    );
+  if (loading) return <Loading className="py-16" />;
   return null;
 }
 
 function Empty({ text = "这个时间窗内还没有记录" }: { text?: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2 py-16 text-paper-500">
-      <Inbox size={22} />
-      <p className="text-xs">{text}</p>
-    </div>
-  );
+  return <EmptyState text={text} className="py-16" />;
 }
 
 function OverviewTab({

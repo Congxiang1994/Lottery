@@ -6,6 +6,7 @@ import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
 import Reveal from "../components/Reveal";
 import { ErrorBlock, errText } from "../../common/State";
+import { PageHeader } from "../../common/PageHeader";
 import { Sparkles, ShieldAlert, Calendar, ChevronDown, ChevronUp, Trophy } from "lucide-react";
 
 const CAT_NAMES: Record<string, string> = {
@@ -48,15 +49,20 @@ export default function Predict() {
 
   return (
     <div className="pt-8">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">智能推荐</h1>
-          <p className="mt-1 text-sm text-paper-700">
-            {combined ? `每日 ${combined.run_date} 跑批 · 第 ${combined.issue_base} 期` : err ? "加载失败" : "加载中"}
-          </p>
-        </div>
-        <LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />
-      </div>
+      <PageHeader
+            title="智能推荐"
+            subtitle={
+              combined
+                ? `每日 ${combined.run_date} 跑批 · 第 ${combined.issue_base} 期`
+                : err
+                  ? "加载失败"
+                  : "加载中…"
+            }
+            icon={Sparkles}
+            iconClass="text-brand-gold"
+            actions={<LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />}
+            className="flex-1"
+          />
 
       {/* 加载失败：一条提示 + 重试，取代「永远转的骨架屏」 */}
       {err && (

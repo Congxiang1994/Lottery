@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExitPresence, Modal } from "../../common/Modal";
 import { useModalHistory } from "../../common/useModalHistory";
 import { useEscapeClose } from "../../common/useEscapeClose";
+import { PageHeader } from "../../common/PageHeader";
 import { useLottery } from "../context";
 import { api } from "../api";
 import {
@@ -205,26 +206,28 @@ export default function Algorithms() {
 
   return (
     <div className="pt-8">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">算法广场</h1>
-          <p className="mt-1 text-sm text-paper-700">
-            {catalog ? `${catalog.total} 个算法 · ${catalog.categories.length} 大分类` : "加载中…"} · 点击卡片运行
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />
-          <button
-            onClick={openPwd}
-            disabled={runStatus?.running}
-            className="flex items-center gap-1.5 rounded-xl border border-paper-200 bg-paper-100 px-3 py-2 text-sm text-paper-900 transition hover:bg-paper-200 disabled:opacity-40"
-          >
-            {runStatus?.running
-              ? <><Loader2 size={15} className="animate-spin" /> 运行中…</>
-              : <><Zap size={15} /> 运行全部算法</>}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="算法广场"
+        subtitle={`${
+          catalog ? `${catalog.total} 个算法 · ${catalog.categories.length} 大分类` : "加载中…"
+        } · 点击卡片运行`}
+        icon={Layers}
+        iconClass="text-brand-gold"
+        actions={
+          <>
+            <LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />
+            <button
+              onClick={openPwd}
+              disabled={runStatus?.running}
+              className="flex items-center gap-1.5 rounded-xl border border-paper-200 bg-paper-100 px-3 py-2 text-sm text-paper-900 transition hover:bg-paper-200 disabled:opacity-40"
+            >
+              {runStatus?.running
+                ? <><Loader2 size={15} className="animate-spin" /> 运行中…</>
+                : <><Zap size={15} /> 运行全部算法</>}
+            </button>
+          </>
+        }
+      />
 
       {/* 密码弹框 */}
       <ExitPresence open={pwdOpen}>

@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { Story, storyApi } from "./api";
+import { PageHeader } from "../common/PageHeader";
 import { useModalHistory } from "../common/useModalHistory";
 import { useEscapeClose } from "../common/useEscapeClose";
 import {
@@ -424,20 +425,16 @@ export default function StoryPage() {
     <div className="pt-8 pb-16">
       {/* 页头 */}
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1
-            className="flex items-center gap-2 text-[26px] font-extrabold tracking-tight sm:text-3xl"
-            style={{ color: t.strong }}
-          >
-            <BookOpen size={24} className="text-brand-gold" />
-            睡前故事
-          </h1>
-          <p className="mt-1.5 text-sm" style={{ color: t.dim }}>
-            {stories.length > 0
+        <PageHeader
+          title="睡前故事"
+          icon={BookOpen}
+          iconClass="text-brand-gold"
+          subtitle={
+            stories.length > 0
               ? `共 ${stories.length} 篇 · 每晚一篇，读完就睡`
-              : "每晚一篇，读完就睡"}
-          </p>
-        </div>
+              : "每晚一篇，读完就睡"
+          }
+        />
         {stories.length > 0 && (
           <button
             type="button"

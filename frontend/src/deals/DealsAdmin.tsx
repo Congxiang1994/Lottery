@@ -17,6 +17,7 @@ import {
   dealsApi,
 } from "./api";
 import { AdminGate } from "../common/AdminGate";
+import { PageHeader, PrivateBadge } from "../common/PageHeader";
 import { ErrorBlock, errText } from "../common/State";
 
 /**
@@ -266,17 +267,21 @@ function AdminPanel({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="space-y-4 pt-8">
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-paper-900">捡漏设置</h1>
-          <p className="mt-1 text-xs text-paper-600">
-            每 {config.constants.interval_minutes} 分钟一轮：标签流{" "}
-            {form.tag_feeds.split(",").filter(Boolean).length} 个 ×{" "}
-            {form.tag_pages || 0} 页 + 推荐流 {config.constants.home_pages_per_round} 页
-            {Number(form.pages_per_round) > 0
-              ? ` + 精选流 ${form.pages_per_round} 页`
-              : ""}
-          </p>
-        </div>
+        <PageHeader
+          size="compact"
+          title="捡漏设置"
+          badge={<PrivateBadge />}
+          subtitle={
+            <>
+              每 {config.constants.interval_minutes} 分钟一轮：标签流{" "}
+              {form.tag_feeds.split(",").filter(Boolean).length} 个 ×{" "}
+              {form.tag_pages || 0} 页 + 推荐流 {config.constants.home_pages_per_round} 页
+              {Number(form.pages_per_round) > 0
+                ? ` + 精选流 ${form.pages_per_round} 页`
+                : ""}
+            </>
+          }
+        />
         <div className="flex items-center gap-2">
           <button
             onClick={() => void fetchNow()}

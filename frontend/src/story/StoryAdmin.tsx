@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "../common/AdminGate";
+import { PageHeader, PrivateBadge } from "../common/PageHeader";
 import { ExitPresence, Modal } from "../common/Modal";
 import { isUnauthorized } from "../common/http";
 import { ErrorBlock, errText } from "../common/State";
@@ -426,15 +427,15 @@ function StoryAdminPanel({
     <div className="pt-8">
       {/* 页头 */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-3xl font-extrabold tracking-tight">
-            <BookOpen size={26} className="text-brand-gold" /> 睡前故事管理
-          </h1>
-          <p className="mt-1 text-sm text-paper-700">
-            共 {stories.length} 篇 · 已发布 {publishedCount} · 草稿{" "}
-            {stories.length - publishedCount}
-          </p>
-        </div>
+        <PageHeader
+          title="睡前故事管理"
+          subtitle={`共 ${stories.length} 篇 · 已发布 ${publishedCount} · 草稿 ${
+            stories.length - publishedCount
+          }`}
+          icon={BookOpen}
+          iconClass="text-brand-gold"
+          badge={<PrivateBadge />}
+        />
         <div className="flex items-center gap-2">
           {tab === "stories" && (
             <button

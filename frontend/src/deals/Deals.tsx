@@ -4,6 +4,7 @@ import { ArrowUpRight, Flame, RefreshCw, Settings2 } from "lucide-react";
 import { Deal, DealList, DealStats } from "./api";
 import { DEFAULT_HOURS, fetchDeals, readPrefetched } from "./prefetch";
 import { ErrorBlock, errText } from "../common/State";
+import { PageHeader } from "../common/PageHeader";
 
 /**
  * 什么值得买 · 捡漏 /deals（公开页）
@@ -401,16 +402,20 @@ export default function Deals() {
   return (
     <div className="pt-8">
       <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-extrabold tracking-tight text-paper-900">捡漏</h1>
-          <p className="mt-1 text-xs text-paper-700">
-            只盯{stats?.cate_allow || "电脑数码 / 数码配件"}里带
-            <b className="mx-0.5 font-semibold text-paper-900">真漏信号</b>
-            （绝对值 / 历史低价 / 手慢无）或
-            <b className="mx-0.5 font-semibold text-paper-900">补贴信号</b>
-            的条目，点卡片直达原站。
-          </p>
-        </div>
+        <PageHeader
+          size="compact"
+          title="捡漏"
+          className="min-w-0"
+          subtitle={
+            <>
+              只盯{stats?.cate_allow || "电脑数码 / 数码配件"}里带
+              <b className="mx-0.5 font-semibold text-paper-900">真漏信号</b>
+              （绝对值 / 历史低价 / 手慢无）或
+              <b className="mx-0.5 font-semibold text-paper-900">补贴信号</b>
+              的条目，点卡片直达原站。
+            </>
+          }
+        />
         <div className="flex shrink-0 items-center gap-2">
           <Link
             to="/deals-admin"
