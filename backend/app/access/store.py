@@ -27,7 +27,9 @@ from typing import Any
 
 from app.access import config, geo
 from app.common.db import get_conn, init_schema
-from app.stats.router import snapshot_totals
+# ⚠️ 取的是 stats 域的 **store**，不是 router —— 跨域只允许依赖对方的存储/服务层，
+# 依赖 router 会把 HTTP 层（FastAPI 依赖、响应模型）拖进来，也会形成隐式的路由耦合。
+from app.stats.store import totals as snapshot_totals
 
 log = logging.getLogger("access.store")
 

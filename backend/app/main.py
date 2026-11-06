@@ -10,9 +10,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.lottery import router as lottery_router
+from app.lottery.services import results_store
 from app.hanzi import router as hanzi_router
 from app.stats import router as stats_router
+from app.stats import store as stats_store
 from app.trigger import router as trigger_router
+from app.trigger import store as trigger_store
 from app.babysong import router as babysong_router
 from app.story import router as story_router
 from app.story import store as story_store
@@ -20,6 +23,7 @@ from app.story.router import v1_call_logger
 from app.access import router as access_router
 from app.access import store as access_store
 from app.access.middleware import access_logger
+from app.babysong import downloads
 from app.smzdm import router as smzdm_router
 from app.smzdm import scheduler as smzdm_scheduler
 from app.trigger import scheduler
@@ -34,8 +38,13 @@ async def lifespan(app: FastAPI):
     harden_dir(DB_DIR)
     # 操作密码库兜底初始化（库未配置且环境变量已设时自动引导写入；以库为准）
     password_store.ensure_configured()
-    # 睡前故事库建表（幂等）
+    # 各域建表（幂等；flock 串行化，多 worker 首启安全）。
+    # ⚠️ 新增域必须在这里登记 init()，不要在模块 import 时建表 ——
+    #    import 副作用会让「工具脚本一 import 就写盘」，也让测试无法隔离。
+    results_store.init()
     story_store.init()
+    stats_store.init()
+    trigger_store.init()
     # 访问管理：建表（flock 串行化）+ 加载离线 IP 库 + 启动批量写入线程
     # ⚠️ 离线库缺失/损坏只 WARN，绝不让服务起不来（见 geo.load 的三层降级）
     access_store.init()
@@ -43,9 +52,7 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     # 什么值得买捡漏：建表 + 定时抓取循环（文件 flock 多 worker 互斥，单轮独立超时）
     smzdm_scheduler.start()
-    # 儿歌下载队列恢复：清理崩溃残留 + 队列有 pending 则继续下载（重启不丢任务）
-    from app.babysong import downloads
-
+    # 儿歌下载队列恢复：建表 + 清理崩溃残留 + 队列有 pending 则继续下载（重启不丢任务）
     downloads.resume_pending()
     yield
     # 退出前把访问日志队列 flush 干净（否则最后 1 秒的记录会丢）

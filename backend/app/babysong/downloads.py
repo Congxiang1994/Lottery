@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from app.common.db import get_conn
+from app.common.db import get_conn, init_schema
 from app.common.paths import db_path
 
 # 儿歌视频目录（独立部署目录，重部署不丢）
@@ -56,9 +56,8 @@ def _now() -> str:
 
 @contextmanager
 def _conn():
-    """打开任务库连接（WAL），确保表存在；退出自动 commit。"""
+    """打开任务库连接（WAL）。建表由 :func:`init` 负责，连接本身不再执行 DDL。"""
     with get_conn(DB_PATH) as con:
-        con.execute(SCHEMA)
         yield con
 
 
@@ -229,8 +228,14 @@ def _ensure_worker() -> None:
         t.start()
 
 
+def init() -> None:
+    """建表（幂等 + flock 串行化，多 worker 首启安全）。由 lifespan 调用。"""
+    init_schema(DB_PATH, SCHEMA)
+
+
 def resume_pending() -> None:
-    """服务启动时调用：清理崩溃残留 + 若队列有 pending 则拉起工作线程继续下载。"""
+    """服务启动时调用：建表 + 清理崩溃残留 + 若队列有 pending 则拉起工作线程继续下载。"""
+    init()
     recover_stale()
     with _conn() as con:
         row = con.execute(
@@ -244,7 +249,6 @@ def snapshot() -> list[dict]:
     """返回全部任务行（含 pid 探活修正后的状态）。"""
     recover_stale()
     with _conn() as con:
-        con.execute(SCHEMA)
         rows = con.execute(
             "SELECT id, status, error, size_bytes, duration_s, updated_at "
             "FROM song_downloads ORDER BY id"
@@ -264,7 +268,6 @@ def snapshot() -> list[dict]:
 
 def is_busy() -> bool:
     with _conn() as con:
-        con.execute(SCHEMA)
         row = con.execute(
             "SELECT pid FROM song_downloads WHERE status='downloading' LIMIT 1"
         ).fetchone()

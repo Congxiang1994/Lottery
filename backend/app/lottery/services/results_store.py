@@ -440,8 +440,8 @@ def backtest_release(lottery: str, folds: int, max_cost: int) -> None:
             (lottery, folds, max_cost))
 
 
-# 模块加载即建表（幂等），确保 API 进程/定时脚本首次访问就有表
-init()
+# ⚠️ 建表**不**在 import 时做（import 有副作用会让测试/工具一旦 import 就写盘）。
+# API 进程由 main.lifespan 调用 init()；脚本（scripts/*.py）自己显式调用。
 
 
 # ------------------------------------------------------------ 安全锁 / 流控
