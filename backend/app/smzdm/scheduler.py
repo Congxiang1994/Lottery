@@ -63,14 +63,12 @@ _LOCK_PATH = DB_PATH.parent / "smzdm_fetch.lock"
 RENAME_MIN_SAMPLES = 400
 
 
-def _pick_cate(deals: list[crawler.Deal], cate_filter: str) -> list[crawler.Deal]:
-    """按「关注品类」筛一遍 —— 仅用于统计与观测，不影响入库与入选。"""
-    wanted = [x.strip() for x in cate_filter.split(",") if x.strip()]
+def _pick_cate(deals: list[crawler.Deal], cate_allow: str) -> list[crawler.Deal]:
+    """按品类白名单筛一遍 —— 仅用于统计与观测，不影响入库与入选。"""
+    wanted = [x.strip() for x in cate_allow.split(",") if x.strip()]
     if not wanted:
         return []
-    return [
-        d for d in deals if d.cate1 in wanted or d.cate2 in wanted
-    ]
+    return [d for d in deals if d.cate1 in wanted or d.cate2 in wanted]
 
 
 async def run_round(manual: bool = False) -> dict[str, Any]:
@@ -134,26 +132,23 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
             + (1 if include_top else 0)
         )
         parsed = len(deals)
-        kept = _pick_cate(deals, st.get("cate_filter", ""))
-        notes: list[str] = []
+        kept = _pick_cate(deals, st.get("cate_allow", ""))
 
-        # 「本轮没有命中关注品类」只是观测值，不再影响入库与入选（2026-10-29 改为加权）。
-        # 数码在好价流里只占 ~0.6%，几乎每轮都是 0 命中 —— 若当错误报，状态栏会一直标红。
-        # 真正该报警的是「关注分类名在足够长的窗口里从未出现过」= 站点改名/调层级。
-        if parsed and not kept and store.cate_wanted(st):
-            notes.append(
-                f"本轮 {parsed} 条好价里没有关注品类的条目（不影响其它品类入选，"
-                f"关注品类只在排序上加权）"
-            )
+        # 「本轮没有白名单品类的条目」只是观测值，不是错误 —— 数码在好价流里
+        # 占比本来就低，每轮 0 命中很正常，标红只会让人以为坏了。
+        # 真正该报警的是「白名单里的分类名在足够长的窗口里从未出现过」=
+        # 站点改名/调层级，那时配置已经失效但页面只是「一直空着」。
+        if parsed and not kept:
             seen, seen_rows = store.seen_cate_names(7)
-            # 样本不足时不下结论：新库头几小时本来就看不到全部分类
-            if seen_rows >= RENAME_MIN_SAMPLES and not (set(store.cate_wanted(st)) & seen):
-                errors.append(
-                    f"关注分类「{st['cate_filter']}」近 7 天（{seen_rows} 条样本）"
-                    f"从未出现过，分类名可能已改；实际出现："
-                    f"{'、'.join(sorted(seen)[:10])}"
-                )
-                _logger.warning("smzdm 关注分类疑似失效：%s", st["cate_filter"])
+            if seen_rows >= RENAME_MIN_SAMPLES:
+                missing = set(store.cate_allow_list(st)) - seen
+                if missing:
+                    errors.append(
+                        f"品类白名单里的「{'、'.join(sorted(missing))}」近 7 天"
+                        f"（{seen_rows} 条样本）从未出现过，分类名可能已改；"
+                        f"实际出现：{'、'.join(sorted(seen)[:10])}"
+                    )
+                    _logger.warning("smzdm 品类白名单疑似失效：%s", sorted(missing))
 
         # 🔴 全量入库，不按分类预过滤。
         #   分类过滤只作用于「入选」（在 store.judge 里），不作用于落库：

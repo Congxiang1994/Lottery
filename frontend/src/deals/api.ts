@@ -51,8 +51,6 @@ export interface Deal {
   first_seen: string;
   picked: boolean;
   pick_reason: string;
-  /** 是否命中「关注品类」—— 只影响排序加权，不影响能否入选 */
-  cate_hit: boolean;
   /** 折扣百分比（43 = 4.3 折，0 = 正文没写原价、未知）。
    *  唯一与「曝光」无关的判据：刚发布的好价没有投票，但折扣是客观的。 */
   discount: number;
@@ -80,28 +78,11 @@ export interface DealStats {
   picked_total: number;
   today_added: number;
   today_picked: number;
-  cate_filter: string;
-  cate_boost: number;
-  /** digital = 数码垂类（只看 cate_allow 且必须有信号）；legacy = 旧的全品类判据 */
-  filter_mode: string;
-  /** 品类白名单（逗号分隔），digital 模式下只有这些品类能入选 */
+  /** 品类白名单（逗号分隔），只有这些品类能入选 */
   cate_allow: string;
-  /** T1 真漏词表（`|` 分隔），空态要能展示「在等什么信号」 */
+  /** T1 真漏词表（`|` 分隔）。只读，用于空态说明「在等什么信号」 */
   signal_t1: string;
   signal_t2: string;
-  thresholds: {
-    worth_pct_min: number;
-    worth_min: number;
-    fav_min: number;
-    cmt_min: number;
-    need_hits: number;
-    /** 折扣优先判定是否开启 */
-    discount_mode: boolean;
-    /** 折扣 ≤ 此值（%）直接入选，不看投票 */
-    discount_direct: number;
-    /** 折扣在 (direct, assist] 需要热度命中 1 项 */
-    discount_assist: number;
-  };
   last_round: {
     ts: string;
     pages: number;
@@ -114,34 +95,17 @@ export interface DealStats {
 }
 
 export interface DealSettings {
-  worth_pct_min: string;
-  worth_min: string;
-  fav_min: string;
-  cmt_min: string;
-  need_hits: string;
-  cate_filter: string;
-  cate_boost: string;
-  cate_blacklist: string;
+  /** 唯一需要日常调整的配置：品类白名单，逗号分隔 */
+  cate_allow: string;
+  // ---------------- 抓取控制 ----------------
   enabled: string;
+  /** 每轮抓几页精选流（0 = 不抓） */
   pages_per_round: string;
   /** 启用的标签流 slug，逗号分隔（手慢无 tz273gm 等） */
   tag_feeds: string;
   /** 每个标签每轮抓几页，0 = 关闭标签流 */
   tag_pages: string;
-  /** 折扣优先判定总开关（1/0） */
-  discount_mode: string;
-  /** 折扣 ≤ 此值（%）直接入选 */
-  discount_direct: string;
-  /** 折扣在此值以内需要热度命中 1 项 */
-  discount_assist: string;
-  /** 新人价护栏：折扣低于此值（%）且到手价低于 newbie_price 时否决 */
-  newbie_discount: string;
-  newbie_price: string;
-  // ---------------- 数码垂类（2026-11-06）----------------
-  /** 品类白名单，逗号分隔。**唯一可编辑项** ——
-   *  信号词表 / 品牌白名单 / 权重 / 判据模式已硬编码进后端 config.py，
-   *  后端不再返回这些键（用户 2026-11-06 要求：不会有人改，页面也别暴露）。 */
-  cate_allow: string;
+  // ---------------- 登录凭据（逃生通道，页面不暴露入口）----------------
   cookie: string;
   cookie_ua: string;
 }
@@ -159,7 +123,6 @@ export interface DealConfig {
     home_pages_per_round: number;
     ban_backoff_minutes: number;
     cate_suggestions: string[];
-    cate_boost_default: number;
     /** 可选的标签流（slug 是存进配置的值，name 是中文名） */
     tag_feeds: { slug: string; name: string }[];
     tag_pages_default: number;

@@ -34,31 +34,6 @@ function relTime(s: string): string {
   return `${Math.floor(diff / 86_400_000)} 天前`;
 }
 
-/** 活动类标签是噪音（每个商品都挂一个），只留有信息量的降价/新低信号 */
-const NOISE_TAGS = /美淘节|双11|双十一|618|818|年货节|开学季|值得买|会员日/i;
-
-/**
- * 挑要展示的标签。
- *
- * 优先 `feed_tags`（站点分类标签页的归属：手慢无 / 绝对值 / 历史低价 / 值友专享），
- * 它比卡片上的营销标签（`tags`）可信得多 —— 营销标签每个商品都挂一个，
- * 而「手慢无」是站点真的把它归到这个榜里了。
- * 只有标签流没有营销标签块，所以标签页条目的 `tags` 本来就是空的。
- */
-function pickTags(d: Deal): string[] {
-  const src = (d.feed_tags || d.tags || "").trim();
-  if (!src) return [];
-  return src
-    .split("|")
-    .map((t) => t.trim())
-    .filter((t) => t && !NOISE_TAGS.test(t))
-    .slice(0, 3);
-}
-
-function isDropTag(t: string): boolean {
-  return /新低|低价|历史|降价|直降|补贴|绝对值|手慢无|清仓/.test(t);
-}
-
 /**
  * 信号 chip：数码垂类的主判据（2026-11-06 起）。
  *
@@ -157,7 +132,6 @@ function splitPrice(raw: string): { num: string; note: string } | null {
 /* ------------------------------ 卡片 ------------------------------ */
 
 function DealCard({ d }: { d: Deal }) {
-  const tags = useMemo(() => pickTags(d), [d.feed_tags, d.tags]);
   const { title, cond } = useMemo(() => splitTitle(d.title), [d.title]);
   const price = splitPrice(d.price);
 
@@ -236,13 +210,6 @@ function DealCard({ d }: { d: Deal }) {
           ) : (
             <span className="shrink-0 text-[15px] font-extrabold text-paper-900">见原帖</span>
           )}
-          {/* 关注品类标记跟着价格走、靠右：放元信息行末尾时会在窄屏被挤到下一行，
-              单独一个「关注」吊在左边，看着像另一条信息 */}
-          {d.cate_hit && (
-            <span className="shrink-0 rounded bg-brand-gold/15 px-1 py-px text-[10px] font-medium leading-3 text-paper-800">
-              关注
-            </span>
-          )}
         </div>
 
         {price?.note && (
@@ -282,51 +249,24 @@ function shortWords(raw?: string): string {
 
 function EmptyState({ stats }: { stats: DealStats | null }) {
   const last = stats?.last_round;
-  const t = stats?.thresholds;
-  const digital = stats?.filter_mode === "digital";
   return (
     <div className="rounded-2xl border border-paper-100 glass p-8 text-center">
       <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-brand-red/10 text-brand-red2">
         <Flame size={22} />
       </div>
       <h3 className="mt-3 text-base font-semibold text-paper-900">
-        {digital ? "这个时段没有带信号的数码好价" : "这个时段还没有达到门槛的好价"}
+        这个时段没有带信号的数码好价
       </h3>
-      {/* 文案从接口取而不是写死：用户改完配置后，写死的文案会变成假话 */}
+      {/* 品类与词表都从接口取，不写死 —— 改了品类后端会跟着变，
+          写死的话空态会变成假话（说「在看电脑数码」但其实已经换了） */}
       <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-paper-700">
-        {digital ? (
-          <>
-            现在只看「{stats?.cate_allow || "电脑数码,数码配件"}」，并且要求标题或标签里带
-            <b className="mx-0.5 font-semibold text-paper-900">真漏信号</b>
-            （{shortWords(stats?.signal_t1)}）或
-            <b className="mx-0.5 font-semibold text-paper-900">补贴信号</b>
-            （{shortWords(stats?.signal_t2)}）。
-            没有这些词的条目一律不入选 —— 空着是真的没漏，不是抓取坏了。
-          </>
-        ) : t ? (
-          t.discount_mode ? (
-            <>
-              当前门槛：正文里能算出折数的，{(t.discount_direct / 10).toFixed(1)} 折以内直接入选、
-              {(t.discount_assist / 10).toFixed(1)} 折以内需值友热度；算不出折数的才看
-              值率 ≥{t.worth_pct_min}% 且 值 ≥{t.worth_min} / 收藏 ≥{t.fav_min} /
-              评论 ≥{t.cmt_min} 三项中满足 {t.need_hits} 项。换个时间范围或到管理页放宽。
-            </>
-          ) : (
-            <>
-              当前门槛：值率 ≥{t.worth_pct_min}%，且 值 ≥{t.worth_min} / 收藏 ≥{t.fav_min} /
-              评论 ≥{t.cmt_min} 三项中满足 {t.need_hits} 项。换个时间范围，或到管理页放宽。
-            </>
-          )
-        ) : (
-          "判定门槛较高，放宽条件或换个时间范围再看看。"
-        )}
+        现在只看「{stats?.cate_allow || "电脑数码,数码配件"}」，并且要求标题或标签里带
+        <b className="mx-0.5 font-semibold text-paper-900">真漏信号</b>
+        （{shortWords(stats?.signal_t1)}）或
+        <b className="mx-0.5 font-semibold text-paper-900">补贴信号</b>
+        （{shortWords(stats?.signal_t2)}）。
+        没有这些词的一律不入选 —— 空着是真的没漏，不是抓取坏了。
       </p>
-      {!digital && stats?.cate_filter ? (
-        <p className="mx-auto mt-2 max-w-md text-[11px] leading-relaxed text-paper-700">
-          关注品类「{stats.cate_filter}」只影响排序（命中会往前排 ×{stats.cate_boost}），
-          不再限制入选 —— 所以列表空着是真的没有够格的好价，不是品类太窄。
-        </p>
-      ) : null}
 
       {last && (
         <div className="mx-auto mt-4 flex max-w-md flex-wrap items-center justify-center gap-x-4 gap-y-1 rounded-xl bg-paper-100/70 px-3 py-2 text-[11px] text-paper-700">
@@ -342,7 +282,7 @@ function EmptyState({ stats }: { stats: DealStats | null }) {
         className="mt-5 inline-flex items-center gap-1.5 rounded-xl border border-paper-200 px-4 py-2 text-xs font-medium text-paper-800 transition hover:border-brand-gold/50 hover:bg-brand-gold/10"
       >
         <Settings2 size={13} />
-        去调整阈值
+        去调整品类
       </Link>
     </div>
   );
@@ -464,9 +404,11 @@ export default function Deals() {
         <div className="min-w-0">
           <h1 className="text-2xl font-extrabold tracking-tight text-paper-900">捡漏</h1>
           <p className="mt-1 text-xs text-paper-700">
-            {stats?.filter_mode === "digital"
-              ? "只盯电脑数码 / 数码配件里带真漏信号（绝对值 / 历史低价 / 手慢无）或补贴信号的条目，点卡片直达原站。"
-              : "盯「什么值得买」手慢无 / 绝对值 / 历史低价榜，按折扣从深到浅排，点卡片直达原站。"}
+            只盯{stats?.cate_allow || "电脑数码 / 数码配件"}里带
+            <b className="mx-0.5 font-semibold text-paper-900">真漏信号</b>
+            （绝对值 / 历史低价 / 手慢无）或
+            <b className="mx-0.5 font-semibold text-paper-900">补贴信号</b>
+            的条目，点卡片直达原站。
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

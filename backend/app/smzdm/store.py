@@ -28,10 +28,8 @@ from app.smzdm.config import (
     BRAND_ALLOW,
     BRAND_WEIGHT,
     CATE_ALLOW_DEFAULT,
-    CATE_BOOST_DEFAULT,
     DEALS_KEEP_DAYS,
     DEFAULT_SETTINGS,
-    FILTER_MODE,
     HEAT_WEIGHTS,
     JUNK_WORDS,
     LOG_KEEP_DAYS,
@@ -94,11 +92,6 @@ CREATE TABLE IF NOT EXISTS fetch_log (
 );
 CREATE INDEX IF NOT EXISTS idx_log_ts ON fetch_log(ts DESC);
 """
-
-# 值率判定前的最小打分样本量。低于此值不参与判定 ——
-# 「1 个值 0 个不值」= 100% 值率，但样本量毫无意义，必须挡掉。
-MIN_RATED = 5
-
 
 @contextmanager
 def _init_lock():
@@ -201,7 +194,6 @@ def _ensure_columns(con: sqlite3.Connection) -> None:
         # （不命中直接不入库），改成加权排序后需要把这枚标记持久化，
         # 否则每次列表查询都要重新解析配置 + 逐行比对。
         ("cate_hit", "INTEGER NOT NULL DEFAULT 0"),
-        # ---------------- 2026-10-29 第二轮：折扣优先 ----------------
         # discount：整数百分比（44 = 4.4 折，0 = 未知）。唯一与「曝光」无关的
         # 判据 —— 刚发布的好价没有投票，但折扣是客观的。
         ("discount", "INTEGER NOT NULL DEFAULT 0"),
@@ -286,41 +278,9 @@ def heat_of(worth: int, fav: int, cmt: int) -> float:
     )
 
 
-def cate_wanted(st: dict[str, str]) -> list[str]:
-    """关注品类清单（逗号分隔，去空）。空列表 = 不设偏好。"""
-    return [x.strip() for x in str(st.get("cate_filter", "") or "").split(",") if x.strip()]
-
-
-def cate_blocked(st: dict[str, str]) -> list[str]:
-    """品类黑名单（逗号分隔，去空）。命中即直接否决。"""
-    return [
-        x.strip() for x in str(st.get("cate_blacklist", "") or "").split(",") if x.strip()
-    ]
-
-
-def cate_hit(cate1: str, cate2: str, st: dict[str, str]) -> bool:
-    """这条好价是否属于关注品类 —— **只用于排序加权，不参与入选判定**。
-
-    为什么改成加权而不是过滤（2026-10-29 实测驱动的改动）：
-    好价流里「电脑数码」只占 0.6%（517 条样本里 3 条），硬过滤下一天最多 1 条；
-    而且门槛降到零也只有 1~1.4 条/天 —— 这不是调阈值能解决的问题。
-    加权后全品类都参与判定（量给足了），关注品类乘 CATE_BOOST 排前面（不漏数码）。
-
-    未配置关注品类时返回 False（谁都不加权），而不是 True：
-    True 会让「没设偏好」变成「所有条目同等加权」，语义混乱且白算一遍。
-    """
-    wanted = cate_wanted(st)
-    if not wanted:
-        return False
-    return cate1 in wanted or cate2 in wanted
-
-
-def in_blacklist(cate1: str, cate2: str, st: dict[str, str]) -> bool:
-    """是否命中品类黑名单。命中即否决，连阈值都不看。"""
-    blocked = cate_blocked(st)
-    if not blocked:
-        return False
-    return cate1 in blocked or cate2 in blocked
+def cate_allow_list(st: dict[str, str]) -> list[str]:
+    """品类白名单（逗号分隔，去空）。空列表 = 什么都不收。"""
+    return _csv(st.get("cate_allow", CATE_ALLOW_DEFAULT))
 
 
 # ---------------------------------------------------------------- 数码垂类判定
@@ -399,7 +359,6 @@ def judge_digital(deal: Any, st: dict[str, str]) -> tuple[bool, str, int]:
 
     顺序（每步都是硬否决，短路越早越省）：
       ① 品类白名单      不在 cate_allow 里 → 否决
-      ② 品类黑名单      再兜一道（legacy 配置遗留下来的）
       ③ 非商品 / 活动帖 会员、券、课程、清单、汇总…
       ④ 价格有效        解析不出到手价的 → 否决
       ⑤ 信号            无 T1/T2 → 否决
@@ -409,10 +368,8 @@ def judge_digital(deal: Any, st: dict[str, str]) -> tuple[bool, str, int]:
     title = getattr(deal, "title", "") or ""
     feed_tags = getattr(deal, "feed_tags", "") or ""
 
-    allow = _csv(st.get("cate_allow", CATE_ALLOW_DEFAULT))
+    allow = cate_allow_list(st)
     if allow and not (cate1 in allow or cate2 in allow):
-        return False, "", 0
-    if in_blacklist(cate1, cate2, st):
         return False, "", 0
 
     junk = _alt_pattern(JUNK_WORDS)
@@ -437,121 +394,30 @@ def judge_digital(deal: Any, st: dict[str, str]) -> tuple[bool, str, int]:
 def evaluate(deal: Any, st: dict[str, str]) -> tuple[bool, str, int, float]:
     """统一判定入口：返回 (是否入选, 原因, tier, 价值分)。
 
-    所有写入路径（抓取入库 / 全库重算）都走这里，保证三条派生值口径一致 ——
+    所有写入路径（抓取入库 / 全库重算）都走这里，保证三样派生值口径一致 ——
     分开算过一次，结果 upsert 里算出的 tier 与 rejudge 里的不一样，
     页面排序在「刚抓到」和「刚重算」之后会跳一下。
+
+    只调一次 judge_digital：之前这里 judge() 与 judge_digital() 各跑一遍，
+    等于每条好价多做一次正则匹配。judge() 现在只是它的双返回值包装（给外部
+    调用方留的兼容接口），内部路径直接用这个函数即可。
     """
-    ok, reason = judge(deal, st)
-    price = float(getattr(deal, "cur_price", 0) or 0)
-    title = getattr(deal, "title", "") or ""
+    ok, reason, tier = judge_digital(deal, st)
     if not ok:
         return False, reason, 0, 0.0
-    # 入选的条目必然有 tier；legacy 模式下没有信号概念，tier 记 0 但分数照算，
-    # 让排序在回滚后仍按「价格档 × 品牌」走，不至于退化成纯时间序。
-    if FILTER_MODE == "digital":
-        _, _, tier = judge_digital(deal, st)
-    else:
-        tier = 0
+    price = float(getattr(deal, "cur_price", 0) or 0)
+    title = getattr(deal, "title", "") or ""
     return ok, reason, tier, value_score(price, tier, title, st)
 
 
 def judge(deal: Any, st: dict[str, str]) -> tuple[bool, str]:
-    """按当前阈值判定一条好价是否「超值」。返回 (是否入选, 原因)。
+    """判定一条好价是否入选。返回 (是否入选, 原因)。
 
-    判定式（2026-10-29 第二轮改造，三档）
-    ------------------------------------
-    ① 命中品类黑名单                     → 否决（连阈值都不看）
-    ② 有折扣数据（正文里找到了原价）：
-         折扣 ≤ discount_direct（默认 50%）  → **直接入选，不看投票**
-         direct < 折扣 ≤ assist（默认 70%）  → 热度三项命中 1 项即可
-         折扣 > assist                       → 落到 ③（折得不够狠，按旧判据）
-       新人价护栏：折扣 < 10% 且到手价 < 5 元 → 否决（首购礼金/新人补贴，
-       限购 1 件、无复购价值，不该占据榜单）
-    ③ 无折扣数据 → 旧判据：值率达标 且 (值/收藏/评论) 三项中满足 need_hits 项
-
-    为什么要这样改（上一版的实测问题）
-    ----------------------------------
-    旧判据本质在测「曝光量」：值、收藏、评论都是**被看见之后**才产生的。
-    实测证明这系统性漏掉了最该捞的东西 ——
-      米家扫地机器人 3.3 折、海尔冰箱 3.9 折、骆驼登山鞋 2.0 折，
-      值数分别只有 6 / 0 / 2，按旧判据永远进不来。
-    而旧判据实际捞到的是「值 5~12、靠评论数勉强过线」的大牌常规促销 ——
-    恰恰是最不劲爆的那类。用户的反馈「都是正常的好价，感觉一般般」就是这个。
-    折扣是唯一与曝光无关的客观信号：原价 505 → 到手 254 就是 5 折，
-    不管有没有人投过票。
-
-    为什么黑名单仍在最前面：它挡的是「根本不是商品」的帖子
-    （如「每日领京豆」这类 cate1=金融服务 的羊毛帖），这类条目热度可以很高。
-
-    为什么关注品类只影响排序：数码在好价流里只占 0.6%，硬过滤等于一天 1 条；
-    全品类都参与判定、命中关注品类乘权重往前排，既拿到了量也不会把数码漏掉。
-
-    ⚠️ 2026-11-06 起默认走 ``digital`` 模式（``judge_digital``），本节描述的是
-    ``filter_mode=legacy`` 时的行为。数码垂类判据见 docs/deals-digital-spec.md。
+    只是 :func:`judge_digital` 的「丢掉 tier」包装，给需要简单布尔结果的
+    调用方用。2026-11-06 之前的「全品类 + 折扣优先」判定链已删除 ——
+    它已不可达，留着只会让人误以为改 discount_direct 之类的配置能生效。
     """
-    if FILTER_MODE == "digital":
-        return judge_digital(deal, st)[:2]
-
-    cate1 = getattr(deal, "cate1", "") or ""
-    cate2 = getattr(deal, "cate2", "") or ""
-
-    if in_blacklist(cate1, cate2, st):
-        return False, ""
-
-    worth_min = _as_int(st, "worth_min", 50)
-    fav_min = _as_int(st, "fav_min", 50)
-    cmt_min = _as_int(st, "cmt_min", 20)
-
-    hits: list[str] = []
-    if deal.worth >= worth_min:
-        hits.append(f"值{deal.worth}")
-    if deal.fav >= fav_min:
-        hits.append(f"收藏{deal.fav}")
-    if deal.cmt >= cmt_min:
-        hits.append(f"评论{deal.cmt}")
-
-    def tag_reason(base: str) -> str:
-        return base + (" · 关注品类" if cate_hit(cate1, cate2, st) else "")
-
-    discount = int(getattr(deal, "discount", 0) or 0)
-    mode_on = str(st.get("discount_mode", "1")) == "1"
-
-    if mode_on and discount > 0:
-        direct = _as_int(st, "discount_direct", 50)
-        assist = _as_int(st, "discount_assist", 70)
-        newbie_d = _as_int(st, "newbie_discount", 10)
-        newbie_p = _as_float(st, "newbie_price", 5.0)
-        cur = float(getattr(deal, "cur_price", 0) or 0)
-
-        # 新人价护栏：0.4 折、0.59 元这类是首购礼金/新人补贴，不是真"漏"
-        if discount < newbie_d and 0 < cur < newbie_p:
-            return False, ""
-
-        label = f"{discount / 10:.1f}折"
-        if discount <= direct:
-            return True, tag_reason(label)
-        if discount <= assist:
-            if hits:
-                return True, tag_reason(f"{label} · " + " · ".join(hits))
-            return False, ""
-        # discount > assist → 折得不够狠，交给旧判据复核
-
-    # ---------------- 旧判据（无折扣数据 / 折扣不够深）----------------
-    rated = deal.worth + deal.unworth
-    if rated < MIN_RATED:
-        return False, ""
-
-    pct_min = _as_float(st, "worth_pct_min", 85.0)
-    if deal.worth_pct < pct_min:
-        return False, ""
-
-    if len(hits) >= _as_int(st, "need_hits", 2):
-        # 用 .1f 而不是 :g —— 值率是 round 到 1 位的浮点，:g 在脏数据（未取整）
-        # 下会原样吐出 92.3077%，看起来像精度丢了没处理。
-        return True, tag_reason(
-            f"值率{deal.worth_pct:.1f}% · " + " · ".join(hits)
-        )
-    return False, ""
+    return judge_digital(deal, st)[:2]
 
 
 # ---------------------------------------------------------------- 写入
@@ -605,7 +471,9 @@ def upsert_deals(rows: Iterable[dict[str, Any]], st: dict[str, str]) -> tuple[in
             ok, reason, tier, score = evaluate(obj, st)
             if ok:
                 picked += 1
-            hit = int(cate_hit(r.get("cate1", ""), r.get("cate2", ""), st))
+            # cate_hit：2026-11-06 起品类是硬过滤，命中即必然入选 → 这枚标记
+            # 已无意义。列保留只为旧库兼容，恒写 0。
+            hit = 0
             # 先查存在性再写：ON CONFLICT 的 rowcount 无论插入还是更新都是 1，
             # 用它判「新增」会永远等于总条数。先查一次最直观也最准确。
             exists = con.execute(
@@ -659,7 +527,7 @@ def rejudge(st: dict[str, str]) -> tuple[int, int]:
 
     为什么需要：阈值改了之后，库里已有记录不会自己变 —— 若只等下一轮抓取，
     用户要盯着「改完没反应」撑 20 分钟才知道调对了没有。这里让它立刻生效。
-    关注品类 / 加权系数改动后也要走这里，否则 ``cate_hit`` 与排序还停在旧配置上。
+    品类白名单改动后要走这里，否则排序与信号档还停在旧配置上。
     2026-11-06 起还要重算 ``value_score`` / ``signal_tier`` / ``price_num`` ——
     排序与卡片 chip 都读这三列，漏了就会出现「改完判定变了、但顺序和标签没变」。
     """
@@ -690,7 +558,7 @@ def rejudge(st: dict[str, str]) -> tuple[int, int]:
             ok, reason, tier, score = evaluate(obj, st)
             if ok:
                 picked += 1
-            hit = int(cate_hit(c1, c2, st))
+            hit = 0  # 见 upsert_deals 里的说明：品类硬过滤后此标记恒为 0
             if (
                 bool(r[6]) != ok
                 or int(r[9] or 0) != hit
@@ -750,37 +618,18 @@ def list_deals(
         args.append(since)
 
     clause = ("WHERE " + " AND ".join(where)) if where else ""
-    # 排序（2026-10-29 改造）：**折扣深度优先，热度只做同档内的次级排序**。
-    #
-    # 为什么要换：拾漏要的是「折得狠」，而 heat 排序把「值 500 的 iPhone 常规促销」
-    # 顶在最上面 —— 那是最不劲爆的一类。新排序：
-    #   ① 有折扣的整组排在无折扣之前（discount > 0 DESC）
-    #   ② 组内按 discount 升序 = 折扣越深越前（3 折在 5 折前）
-    #   ③ 关注品类的有效折扣再除以 boost → 同折扣下数码往前挪
-    #   ④ 同折扣按 heat 兜底，保证「3 折且值 500」比「3 折且值 2」靠前
-    # boost 拼成数字字面量而不是绑定参数：WHERE 的 args 已按顺序排好，
-    # 插一个占位符就得重排索引，容易错位；而 boost 是自己解析的 float，不可能是注入载体。
-    st = get_settings()
-    mode = FILTER_MODE
-    boost = min(max(_as_float(st, "cate_boost", CATE_BOOST_DEFAULT), 1.0), 5.0)
-    if mode == "digital":
-        # 数码垂类排序（2026-11-06）：价值分（价格档×信号权重×品牌）降序，
-        # 同分按到手价降序（大件优先），再按发现时间。
-        # 为什么不再按折扣：数码 94% 没有折扣数据，discount 恒为 0 时该键完全失效。
-        order = "value_score DESC, price_num DESC, first_seen DESC"
-    else:
-        # legacy：2026-10-29 的「折扣深度优先」，保留用于回滚对照。
-        order = (
-            f"(discount > 0) DESC, "
-            f"CASE WHEN discount > 0 THEN discount * 1.0 / "
-            f"(CASE WHEN cate_hit=1 THEN {round(boost, 2)} ELSE 1.0 END) ELSE 0 END ASC, "
-            f"heat DESC, first_seen DESC"
-        )
+    # 排序：价值分降序 → 到手价降序 → 发现时间。
+    # 为什么不再按折扣：数码两品类 94% 没有折扣数据，discount 恒为 0 时
+    # 那一组排序键完全失效（所有行并列，等于没排序）。
+    order = "value_score DESC, price_num DESC, first_seen DESC"
     with get_conn(DB_PATH) as con:
         total = con.execute(f"SELECT COUNT(*) FROM deals {clause}", args).fetchone()[0]
         rows = con.execute(
             f"SELECT id,title,url,price,mall,cate1,cate2,tags,img,"
             f"worth,unworth,fav,cmt,"
+            # ⚠️ cate_hit 仍留在 SELECT 里占位（r[19]），只为保持下面下标不变。
+            # 它 2026-11-06 起恒为 0、已不再返回给前端 —— 删列要连着改所有下标，
+            # 风险大于收益；真要删，把 r[19] 之后的下标整体前移一位。
             f"worth_pct,heat,hhmm,first_seen,picked,pick_reason,cate_hit,"
             f"discount,reporter,feed_tags,source,value_score,signal_tier "
             f"FROM deals {clause} ORDER BY {order} LIMIT ? OFFSET ?",
@@ -793,13 +642,12 @@ def list_deals(
             "worth": r[9], "unworth": r[10], "fav": r[11], "cmt": r[12],
             "worth_pct": r[13], "heat": r[14], "hhmm": r[15], "first_seen": r[16],
             "picked": bool(r[17]), "pick_reason": r[18],
-            "cate_hit": bool(r[19]),
             "discount": r[20] or 0,
             "reporter": r[21] or "",
             "feed_tags": r[22] or "",
             "source": r[23] or "",
             "value_score": r[24] or 0,
-            # 0 = legacy 模式（无信号概念），1/2 = T1/T2。前端据此决定 chip。
+            # 1 = T1 真漏，2 = T2 补贴。前端据此决定 chip 文案与配色。
             "signal_tier": int(r[25] or 0),
         }
         for r in rows
@@ -836,7 +684,6 @@ def stats() -> dict[str, Any]:
     """
     today = datetime.now().strftime("%Y-%m-%d")
     st = get_settings()
-    mode = FILTER_MODE
     with get_conn(DB_PATH) as con:
         total = con.execute("SELECT COUNT(*) FROM deals").fetchone()[0]
         picked_total = con.execute(
@@ -858,30 +705,11 @@ def stats() -> dict[str, Any]:
         "picked_total": picked_total,
         "today_added": today_added,
         "today_picked": today_picked,
-        "cate_filter": st.get("cate_filter", ""),
-        "cate_boost": min(max(_as_float(st, "cate_boost", CATE_BOOST_DEFAULT), 1.0), 5.0),
-        # 数码垂类口径（2026-11-06）：空态要能说清「现在只看这两类、并且必须有信号」，
-        # 否则用户看到空列表会以为抓取坏了。文案全部由这里驱动，不写死在前端。
-        "filter_mode": mode,
+        # 空态文案的数据源：说清「只看这些品类 + 必须有这些信号」，
+        # 否则用户看到空列表会以为抓取坏了。
         "cate_allow": st.get("cate_allow", CATE_ALLOW_DEFAULT),
-        # 词表已硬编码（用户明确要求「不会有人改这里」），下发只为让页面
-        # 用人话说明「在等什么信号」，不是可编辑项。
         "signal_t1": SIGNAL_T1,
         "signal_t2": SIGNAL_T2,
-        # 阈值一并下发：公开页的空态要说明「为什么空」，
-        # 硬编码「值率 ≥85% 且三项取二」会在用户改完阈值后变成假话。
-        "thresholds": {
-            "worth_pct_min": _as_float(st, "worth_pct_min", 85.0),
-            "worth_min": _as_int(st, "worth_min", 50),
-            "fav_min": _as_int(st, "fav_min", 50),
-            "cmt_min": _as_int(st, "cmt_min", 20),
-            "need_hits": _as_int(st, "need_hits", 2),
-            # 折扣档一并下发：空态与卡片上的「为什么入选」都要能自圆其说，
-            # 用户改完折扣阈值后，写死的文案会变成假话。
-            "discount_mode": str(st.get("discount_mode", "1")) == "1",
-            "discount_direct": _as_int(st, "discount_direct", 50),
-            "discount_assist": _as_int(st, "discount_assist", 70),
-        },
         "last_round": (
             {
                 "ts": last[0], "pages": last[1], "parsed": last[2],

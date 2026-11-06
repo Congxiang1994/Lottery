@@ -7,7 +7,7 @@ A. **公开只读** ``GET /list`` ``GET /stats``
 
 B. **管理会话** ``/admin/*``
    复用全站操作密码（与彩票/触发器/故事同一把），密码校验通过后签发 12h
-   httpOnly cookie（名 ``deals_session``）。阈值、关注品类、加权系数都在这条通道里改。
+   httpOnly cookie（名 ``deals_session``）。品类白名单与抓取开关都在这条通道里改。
 
 关于登录 Cookie（2026-10-29 起管理页不再暴露）
 ---------------------------------------------
@@ -34,7 +34,6 @@ from fastapi import APIRouter, Cookie, HTTPException, Request, Response
 from app.smzdm import crawler, scheduler, store
 from app.smzdm.config import (
     BAN_BACKOFF_SECONDS,
-    CATE_BOOST_DEFAULT,
     CATE_SUGGESTIONS,
     COOKIE_NAME,
     FETCH_INTERVAL_SECONDS,
@@ -205,19 +204,21 @@ def _mask(cookie: str) -> str:
 
 
 def _validate_config(patch: dict[str, Any]) -> dict[str, Any]:
-    """校验阈值类配置，越界直接 422 —— 静默纠正会让用户以为改了没生效。"""
+    """校验可写配置，越界直接 422 —— 静默纠正会让用户以为改了没生效。
+
+    ⚠️ 只接受 ``DEFAULT_SETTINGS`` 里真实存在的键。判定类参数
+    （信号词 / 品牌 / 权重 / 折扣档 / 热度阈值）2026-11-06 起已硬编码进
+    config.py 常量，不再走这条通道 —— 见 docs/deals-digital-spec.md §3.0。
+    """
     out: dict[str, Any] = {}
+
+    # ---------------- 抓取控制 ----------------
     ints = {
-        "worth_min": (0, 100_000),
-        "fav_min": (0, 100_000),
-        "cmt_min": (0, 100_000),
-        "need_hits": (1, 3),
-        # 精选流页数。**0 = 不抓**（默认）：实测精选流是全量爆料流水，
-        # 100 条里 0 条能过阈值，拿它当入选来源只是灌库。上限 8 留给
-        # 「刚上新」这类未来用途。
+        # 精选流页数。0 = 不抓（默认）：实测是全量爆料流水，100 条里 0 条能过，
+        # 拿它当入选来源只是灌库。上限 8 留给「刚上新」这类未来用途。
         "pages_per_round": (0, 8),
-        # 标签流页数（主力入口）。0 = 关闭标签流（退回只看首页推荐流）。
-        # 上限 3：实测手慢无 3 页已覆盖 1.5 小时，再多都是重复。
+        # 标签流页数（主力入口）。0 = 关闭。上限 3：实测手慢无 3 页已覆盖
+        # 1.5 小时，再多都是重复。
         "tag_pages": (0, 3),
     }
     for key, (lo, hi) in ints.items():
@@ -230,51 +231,6 @@ def _validate_config(patch: dict[str, Any]) -> dict[str, Any]:
                 raise HTTPException(status_code=422, detail=f"{key} 应在 {lo}~{hi} 之间")
             out[key] = str(v)
 
-    # 折扣档：direct < assist 必须成立，否则「直接入选」比「需热度」还宽，
-    # 逻辑会错乱（先命中 direct 分支，assist 永远走不到）。
-    def _pct(key: str, lo: float, hi: float, label: str) -> str | None:
-        if key not in patch:
-            return None
-        try:
-            v = float(patch[key])
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=422, detail=f"{label}必须是数字")
-        if not (lo <= v <= hi):
-            raise HTTPException(status_code=422, detail=f"{label}应在 {lo}~{hi} 之间")
-        return str(round(v, 1))
-
-    v_direct = _pct("discount_direct", 1, 100, "「直接入选」折扣上限")
-    v_assist = _pct("discount_assist", 1, 100, "「需热度」折扣上限")
-    if v_direct is not None:
-        out["discount_direct"] = str(int(float(v_direct)))
-    if v_assist is not None:
-        out["discount_assist"] = str(int(float(v_assist)))
-    d = out.get("discount_direct", patch.get("discount_direct"))
-    a = out.get("discount_assist", patch.get("discount_assist"))
-    if d is not None and a is not None and float(d) >= float(a):
-        raise HTTPException(
-            status_code=422,
-            detail="「直接入选」的折扣上限必须小于「需热度」的折扣上限（如 50 < 70）",
-        )
-
-    for key, label in (
-        ("newbie_discount", "新人价折扣阈值"),
-        ("newbie_price", "新人价金额阈值"),
-    ):
-        if key in patch:
-            try:
-                v = float(patch[key])
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=422, detail=f"{label}必须是数字")
-            if not (0 <= v <= 1000):
-                raise HTTPException(status_code=422, detail=f"{label}超出合理范围")
-            out[key] = str(round(v, 1))
-
-    if "discount_mode" in patch:
-        out["discount_mode"] = (
-            "1" if str(patch["discount_mode"]) in ("1", "true", "True") else "0"
-        )
-
     if "tag_feeds" in patch:
         raw = str(patch["tag_feeds"] or "")
         parts = [p.strip() for p in raw.split(",") if p.strip()]
@@ -282,58 +238,18 @@ def _validate_config(patch: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail="标签流最多 8 个")
         # ⚠️ 必须是短 slug（如 tz273gm），不能是中文名 —— 中文名会 301，
         # 每轮都白多一次往返。这里直接挡掉。
-        for p in parts:
-            if not re.fullmatch(r"[a-z0-9]{4,16}", p):
+        for p_ in parts:
+            if not re.fullmatch(r"[a-z0-9]{4,16}", p_):
                 raise HTTPException(
                     status_code=422,
-                    detail=f"标签「{p}」格式不对：应为站点短 slug（如 tz273gm），不是中文名",
+                    detail=f"标签「{p_}」格式不对：应为站点短 slug（如 tz273gm），不是中文名",
                 )
         out["tag_feeds"] = ",".join(parts)
-
-    if "worth_pct_min" in patch:
-        try:
-            v = float(patch["worth_pct_min"])
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=422, detail="worth_pct_min 必须是数字")
-        if not (0 <= v <= 100):
-            raise HTTPException(status_code=422, detail="值率下限应在 0~100 之间")
-        out["worth_pct_min"] = str(round(v, 1))
-
-    if "cate_filter" in patch:
-        raw = str(patch["cate_filter"] or "")
-        parts = [p.strip() for p in raw.split(",") if p.strip()]
-        if len(parts) > 12:
-            raise HTTPException(status_code=422, detail="关注品类最多 12 个")
-        if any(len(p) > 20 for p in parts):
-            raise HTTPException(status_code=422, detail="品类名过长")
-        out["cate_filter"] = ",".join(parts)
-
-    if "cate_blacklist" in patch:
-        raw = str(patch["cate_blacklist"] or "")
-        parts = [p.strip() for p in raw.split(",") if p.strip()]
-        if len(parts) > 12:
-            raise HTTPException(status_code=422, detail="黑名单品类最多 12 个")
-        if any(len(p) > 20 for p in parts):
-            raise HTTPException(status_code=422, detail="品类名过长")
-        out["cate_blacklist"] = ",".join(parts)
-
-    if "cate_boost" in patch:
-        try:
-            v = float(patch["cate_boost"])
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=422, detail="cate_boost 必须是数字")
-        if not (1.0 <= v <= 5.0):
-            raise HTTPException(
-                status_code=422, detail="关注品类加权系数应在 1.0~5.0 之间"
-            )
-        out["cate_boost"] = str(round(v, 2))
 
     if "enabled" in patch:
         out["enabled"] = "1" if str(patch["enabled"]) in ("1", "true", "True") else "0"
 
-    # 数码垂类只保留一个可调项：品类白名单。
-    # 信号词表 / 品牌白名单 / 权重 / 判据模式已硬编码进 config.py 常量
-    # （用户 2026-11-06 明确要求：不会有人改，设置页也不要再暴露）。
+    # ---------------- 唯一需要日常调整的：品类白名单 ----------------
     if "cate_allow" in patch:
         parts = [x.strip() for x in str(patch["cate_allow"] or "").split(",") if x.strip()]
         if len(parts) > 12:
@@ -361,7 +277,6 @@ def admin_config(deals_session: str | None = Cookie(default=None)):
             "home_pages_per_round": HOME_PAGES_PER_ROUND,
             "ban_backoff_minutes": BAN_BACKOFF_SECONDS // 60,
             "cate_suggestions": CATE_SUGGESTIONS,
-            "cate_boost_default": CATE_BOOST_DEFAULT,
             # 标签流：给管理页做「可点选的标签清单」，用户不用记 slug。
             # 键是 slug（要存进配置的），值是中文名（给人看的）。
             "tag_feeds": [{"slug": s, "name": n} for s, n in TAG_FEEDS],
@@ -383,32 +298,10 @@ def admin_update_config(payload: dict, deals_session: str | None = Cookie(defaul
         patch["cookie"] = cookie
         patch["cookie_ua"] = ua or ""
     st = store.update_settings(patch)
-    # 阈值类改动立即重算已有记录，否则用户要等下一轮抓取（20 分钟）才知道调对没有。
-    # 关注品类 / 黑名单 / 加权系数也要重算 —— 它们决定 cate_hit 与 picked，
-    # 漏了就会出现「改完页面没反应，但下一轮抓取后又变了」的灵异现象。
-    # 只改 Cookie / 开关时不重算 —— 那不影响判定，白扫一遍全表没意义。
-    if any(
-        k in patch
-        for k in (
-            "worth_pct_min",
-            "worth_min",
-            "fav_min",
-            "cmt_min",
-            "need_hits",
-            "cate_filter",
-            "cate_blacklist",
-            # 折扣档改动同样要立刻重算 —— 调宽 discount_direct 之后，
-            # 库里已有的「3 折但 0 票」条目应当马上出现在页面上。
-            "discount_mode",
-            "discount_direct",
-            "discount_assist",
-            "newbie_discount",
-            "newbie_price",
-            # 数码垂类：品类白名单决定 picked，改了必须立刻重算，
-            # 否则会出现「改完页面没反应、下一轮抓取后又变了」的灵异现象。
-            "cate_allow",
-        )
-    ):
+    # 只有品类白名单会影响判定（picked / 排序 / chip），改了必须立刻重算，
+    # 否则会出现「改完页面没反应、下一轮抓取后又变了」的灵异现象。
+    # 抓取类开关与 Cookie 不重算 —— 白扫一遍全表没意义。
+    if "cate_allow" in patch:
         picked, changed = store.rejudge(st)
     else:
         picked, changed = 0, 0
