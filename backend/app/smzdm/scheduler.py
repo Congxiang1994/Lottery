@@ -183,7 +183,10 @@ async def run_round(manual: bool = False) -> dict[str, Any]:
             "picked": picked,
             "banned": banned,
             "errors": errors,
-            "notes": notes,
+            # ⚠️ 这里曾经有 `"notes": notes` —— 但 notes 变量在 2026-11-06 的判定链清理里
+            # 被删掉了（观测性 notes 已并入 errors），漏删这一行导致**每轮抓取都抛
+            # NameError**，日志里是「smzdm 抓取单轮异常」，抓取循环本身不死但一轮都没跑成。
+            # 加字段时请连 quote 一起搜：只有这里引用它。
             "elapsed_ms": round((time.monotonic() - started) * 1000),
             "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }

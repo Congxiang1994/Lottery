@@ -20,7 +20,6 @@ trigger / story / babysong / access / smzdm 五个域都得反向 import 彩票�
 from __future__ import annotations
 
 import time
-from datetime import datetime
 
 from app.common import password as _password
 from app.common.db import get_conn, init_schema

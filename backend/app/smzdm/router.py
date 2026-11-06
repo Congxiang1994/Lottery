@@ -26,10 +26,9 @@ from __future__ import annotations
 import asyncio
 import re
 import shlex
-import time
 from typing import Any
 
-from fastapi import APIRouter, Cookie, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, HTTPException, Response
 
 from app.common import admin
 from app.smzdm import crawler, scheduler, store

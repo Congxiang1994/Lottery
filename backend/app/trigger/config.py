@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 
-from app.common.admin import SESSION_TTL_SECONDS, sign_session, verify_session  # noqa: F401  (兼容旧 import)
 from app.common.paths import db_path
 
 DB_PATH = db_path("trigger")
@@ -17,6 +16,7 @@ DB_PATH = db_path("trigger")
 
 # 会话 cookie：httpOnly，密码校验通过后签发，12 小时有效
 COOKIE_NAME = "trigger_session"
+SESSION_TTL_SECONDS = 12 * 3600
 
 # 请求参数
 HTTP_TIMEOUT_SECONDS = 30.0
@@ -53,24 +53,3 @@ EXTRA_HEADERS = {
 # 自然短句，让每次调用都像真实 Agent 对话而非机械心跳
 PROBE_MESSAGE = "请回复 ok 确认连接正常"
 PROBE_MAX_TOKENS = 16
-
-
-def sign_session(expires_at: float) -> str:
-    """生成 会话载荷.签名 令牌（载荷仅含过期时间，无用户体系）。"""
-    payload = str(int(expires_at))
-    sig = hmac.new(SECRET, payload.encode(), hashlib.sha256).hexdigest()
-    return f"{payload}.{sig}"
-
-
-def verify_session(token: str | None) -> bool:
-    """校验会话令牌：签名匹配且未过期。"""
-    if not token or "." not in token:
-        return False
-    payload, sig = token.rsplit(".", 1)
-    expect = hmac.new(SECRET, payload.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(sig, expect):
-        return False
-    try:
-        return int(payload) > time.time()
-    except ValueError:
-        return False

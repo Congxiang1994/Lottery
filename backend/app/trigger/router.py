@@ -6,7 +6,6 @@ api_key 永不出现在任何响应里（只回脱敏尾 4 位）。
 """
 from __future__ import annotations
 
-import asyncio
 import ipaddress
 from datetime import datetime, timedelta
 from urllib.parse import urlparse

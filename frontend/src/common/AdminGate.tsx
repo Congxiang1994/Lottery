@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { KeyRound, Loader2 } from "lucide-react";
 
 import { isUnauthorized } from "./http";
+import { Loading } from "./State";
 import { errText } from "./State";
 
 /**
@@ -93,7 +94,17 @@ export function AdminGate({
     });
   };
 
-  if (authed === null) return <GateShell title={title} subtitle={subtitle} desc={desc} accent={accent} />;
+  /* 探测中：卡片里必须有「正在确认会话」的反馈。
+     ⚠️ 别写成裸的 <GateShell/>（只有标题和说明、下面一片空）——
+     探测要一次往返（公网 ~1s），空卡片看起来就是「这页坏了」。
+     保留同一张卡也让探测结束 → 密码框出现时不跳位。 */
+  if (authed === null) {
+    return (
+      <GateShell title={title} subtitle={subtitle} desc={desc} accent={accent}>
+        <Loading label="正在确认会话…" className="mt-6" />
+      </GateShell>
+    );
+  }
   if (!authed) {
     return (
       <GateShell title={title} subtitle={subtitle} desc={desc} accent={accent}>

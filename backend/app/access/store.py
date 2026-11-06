@@ -405,8 +405,8 @@ def summary(days: int = 7, include_auto: Any = 0) -> dict[str, Any]:
         auto_hidden = 0
         if auto_clause:
             auto_hidden = int(con.execute(
-                f"SELECT COALESCE(SUM(hits),0) FROM access_logs WHERE day >= ? "
-                f"AND ua_class IN ('script','bot')", [since]
+                "SELECT COALESCE(SUM(hits),0) FROM access_logs WHERE day >= ? "
+                "AND ua_class IN ('script','bot')", [since]
             ).fetchone()[0])
 
     return {
