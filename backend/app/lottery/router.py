@@ -1,6 +1,7 @@
 """彩票 API 路由。"""
 from __future__ import annotations
 
+import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 
 from app.lottery.algorithms import (
@@ -13,9 +14,12 @@ from app.lottery.algorithms import (
     run_batch,
     run_one,
 )
+from app.common import admin
+from app.lottery.algorithms.base import CATEGORIES, normalize, pick_top
 from app.lottery.config import LOTTERIES
+from app.lottery.prizes import prize_level
 from app.lottery.services import scraper, stats as stats_svc, predictor
-from app.lottery.services import results_store
+from app.lottery.services import results_store, runner
 
 router = APIRouter(prefix="/api/v1", tags=["lottery"])
 
@@ -208,8 +212,6 @@ def saved_combined(lottery: str):
     if not res:
         raise HTTPException(status_code=404,
                             detail=f"{lottery} 暂无入库结果，请等待定时任务完成首次跑批")
-    import numpy as np
-    from app.lottery.algorithms.base import normalize, pick_top
     meta = LOTTERIES[lottery]
     R = np.mean([r["red_conf"] for r in res["results"]], axis=0)
     B = np.mean([r["blue_conf"] for r in res["results"]], axis=0)
@@ -277,10 +279,6 @@ def history_predictions(
     page_draws = draws[start:end][::-1]  # 最新在前，与 /history 一致
 
     meta = LOTTERIES[lottery]
-    import numpy as np
-    from app.lottery.algorithms.base import CATEGORIES, pick_top
-    from app.lottery.prizes import prize_level
-
     # 1) 逐期定位预测批次（run_date <= 开奖日期 的最近一次）
     items: list[dict] = []
     wanted_dates: set[str] = set()
@@ -361,20 +359,28 @@ def history_predictions(
 # ------------------------------------------------------------ 全量运行（算法广场 → sqlite 一致性）
 
 
-@router.post("/verify-password")
-def verify_password(payload: dict):
-    """校验「运行全部算法」操作密码（仅做校验，不触发运行）。
+def _require_password(payload: dict | None) -> None:
+    """校验操作密码（失败递增锁定流控），不通过直接抛 401 / 429。
 
-    流控：失败计数 + 递增锁定（`results_store.verify_password`），
-    锁定期返 429。前端已改为直接调 /run-all 一步完成，此接口保留供脚本/调试用。
+    全站唯一实现见 ``app.common.security.verify_password``，这里只负责把
+    ``(ok, msg, status)`` 三元组翻译成 HTTPException —— 三个写接口共用。
     """
-    password = str(payload.get("password", ""))
-    ok, msg, status = results_store.verify_password(password)
+    ok, msg, status = admin.verify_password(str((payload or {}).get("password", "")))
     if status == 429:
         raise HTTPException(status_code=429, detail=msg)
     if not ok:
         raise HTTPException(status_code=401, detail=msg)
-    return {"ok": True, "message": msg}
+
+
+@router.post("/verify-password")
+def verify_password(payload: dict):
+    """校验「运行全部算法」操作密码（仅做校验，不触发运行）。
+
+    流控：失败计数 + 递增锁定（``app.common.security``），锁定期返 429。
+    前端已改为直接调 /run-all 一步完成，此接口保留供脚本/调试用。
+    """
+    _require_password(payload)
+    return {"ok": True, "message": "验证通过"}
 
 
 @router.post("/run-all")
@@ -384,13 +390,7 @@ def run_all_algorithms_all(payload: dict):
     后端强制校验操作密码，**走与 /verify-password 同一套流控**（失败计数 + 递增锁定），
     校验通过后由数据库互斥锁防并发。
     """
-    from app.lottery.services import runner
-    from app.lottery.services import results_store as _rs
-    ok, msg, status = _rs.verify_password(str(payload.get("password", "")))
-    if status == 429:
-        raise HTTPException(status_code=429, detail=msg)
-    if not ok:
-        raise HTTPException(status_code=401, detail="密码错误，无法触发运行")
+    _require_password(payload)
     started, msg = runner.start_all()
     if not started:
         raise HTTPException(status_code=409, detail=msg)
@@ -400,7 +400,6 @@ def run_all_algorithms_all(payload: dict):
 @router.get("/run-status")
 def run_status_all():
     """查询全量运行进度（两个彩种合并，跨 worker 轮询）。"""
-    from app.lottery.services import runner
     return runner.status_all()
 
 
@@ -412,13 +411,7 @@ def run_all_algorithms(lottery: str, payload: dict):
     自动更新。同样需要操作密码，且走统一的失败锁定流控。
     """
     _get(lottery)
-    from app.lottery.services import runner
-    from app.lottery.services import results_store as _rs
-    ok, msg, status = _rs.verify_password(str(payload.get("password", "")))
-    if status == 429:
-        raise HTTPException(status_code=429, detail=msg)
-    if not ok:
-        raise HTTPException(status_code=401, detail="密码错误，无法触发运行")
+    _require_password(payload)
     started, msg = runner.start(lottery)
     if not started:
         raise HTTPException(status_code=409, detail=msg)
@@ -429,7 +422,6 @@ def run_all_algorithms(lottery: str, payload: dict):
 def run_all_status(lottery: str):
     """查询全量运行进度（跨 worker 轮询）。"""
     _get(lottery)
-    from app.lottery.services import runner
     return runner.status(lottery)
 
 
@@ -442,12 +434,7 @@ def refresh(lottery: str, payload: dict | None = None):
     """
     if lottery not in LOTTERIES:
         raise HTTPException(status_code=404, detail=f"未知彩种: {lottery}")
-    from app.lottery.services import results_store as _rs
-    ok, msg, status = _rs.verify_password(str((payload or {}).get("password", "")))
-    if status == 429:
-        raise HTTPException(status_code=429, detail=msg)
-    if not ok:
-        raise HTTPException(status_code=401, detail="密码错误，无法刷新数据")
+    _require_password(payload)
     data = scraper.fetch_lottery(lottery)
     scraper.save_lottery(data)
     return {"lottery": lottery, "count": data["count"], "updated_at": data["updated_at"]}

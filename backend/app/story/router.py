@@ -21,6 +21,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
 
+from app.common import admin
 from app.story import apidoc, store
 from app.story.config import (
     COOKIE_NAME,
@@ -31,7 +32,6 @@ from app.story.config import (
     MAX_URL_LEN,
     SESSION_TTL_SECONDS,
 )
-from app.trigger.config import sign_session, verify_session
 
 router = APIRouter(prefix="/api/story", tags=["story"])
 
@@ -152,43 +152,23 @@ def public_item(story_id: int):
 # ------------------------------------------------------------ 通道 B：管理会话
 
 
-def _require_session(story_session: str | None) -> None:
-    if not verify_session(story_session):
-        raise HTTPException(status_code=401, detail="会话无效或已过期，请重新输入密码")
+_require_session = admin.require
 
 
 @router.post("/admin/auth")
 def admin_auth(payload: dict, response: Response):
     """密码校验（复用操作密码 + 失败递增锁定）→ 签发 12h httpOnly cookie。"""
-    from app.lottery.services import results_store
-
-    password = str(payload.get("password", ""))
-    ok, msg, status = results_store.verify_password(password)
-    if status == 429:
-        raise HTTPException(status_code=429, detail=msg)
-    if not ok:
-        raise HTTPException(status_code=401, detail=msg)
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=sign_session(time.time() + SESSION_TTL_SECONDS),
-        max_age=SESSION_TTL_SECONDS,
-        httponly=True,
-        samesite="lax",
-        secure=True,
-        path="/",
-    )
-    return {"ok": True, "message": "验证通过", "ttl_hours": SESSION_TTL_SECONDS // 3600}
+    return admin.login(payload, response, COOKIE_NAME, SESSION_TTL_SECONDS)
 
 
 @router.get("/admin/session")
 def admin_session(story_session: str | None = Cookie(default=None)):
-    return {"valid": verify_session(story_session)}
+    return admin.session_state(story_session)
 
 
 @router.post("/admin/logout")
 def admin_logout(response: Response):
-    response.delete_cookie(COOKIE_NAME, path="/")
-    return {"ok": True}
+    return admin.logout(response, COOKIE_NAME)
 
 
 @router.get("/admin/stories")

@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import json
-import time as _time
 from pathlib import Path
 
 from fastapi import APIRouter, Cookie, HTTPException, Response
 
 from app.babysong import downloads
-from app.trigger.config import sign_session, verify_session
+from app.common import admin
 
 router = APIRouter(prefix="/api/babysong", tags=["babysong"])
 
@@ -46,44 +45,23 @@ def list_songs():
 # ------------------------------------------------------------ 管理端（密码保护）
 
 
-def _require_session(admin_session: str | None) -> None:
-    if not verify_session(admin_session):
-        raise HTTPException(status_code=401, detail="会话无效或已过期，请重新输入密码")
+_require_session = admin.require
 
 
 @router.post("/admin/auth")
 def admin_auth(payload: dict, response: Response):
-    """密码校验（复用操作密码 + 1 次/秒全局流控）→ 签发 12h httpOnly cookie。"""
-    from app.lottery.services import results_store
-
-    password = str(payload.get("password", ""))
-    ok, msg, status = results_store.verify_password(password)
-    if status == 429:
-        raise HTTPException(status_code=429, detail=msg)
-    if not ok:
-        raise HTTPException(status_code=401, detail=msg)
-    expires_at = _time.time() + SESSION_TTL_SECONDS
-    response.set_cookie(
-        key=ADMIN_COOKIE,
-        value=sign_session(expires_at),
-        max_age=SESSION_TTL_SECONDS,
-        httponly=True,
-        samesite="lax",
-        secure=True,
-        path="/",
-    )
-    return {"ok": True, "message": "验证通过", "ttl_hours": SESSION_TTL_SECONDS // 3600}
+    """密码校验（复用操作密码 + 失败递增锁定）→ 签发 12h httpOnly cookie。"""
+    return admin.login(payload, response, ADMIN_COOKIE, SESSION_TTL_SECONDS)
 
 
 @router.get("/admin/session")
 def admin_session_status(babysong_session: str | None = Cookie(default=None)):
-    return {"valid": verify_session(babysong_session)}
+    return admin.session_state(babysong_session)
 
 
 @router.post("/admin/logout")
 def admin_logout(response: Response):
-    response.delete_cookie(ADMIN_COOKIE, path="/")
-    return {"ok": True}
+    return admin.logout(response, ADMIN_COOKIE)
 
 
 @router.get("/admin/downloads")

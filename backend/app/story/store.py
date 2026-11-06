@@ -9,13 +9,12 @@
 """
 from __future__ import annotations
 
-import fcntl
 import secrets
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.common.db import get_conn
+from app.common.db import get_conn, init_schema
 from app.story.config import (
     CALLS_KEEP_DAYS,
     DB_PATH,
@@ -85,32 +84,16 @@ def _today() -> str:
 
 
 def init() -> None:
-    """建表（幂等，且多 worker 并发安全）。
+    """建表（幂等，多 worker 并发安全 —— flock 由 common/db.init_schema 统一提供）。
 
-    ⚠️ 为什么需要文件锁：gunicorn 以 ``-w 2`` 启动，两个 worker 会同时执行
+    ⚠️ 为什么需要 flock：gunicorn 以 ``-w 2`` 启动，两个 worker 会同时执行
     ``PRAGMA journal_mode=WAL`` + ``CREATE TABLE``。**首次建库**时二者都要拿
     独占锁，其中一个必抛 ``sqlite3.OperationalError: database is locked``；
     启动钩子抛异常 → gunicorn 判定 "Worker failed to boot" → 整个 master 退出。
     2026-09-24 首次上线实测踩到（systemd 靠 restart 才拉起来，属侥幸）。
-    SQLite 的 busy_timeout 对 ``PRAGMA journal_mode`` 不生效，所以在库文件旁
-    放一把 flock 排他锁，把建表阶段串行化。
+    SQLite 的 ``busy_timeout`` 对 ``PRAGMA journal_mode`` 不生效，只能靠外部锁。
     """
-    lock_file = None
-    try:
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        lock_file = open(DB_PATH.parent / f"{DB_PATH.name}.init.lock", "w")
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-    except OSError:
-        lock_file = None  # 锁不可用（非常规文件系统）时退化为无锁，建表本身仍幂等
-    try:
-        with get_conn(DB_PATH) as con:
-            con.executescript(_SCHEMA)
-    finally:
-        if lock_file is not None:
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            finally:
-                lock_file.close()
+    init_schema(DB_PATH, _SCHEMA)
 
 
 # ------------------------------------------------------------ 故事 CRUD

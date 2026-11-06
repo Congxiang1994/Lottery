@@ -22,11 +22,11 @@ import os
 import secrets
 import sqlite3
 from datetime import datetime
-from pathlib import Path
 
 from app.common.db import get_conn
+from app.common.paths import db_path
 
-DB_PATH = Path(os.environ.get("LOTTERY_DB_DIR", "/data/lottery")) / "auth.db"
+DB_PATH = db_path("auth")
 
 # scrypt 参数：N=2^15 约 32MB 内存 / 次，单次校验 ~100ms（对本人无感，对爆破很贵）
 _SCRYPT_N = 2 ** 15

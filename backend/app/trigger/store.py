@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.common.db import get_conn
+from app.common.db import get_conn, init_schema
 
 from app.trigger.config import DB_PATH, HISTORY_KEEP_DAYS
 
@@ -60,13 +60,19 @@ _MISSED_UNIQUE_INDEX = (
 )
 
 
-def init() -> None:
-    with get_conn(DB_PATH) as con:
-        con.executescript(_SCHEMA)
-    # 迁移历史重复（老版本 check-then-act 竞态留下的），再上唯一索引做硬保证
+def _post_init(con) -> None:
+    """建表之后的收尾（同一把 flock 内）：先去重历史，再上唯一索引。
+
+    ⚠️ 顺序不能反：老库里可能已有同一任务同一天的多条 missed（旧版本
+    check-then-act 竞态留下的），直接建唯一索引会失败 → 启动挂掉。
+    """
     dedupe_missed_history()
-    with get_conn(DB_PATH) as con:
-        con.execute(_MISSED_UNIQUE_INDEX)
+    con.execute(_MISSED_UNIQUE_INDEX)
+
+
+def init() -> None:
+    """建表 + 补唯一索引（幂等，flock 串行化，多 worker 首启安全）。"""
+    init_schema(DB_PATH, _SCHEMA, after=_post_init)
 
 
 def mask_key(key: str) -> str:

@@ -7,17 +7,15 @@ api_key 永不出现在任何响应里（只回脱敏尾 4 位）。
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Cookie, HTTPException, Response
 
+from app.common import admin
 from app.trigger import scheduler, store
-from app.trigger.config import (
-    COOKIE_NAME,
-    SESSION_TTL_SECONDS,
-    sign_session,
-    verify_session,
-)
+from app.trigger.config import COOKIE_NAME, SESSION_TTL_SECONDS
 from app.trigger.store import has_record_today
 
 router = APIRouter(prefix="/api/trigger", tags=["trigger"])
@@ -26,49 +24,24 @@ router = APIRouter(prefix="/api/trigger", tags=["trigger"])
 # ------------------------------------------------------------ 认证
 
 
-def _require_session(trigger_session: str | None) -> None:
-    if not verify_session(trigger_session):
-        raise HTTPException(status_code=401, detail="会话无效或已过期，请重新输入密码")
-
-
-def _issue_cookie(response: Response) -> None:
-    expires_at = datetime.now().timestamp() + SESSION_TTL_SECONDS
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=sign_session(expires_at),
-        max_age=SESSION_TTL_SECONDS,
-        httponly=True,
-        samesite="lax",
-        secure=True,
-        path="/",
-    )
+_require_session = admin.require
 
 
 @router.post("/auth")
 def auth(payload: dict, response: Response):
-    """密码校验 + 流控（复用彩票 verify-password 的 1 次/秒全局流控）。"""
-    from app.lottery.services import results_store
-
-    password = str(payload.get("password", ""))
-    ok, msg, status = results_store.verify_password(password)
-    if status == 429:
-        raise HTTPException(status_code=429, detail=msg)
-    if not ok:
-        raise HTTPException(status_code=401, detail=msg)
-    _issue_cookie(response)
-    return {"ok": True, "message": "验证通过", "ttl_hours": SESSION_TTL_SECONDS // 3600}
+    """密码校验 + 流控 → 签发 12h httpOnly cookie（实现见 app.common.admin）。"""
+    return admin.login(payload, response, COOKIE_NAME, SESSION_TTL_SECONDS)
 
 
 @router.get("/session")
 def session_status(trigger_session: str | None = Cookie(default=None)):
     """前端判断会话是否有效（有效 → 直接进功能页，免重复输密码）。"""
-    return {"valid": verify_session(trigger_session)}
+    return admin.session_state(trigger_session)
 
 
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie(COOKIE_NAME, path="/")
-    return {"ok": True}
+    return admin.logout(response, COOKIE_NAME)
 
 
 # ------------------------------------------------------------ 任务 CRUD
@@ -211,9 +184,6 @@ def normalize_base_url(raw: str) -> str:
     - host 必须含域名且非纯 IP / 回环 / 私网 / 保留段（防 SSRF 打到内网/本机）
     返回归一化后的 URL；不合法抛 HTTPException(422)。
     """
-    import ipaddress
-    from urllib.parse import urlparse
-
     s = str(raw or "").strip().rstrip("/")
     if not s:
         raise HTTPException(status_code=422, detail="API Base URL 不能为空")

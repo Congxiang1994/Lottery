@@ -1,7 +1,6 @@
 """FastAPI 应用入口。"""
 from __future__ import annotations
 
-import os
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -26,12 +25,13 @@ from app.smzdm import scheduler as smzdm_scheduler
 from app.trigger import scheduler
 from app.common import password as password_store
 from app.common.db import harden_dir
+from app.common.paths import DB_DIR
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 持久化目录权限收紧（含明文 API key 的 trigger.db 所在目录）
-    harden_dir(os.environ.get("LOTTERY_DB_DIR", "/data/lottery"))
+    harden_dir(DB_DIR)
     # 操作密码库兜底初始化（库未配置且环境变量已设时自动引导写入；以库为准）
     password_store.ensure_configured()
     # 睡前故事库建表（幂等）

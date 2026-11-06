@@ -19,12 +19,9 @@
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
+from app.common.paths import db_path
 
-# 持久化目录：独立于部署目录，重部署不丢数据；本地开发可用 LOTTERY_DB_DIR 覆盖
-DB_DIR = Path(os.environ.get("LOTTERY_DB_DIR", "/data/lottery"))
-DB_PATH = DB_DIR / "smzdm.db"
+DB_PATH = db_path("smzdm")
 
 # 管理会话 cookie：与触发器/故事同一签名密钥（同一把操作密码），cookie 名独立
 COOKIE_NAME = "deals_session"

@@ -12,18 +12,17 @@
 """
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import os
-from pathlib import Path
 
 from fastapi import APIRouter
 
-from app.common.db import get_conn
+from app.common.db import get_conn, init_schema
+from app.common.paths import db_path
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
-DB_PATH = Path(os.environ.get("LOTTERY_DB_DIR", "/data/lottery")) / "visit_stats.db"
+DB_PATH = db_path("visit_stats")
 
 # 访客 ID 加盐哈希：即使 db 泄露也无法反推原始 UUID。
 # 盐来自环境变量（部署时注入），缺失时退化为固定串（仍强于明文存 ID）。
@@ -34,48 +33,33 @@ def _visitor_hash(visitor_id: str) -> str:
     return hashlib.sha256((_SALT + visitor_id).encode("utf-8")).hexdigest()
 
 
-def _init_table(con) -> None:
-    con.execute(
-        """
-        CREATE TABLE IF NOT EXISTS visit_stats (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            total INTEGER NOT NULL DEFAULT 0
-        )
-        """
-    )
-    con.execute("INSERT OR IGNORE INTO visit_stats (id, total) VALUES (1, 0)")
-    con.execute(
-        """
-        CREATE TABLE IF NOT EXISTS visit_visitors (
-            visitor_hash TEXT PRIMARY KEY,
-            first_seen   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-        )
-        """
-    )
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS visit_stats (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    total INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO visit_stats (id, total) VALUES (1, 0);
+CREATE TABLE IF NOT EXISTS visit_visitors (
+    visitor_hash TEXT PRIMARY KEY,
+    first_seen   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+"""
+
+_ready = False
 
 
-def _init_table_locked(con) -> None:
-    """建表（幂等，且 gunicorn ``-w 2`` 多 worker 并发安全）。
+def _init_table_locked(con=None) -> None:
+    """建表（幂等 + flock 串行化，多 worker 首启不撞 database is locked）。
 
-    SQLite 的 busy_timeout 对建表竞态不可靠，沿用 story/store.py 的方案：
-    在库文件旁放一把 flock 排他锁，把建表阶段串行化，避免首启
-    ``database is locked`` 拖垮 gunicorn master。
+    统一走 ``app.common.db.init_schema`` —— 这里保留函数名以兼容既有调用点，
+    实际实现已上移（其它域也是同一套，见 common/db.py 的说明）。
+    进程内 ``_ready`` 让稳态下不再反复抢锁。
     """
-    lock_file = None
-    try:
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        lock_file = open(DB_PATH.parent / f"{DB_PATH.name}.init.lock", "w")
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-    except OSError:
-        lock_file = None  # 锁不可用（非常规文件系统）时退化为无锁，建表本身仍幂等
-    try:
-        _init_table(con)
-    finally:
-        if lock_file is not None:
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            finally:
-                lock_file.close()
+    global _ready
+    if _ready:
+        return
+    init_schema(DB_PATH, _SCHEMA)
+    _ready = True
 
 
 def _snapshot(con) -> dict:

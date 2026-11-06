@@ -17,54 +17,30 @@ from datetime import datetime
 from fastapi import APIRouter, Cookie, HTTPException, Request, Response
 
 from app.access import config, geo, middleware, store
-from app.trigger.config import sign_session, verify_session
+from app.common import admin
 
 router = APIRouter(prefix="/api/access", tags=["access"])
 
 # ------------------------------------------------------------ 认证
 
 
-def _require_session(token: str | None) -> None:
-    if not verify_session(token):
-        raise HTTPException(status_code=401, detail="会话无效或已过期，请重新输入密码")
-
-
-def _issue_cookie(response: Response) -> None:
-    expires_at = datetime.now().timestamp() + config.SESSION_TTL_SECONDS
-    response.set_cookie(
-        key=config.COOKIE_NAME,
-        value=sign_session(expires_at),
-        max_age=config.SESSION_TTL_SECONDS,
-        httponly=True,
-        samesite="lax",
-        secure=True,
-        path="/",
-    )
+_require_session = admin.require
 
 
 @router.post("/auth")
 def auth(payload: dict, response: Response):
     """密码校验 + 防爆破流控（复用「运行全部」那把密码与锁定策略）。"""
-    from app.lottery.services import results_store
-
-    ok, msg, status = results_store.verify_password(str(payload.get("password", "")))
-    if status == 429:
-        raise HTTPException(status_code=429, detail=msg)
-    if not ok:
-        raise HTTPException(status_code=401, detail=msg)
-    _issue_cookie(response)
-    return {"ok": True, "message": "验证通过", "ttl_hours": config.SESSION_TTL_SECONDS // 3600}
+    return admin.login(payload, response, config.COOKIE_NAME, config.SESSION_TTL_SECONDS)
 
 
 @router.get("/session")
 def session_status(access_session: str | None = Cookie(default=None)):
-    return {"valid": verify_session(access_session)}
+    return admin.session_state(access_session)
 
 
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie(config.COOKIE_NAME, path="/")
-    return {"ok": True}
+    return admin.logout(response, config.COOKIE_NAME)
 
 
 # ------------------------------------------------------------ 采集（公开埋点）

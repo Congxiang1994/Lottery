@@ -16,7 +16,6 @@ bug 来源。`ip_profile` / `visitor_profile` 只存两张明细表算不出来�
 """
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import logging
 import os
@@ -27,7 +26,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from app.access import config, geo
-from app.common.db import get_conn
+from app.common.db import get_conn, init_schema
 from app.stats.router import snapshot_totals
 
 log = logging.getLogger("access.store")
@@ -121,30 +120,21 @@ _EMPTY_GEO = {
 }
 
 
+#: 兼容旧库的补列 DDL。单条失败 = 列已存在，自动跳过。
+#: 🔴 依赖新列的 CREATE INDEX 一律放这里，不要写进 _SCHEMA（旧库没有新列会启动失败）。
+_MIGRATIONS: tuple[str, ...] = ()
+
+
 def init() -> None:
-    """建表（幂等，多 worker 并发安全）。
+    """建表 + 补列 + 加载离线 IP 库 + 启动批量写入线程（幂等，多 worker 安全）。
 
     ⚠️ flock 不是可选项：gunicorn ``-w 2`` 下两个 worker 同时执行
     ``PRAGMA journal_mode=WAL`` + ``CREATE TABLE``，首次建库时必有一个抛
     ``database is locked``，启动钩子异常 → gunicorn 判定 "Worker failed to boot"
     → 整个 master 退出（2026-09-24 在 story.db 上实测踩到过）。
+    锁由 ``app.common.db.init_schema`` 统一提供。
     """
-    lock_file = None
-    try:
-        config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        lock_file = open(config.DB_PATH.parent / f"{config.DB_PATH.name}.init.lock", "w")
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-    except OSError:
-        lock_file = None  # 锁不可用（非常规文件系统）时退化为无锁，建表本身仍幂等
-    try:
-        with get_conn(config.DB_PATH) as con:
-            con.executescript(_SCHEMA)
-    finally:
-        if lock_file is not None:
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            finally:
-                lock_file.close()
+    init_schema(config.DB_PATH, _SCHEMA, migrations=_MIGRATIONS)
     # 顺手加载离线 IP 库（失败只 WARN，绝不影响启动）
     geo.load()
     _ensure_worker()

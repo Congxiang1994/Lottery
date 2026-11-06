@@ -14,15 +14,13 @@ flock 让建表串行化，后到者等前者做完再执行（幂等，重复�
 """
 from __future__ import annotations
 
-import fcntl
-import os
 import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
-from app.common.db import get_conn
+from app.common.db import get_conn, init_lock
 from app.smzdm.config import (
     ACTIVITY_WORDS,
     BRAND_ALLOW,
@@ -95,16 +93,13 @@ CREATE INDEX IF NOT EXISTS idx_log_ts ON fetch_log(ts DESC);
 
 @contextmanager
 def _init_lock():
-    """建表用的进程间互斥（锁文件与库同目录）。"""
-    lock_path = DB_PATH.parent / "smzdm_init.lock"
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(lock_path), os.O_WRONLY | os.O_CREAT, 0o600)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+    """建表用的进程间互斥（统一走 app.common.db.init_lock）。
+
+    历史实现自己 open 一个 ``smzdm_init.lock``；现在与其它域共用同一套
+    ``<db>.init.lock`` 约定，锁文件名变化不影响正确性（锁文件本身只是协调用）。
+    """
+    with init_lock(DB_PATH):
         yield
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
 
 
 def init() -> None:

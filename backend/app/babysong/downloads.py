@@ -21,10 +21,11 @@ from datetime import datetime
 from pathlib import Path
 
 from app.common.db import get_conn
+from app.common.paths import db_path
 
 # 儿歌视频目录（独立部署目录，重部署不丢）
 SONG_DIR = Path(os.environ.get("SONG_DIR", "/data/song"))
-DB_PATH = Path(os.environ.get("LOTTERY_DB_DIR", "/data/lottery")) / "babysong_dl.db"
+DB_PATH = db_path("babysong_dl")
 
 # 下载代理（mihomo mixed-port）；置空字符串则不走代理
 PROXY = os.environ.get("SONG_PROXY", "http://127.0.0.1:7890")

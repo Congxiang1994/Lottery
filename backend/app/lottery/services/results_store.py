@@ -11,19 +11,21 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from datetime import datetime
-from pathlib import Path
 from typing import Iterable
 
-from app.common.db import get_conn
+from app.common.db import get_conn, init_schema
+from app.common.paths import db_path
+from app.common.security import (  # noqa: F401  (verify_password 对外兼容，见模块尾部)
+    verify_password,
+)
 from app.lottery.algorithms.base import CATEGORIES
 
 # 固定持久化路径：放在项目目录之外，部署（rsync / git pull）不会覆盖或清空。
 # 除非表结构变更，否则不要删除此目录下的数据。
 # 本地开发可用环境变量 LOTTERY_DB_DIR 覆盖（如 /tmp/lottery_db）。
-DB_PATH = Path(os.environ.get("LOTTERY_DB_DIR", "/data/lottery")) / "algo_results.db"
+DB_PATH = db_path("algo_results")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS algo_results (
@@ -108,24 +110,18 @@ def _conn():
     return get_conn(DB_PATH)
 
 
+#: 兼容旧库的补列 DDL（单条失败 = 列已存在，自动跳过）。
+#: 🔴 依赖新列的 ``CREATE INDEX`` 一律放这里，别写进 ``_SCHEMA``。
+_MIGRATIONS = (
+    "ALTER TABLE run_progress ADD COLUMN phase TEXT NOT NULL DEFAULT 'predict'",
+    "ALTER TABLE security_lock ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE security_lock ADD COLUMN locked_until REAL NOT NULL DEFAULT 0",
+)
+
+
 def init() -> None:
-    with _conn() as con:
-        con.executescript(_SCHEMA)
-        # 兼容旧库：run_progress 增加 phase 列
-        try:
-            con.execute(
-                "ALTER TABLE run_progress ADD COLUMN phase TEXT NOT NULL DEFAULT 'predict'")
-        except sqlite3.OperationalError:
-            pass
-        # 兼容旧库：security_lock 增加失败计数 / 锁定截止（防在线爆破）
-        for ddl in (
-            "ALTER TABLE security_lock ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
-            "ALTER TABLE security_lock ADD COLUMN locked_until REAL NOT NULL DEFAULT 0",
-        ):
-            try:
-                con.execute(ddl)
-            except sqlite3.OperationalError:
-                pass
+    """建表 + 补列（flock 串行化，多 worker 首启安全）。"""
+    init_schema(DB_PATH, _SCHEMA, migrations=_MIGRATIONS)
 
 
 def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = None) -> int:
@@ -451,66 +447,10 @@ init()
 # ------------------------------------------------------------ 安全锁 / 流控
 
 
-# 防在线爆破：连续失败达到阈值后开始锁定，锁定时长按失败次数递增（封顶 900s）
-FAIL_THRESHOLD = 5
-LOCK_STEPS = (30.0, 60.0, 120.0, 300.0, 900.0)
-
-
-def verify_password(password: str) -> tuple[bool, str, int]:
-    """校验密码 + 防在线爆破流控（失败计数 + 递增锁定）。
-
-    策略（2026-09-22 改造，替换原先「同一秒仅 1 次」的全局限频）：
-    - **成功不设限**：密码正确永远放行，因此「先 /verify-password 再 /run-all」这类
-      连续两次校验不会被误伤（旧限频方案会 429）。
-    - **失败计数**：连续失败 ≥ FAIL_THRESHOLD 次后进入锁定，锁定时长随失败次数递增
-      （30s → 60s → 120s → 300s → 900s 封顶），期间一律 429。
-    - 一旦成功，失败计数清零，锁定解除。
-
-    为什么换掉「同一秒 1 次」：那种限频对爆破的拦截力只有 86400 次/天，
-    且会误伤正常流程；失败递增锁定既更强也更好用。
-
-    密码来自数据库（哈希比对）。返回 (ok, message, http_status)。
-    """
-    import time as _time
-
-    from app.common import password as _password
-
-    now = _time.time()
-    lock_step: float = 0.0
-    fail_count = 0
-    with _conn() as con:
-        con.execute("BEGIN IMMEDIATE")
-        con.execute(
-            "INSERT OR IGNORE INTO security_lock (id, fail_count, locked_until) VALUES (1,0,0)")
-        row = con.execute(
-            "SELECT fail_count, locked_until FROM security_lock WHERE id=1").fetchone()
-        fail_count = int(row[0] or 0) if row else 0
-        locked_until = float(row[1] or 0) if row else 0.0
-
-        if locked_until > now:
-            wait = int(locked_until - now) + 1
-            con.execute(
-                "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=0 WHERE id=1",
-                (now,))
-            return False, f"密码错误次数过多，请 {wait} 秒后再试", 429
-
-        ok = _password.verify(password)
-        if ok:
-            fail_count, locked_until = 0, 0.0
-        else:
-            fail_count += 1
-            if fail_count >= FAIL_THRESHOLD:
-                lock_step = LOCK_STEPS[min(fail_count - FAIL_THRESHOLD, len(LOCK_STEPS) - 1)]
-                locked_until = now + lock_step
-        con.execute(
-            "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=?,"
-            " fail_count=?, locked_until=? WHERE id=1",
-            (now, 1 if ok else 0, fail_count, locked_until))
-    if ok:
-        return True, "验证通过", 200
-    if lock_step:
-        return False, f"密码错误次数过多，已锁定 {int(lock_step)} 秒", 429
-    return False, f"密码错误（已连续失败 {fail_count} 次，累计 {FAIL_THRESHOLD} 次将临时锁定）", 401
+# 密码校验流控已迁到 app.common.security（全站唯一实现）。
+# 此处 re-export 是为了不弄脏既有调用点（lottery router / 各域 admin auth / 脚本）。
+# 新代码请直接 ``from app.common.security import verify_password``。
+verify_password = verify_password  # noqa: PLW0127  (显式声明对外契约，勿删)
 
 
 def global_lock_start() -> bool:

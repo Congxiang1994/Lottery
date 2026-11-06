@@ -5,17 +5,17 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+
+from app.common.paths import db_path, geo_dir
 
 # ------------------------------------------------------------ 路径
 
-# 持久化目录：与其余 6 个库同目录（重部署不丢）；本地开发用 LOTTERY_DB_DIR 覆盖
-DB_DIR = Path(os.environ.get("LOTTERY_DB_DIR", "/data/lottery"))
-DB_PATH = DB_DIR / "access.db"
+# 持久化目录：所有 SQLite 库共用 app.common.paths.DB_DIR（重部署不丢）
+DB_PATH = db_path("access")
 
 # 离线 IP 库目录。⚠️ 大文件（v4 10.6 MB / v6 35.5 MB）**不进仓库**，
 # 由 tools/geo_update.py 下载；本地开发可指到 backend/.geo/（已进 .gitignore）
-GEO_DIR = Path(os.environ.get("LOTTERY_GEO_DIR", str(DB_DIR / "geo")))
+GEO_DIR = geo_dir()
 GEO_V4 = GEO_DIR / "ip2region_v4.xdb"
 GEO_V6 = GEO_DIR / "ip2region_v6.xdb"
 
