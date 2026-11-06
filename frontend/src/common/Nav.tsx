@@ -1,13 +1,15 @@
 import { NavLink, Link, useLocation } from "react-router-dom";
 import { Dices, LayoutDashboard, History, Sparkles, Layers, Github, Eye, Moon, Sun } from "lucide-react";
+import { APPS } from "./apps";
 import { useVisitCount } from "./useVisitCount";
 import { useTheme } from "./useTheme";
 
 const GITHUB_URL = "https://github.com/Congxiang1994/Lottery";
 
-// 聚合门户首页只保留「首页」入口；进入具体产品（如彩票数据站）后再展示其内部导航。
+/** 只显示「首页」的产品的导航组（绝大多数独立产品都属于这一类）。 */
 const portalLinks = [{ to: "/", label: "首页", icon: LayoutDashboard }];
 
+/** 彩票数据站有内部二级导航（唯一一个多 tab 的产品）。 */
 const lotteryLinks = [
   { to: "/", label: "首页", icon: LayoutDashboard },
   { to: "/history", label: "历史开奖", icon: History },
@@ -15,18 +17,26 @@ const lotteryLinks = [
   { to: "/algorithms", label: "算法广场", icon: Layers },
 ];
 
+/**
+ * 当前路径属于哪个产品 → 显示哪一组导航。
+ *
+ * 改造前是一串 8 个 `pathname.startsWith(...)` 的白名单，而「有哪些产品」这份知识
+ * 同时存在于 `Portal.APPS` 与 `App.tsx` 的路由表里 —— 加一个入口要改三处，
+ * 漏改 `Nav` 就会出现「进了新产品，顶部却还显示彩票的四个 tab」。
+ *
+ * 现在只问注册表：**匹配到非彩票产品就只留首页**，其余（含彩票站自身）走彩票组。
+ */
+const MULTI_TAB_APP_IDS = new Set(["lottery"]);
+
 function useNavLinks() {
   const { pathname } = useLocation();
-  // 根路径是聚合门户；/hanzi、/trigger、/babysong、/story、/access 是独立产品 —— 均仅保留首页入口。
   if (pathname === "/") return portalLinks;
-  if (pathname.startsWith("/hanzi")) return portalLinks;
-  if (pathname.startsWith("/trigger")) return portalLinks;
-  if (pathname.startsWith("/babysong")) return portalLinks;
-  if (pathname.startsWith("/story")) return portalLinks;
-  if (pathname.startsWith("/access")) return portalLinks;
-  if (pathname.startsWith("/deals")) return portalLinks;
-  if (pathname.startsWith("/tools")) return portalLinks;
-  return lotteryLinks;
+  // 最长前缀匹配：/story-admin 必须命中 story-admin，而不是 story
+  const hit = APPS
+    .filter((a) => a.status === "live" && pathname.startsWith(a.href))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+  if (!hit) return lotteryLinks;
+  return MULTI_TAB_APP_IDS.has(hit.id) ? lotteryLinks : portalLinks;
 }
 
 export default function Nav() {
