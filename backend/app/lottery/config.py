@@ -4,8 +4,16 @@ from __future__ import annotations
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
+#: 开奖数据缓存目录（随仓库发布种子数据，抓取结果落在这里）。
+#: ⚠️ 不在 import 时 mkdir —— 见 ensure_data_dir()。import 副作用会让
+#: 「任何工具只要 import 一次 config 就在代码目录里建目录」，测试也无法隔离。
 DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+
+
+def ensure_data_dir() -> Path:
+    """确保数据目录存在（由真正要写盘的地方调用，不在 import 时做）。"""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return DATA_DIR
 
 # 「运行全部算法」操作密码：不再硬编码于源码，统一由数据库（/data/lottery/auth.db）哈希存储，
 # 校验逻辑见 app.common.password。可通过环境变量 LOTTERY_RUN_PASSWORD 在首次部署时引导写入。

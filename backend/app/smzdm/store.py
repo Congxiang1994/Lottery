@@ -14,6 +14,7 @@ flock 让建表串行化，后到者等前者做完再执行（幂等，重复�
 """
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -39,6 +40,8 @@ from app.smzdm.config import (
     SIGNAL_T2_WEIGHT,
     DB_PATH,
 )
+
+log = logging.getLogger("smzdm.store")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS deals (
@@ -172,7 +175,7 @@ def init() -> None:
             with _init_lock():
                 rejudge(get_settings())
         except sqlite3.Error as e:  # noqa: BLE001
-            print(f"[smzdm] 数码垂类初始化重算失败（不影响启动）：{e}", flush=True)
+            log.warning("数码垂类初始化重算失败（不影响启动）：%s", e)
 
 
 def _ensure_columns(con: sqlite3.Connection) -> None:

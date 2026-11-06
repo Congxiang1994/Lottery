@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import json
@@ -16,11 +17,13 @@ from pathlib import Path
 
 import requests
 
-from app.lottery.config import BASE_DIR, DATA_DIR, SCRAPE_HEADERS, LOTTERIES
+from app.lottery.config import BASE_DIR, DATA_DIR, SCRAPE_HEADERS, LOTTERIES, ensure_data_dir
 
 # 种子数据目录：**随仓库发布**（不在 .gitignore / 部署排除清单里），
 # 用于「抓取失败时的兜底」与「全新机器首次部署」。格式：日期,红1..红N,蓝1..蓝M
 SEED_DIR = BASE_DIR / "seed"
+
+log = logging.getLogger("lottery.scraper")
 
 # 各彩种起始期号（YYNNN 格式）
 START_ISSUE = {"ssq": "03001", "dlt": "07001"}
@@ -115,12 +118,12 @@ def fetch_lottery(lottery: str, use_seed_fallback: bool = True) -> dict:
         resp.encoding = "utf-8"
         draws = _parse_rows(resp.text, lottery)
     except Exception as exc:  # noqa: BLE001
-        print(f"[scraper] {lottery} 抓取失败: {exc}")
+        log.warning("%s 抓取失败: %s", lottery, exc)
 
     if not draws and use_seed_fallback:
         draws = _parse_seed(lottery)
         if draws:
-            print(f"[scraper] {lottery} 使用仓库种子数据 ({len(draws)} 期)")
+            log.info("%s 使用仓库种子数据（%d 期）", lottery, len(draws))
 
     # 去重（按期号）+ 按日期升序
     uniq: dict[str, dict] = {}
@@ -155,7 +158,7 @@ def save_lottery(data: dict, path: Path | None = None) -> Path:
     会留下半截 JSON，导致 load_lottery 抛异常、全站接口 503，直到下次抓取成功。
     临时文件与目标同目录，os.replace 在同一文件系统内是原子操作。
     """
-    path = path or (DATA_DIR / f"{data['lottery']}.json")
+    path = path or (ensure_data_dir() / f"{data['lottery']}.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
@@ -171,7 +174,7 @@ def load_lottery(lottery: str) -> dict | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-        print(f"[scraper] {lottery} 数据文件损坏，已忽略（可重新抓取）: {path}")
+        log.warning("%s 数据文件损坏，已忽略（可重新抓取）: %s", lottery, path)
         return None
 
 
