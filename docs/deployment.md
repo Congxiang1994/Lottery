@@ -41,6 +41,20 @@ sudo bash /opt/lottery/deploy/install.sh
 
 浏览器访问 <https://doudoutech.cloud/>（公网经 Cloudflare Tunnel 穿透；服务器本机可直连 `http://<IP>:8081` 调试）。
 
+### 2.1 部署后必做：文件权限
+
+`tar` 会**原样保留本地文件权限**。本地新写的文件如果是 `0600`（编辑器/脚本批量生成
+很常见），落到服务器后属主是 `501:staff`，而服务以 `ubuntu` 运行 →
+`PermissionError` 直接让 worker 起不来（`Worker failed to boot`，全站 502）。
+
+```bash
+sudo find /opt/lottery/backend -name '*.py' -not -path '*/.venv/*' -exec chmod 644 {} +
+sudo find /opt/lottery/backend -name '*.py' ! -perm -o=r -not -path '*/.venv/*' | wc -l   # 必须为 0
+```
+
+推而广之：**部署完先看权限，再重启**。`systemctl is-active` 为 `active` 但接口 502
+时，第一件事是 `journalctl -u lottery -n 50` 找 `Permission denied`。
+
 ## 数据目录约定
 
 | 路径 | 内容 | 重部署是否保留 |
