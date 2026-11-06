@@ -14,6 +14,9 @@ import { usePageTrack } from "./common/usePageTrack";
 /**
  * 路由级代码分割。
  *
+ * ⚠️ 新增产品时：本文件的 `<Route>` + `common/apps.ts` 的 `APPS` 两处即可，
+ * 导航组由 `Nav` 从注册表推导，不需要再改 Nav。
+ *
  * 为什么必须拆（2026-10-29 实测，改回单个 import 前先复读）：
  *   改造前 15 个路由全是静态 import → 一个 1.24 MB 的 bundle（gzip 362 KB），
  *   而 recharts（/access 图表、/lottery 走势）和 react-markdown + remark/rehype
