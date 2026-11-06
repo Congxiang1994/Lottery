@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "../common/AdminGate";
+import { AppModal, ConfirmDialog } from "../common/AppModal";
 import { PageHeader, PrivateBadge } from "../common/PageHeader";
 import { ExitPresence, Modal } from "../common/Modal";
 import { isUnauthorized } from "../common/http";
 import { ErrorBlock, errText } from "../common/State";
 import { useModalHistory } from "../common/useModalHistory";
-import { useEscapeClose } from "../common/useEscapeClose";
 import {
   BookOpen,
   Eye,
@@ -53,50 +53,6 @@ function IconBtn({
     >
       {children}
     </button>
-  );
-}
-
-function ConfirmModal({
-  title,
-  message,
-  onCancel,
-  onConfirm,
-}: {
-  title: string;
-  message: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  useEscapeClose(true, onCancel);
-  return (
-    <Modal>
-      <div
-        className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-        onClick={onCancel}
-      >
-        <div
-          className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h3 className="text-base font-bold text-paper-900">{title}</h3>
-          <p className="mt-2 text-xs leading-relaxed text-paper-700">{message}</p>
-          <div className="mt-5 flex justify-end gap-2">
-            <button
-              onClick={onCancel}
-              className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100"
-            >
-              取消
-            </button>
-            <button
-              onClick={onConfirm}
-              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
-            >
-              删除
-            </button>
-          </div>
-        </div>
-      </div>
-    </Modal>
   );
 }
 
@@ -157,11 +113,6 @@ function StoryModal({
     );
   }, [editing]);
 
-  /* Esc 关闭（与遮罩点击同一条守卫：保存中不许关） */
-  useEscapeClose(true, () => {
-    if (!saving) onClose();
-  });
-
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
@@ -182,20 +133,42 @@ function StoryModal({
   };
 
   return (
-    <Modal>
-      <div
-        className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-        onClick={() => !saving && onClose()}
-      >
-        <div
-          className="anim-panel glass max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl p-6 shadow-card"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
-            <BookOpen size={16} className="text-brand-gold" />
-            {editing ? "编辑故事" : "新建故事"}
-          </h3>
-          <div className="mt-4 space-y-3">
+    <AppModal
+      onClose={onClose}
+      size="lg"
+      dismissable={!saving}
+      title={
+        <>
+          <BookOpen size={16} className="text-brand-gold" />
+          {editing ? "编辑故事" : "新建故事"}
+        </>
+      }
+      footer={
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="press rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
+          >
+            取消
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+          >
+            {saving ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> 保存中…
+              </>
+            ) : (
+              "保存"
+            )}
+          </button>
+        </div>
+      }
+    >
+          <div className="space-y-3 px-5 py-4">
             <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
               <div>
                 <label className="text-xs font-medium text-paper-700">标题 *</label>
@@ -289,35 +262,11 @@ function StoryModal({
           </div>
 
           {err && (
-            <div className="mt-3 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            <div className="rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
               {err}
             </div>
           )}
-          <div className="mt-5 flex justify-end gap-2">
-            <button
-              onClick={onClose}
-              disabled={saving}
-              className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
-            >
-              取消
-            </button>
-            <button
-              onClick={save}
-              disabled={saving}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
-            >
-              {saving ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" /> 保存中…
-                </>
-              ) : (
-                "保存"
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Modal>
+    </AppModal>
   );
 }
 
@@ -610,7 +559,7 @@ function StoryAdminPanel({
 
       <ExitPresence open={!!confirmDel}>
         {confirmDel && (
-          <ConfirmModal
+          <ConfirmDialog
             title="删除故事"
             message={`确定删除「${confirmDel.title}」吗？删除后不可恢复。`}
             onCancel={closeConfirm}

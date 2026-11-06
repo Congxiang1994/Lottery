@@ -20,8 +20,8 @@ import {
 import { ChevronLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
 
 import { Modal } from "../common/Modal";
+import { AppModal } from "../common/AppModal";
 import { Empty, ErrorBlock, Loading, errText } from "../common/State";
-import { useEscapeClose } from "../common/useEscapeClose";
 import { accessApi, IpDetail, IpRow, LogRow, SeriesItem, VisitorDetail, VisitorRow } from "./api";
 
 /* ------------------------------ 格式化 ------------------------------ */
@@ -495,7 +495,7 @@ export function TagBadge({ tag }: { tag: string }) {
 
 /* ------------------------------ 详情弹窗 ------------------------------ */
 
-/** 弹窗骨架：严格遵守站内「滚动分层」配方（见 index.css / refs §前端布局坑） */
+/** 详情弹窗骨架：底层统一走 common/AppModal（遮罩/层级/出场动画同源）。 */
 function Panel({
   title,
   subtitle,
@@ -511,46 +511,20 @@ function Panel({
   footer?: React.ReactNode;
   wide?: boolean;
 }) {
-  useEscapeClose(true, onClose);
   return (
-    <Modal>
-      <div
-        className="anim-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-[#3d2b1f]/65 p-4 backdrop-blur-sm"
-        onClick={onClose}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div
-          className={`anim-panel glass my-6 flex max-h-[calc(100dvh-5rem)] w-full flex-col overflow-hidden rounded-3xl shadow-card ${
-            wide ? "max-w-3xl" : "max-w-xl"
-          }`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5">
-            <div className="min-w-0">{title}</div>
-            <button
-              type="button"
-              onClick={onClose}
-              title="关闭"
-              aria-label="关闭"
-              className="press grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-paper-200 text-paper-700 transition hover:bg-paper-100"
-            >
-              <X size={14} />
-            </button>
-          </div>
-          {subtitle && <div className="shrink-0 px-5 pt-2">{subtitle}</div>}
-          {/* 面板内唯一的滚动容器。⚠️ 必须 min-h-0 flex-auto，不能用 flex-1（会塌成 0 高） */}
-          <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pb-6 pt-4">
-            {children}
-          </div>
-          {footer && (
-            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-paper-200 px-5 py-3">
-              {footer}
-            </div>
-          )}
-        </div>
-      </div>
-    </Modal>
+    <AppModal
+      onClose={onClose}
+      size={wide ? "lg" : "md"}
+      title={title}
+      description={subtitle}
+      footer={
+        footer && (
+          <div className="flex items-center justify-between gap-2">{footer}</div>
+        )
+      }
+    >
+      <div className="px-5 py-4">{children}</div>
+    </AppModal>
   );
 }
 

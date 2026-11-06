@@ -14,9 +14,9 @@ import {
   HardDrive,
   Repeat,
 } from "lucide-react";
+import { AppModal } from "../common/AppModal";
 import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
-import { useEscapeClose } from "../common/useEscapeClose";
 import { errText } from "../common/State";
 import { babysongApi, type Song as babysongApi_Song } from "./api";
 
@@ -370,7 +370,6 @@ export default function BabySong() {
     return () => window.removeEventListener("keydown", onKey);
   }, [activeId, prevLocal, nextLocal]);
 
-  useEscapeClose(activeId != null, closeLocalModal);
 
   /* 预取下一首本地视频 */
   useEffect(() => {
@@ -870,15 +869,8 @@ export default function BabySong() {
       {/* ====== 本地播放弹窗（参考「汉字是画出来的」播放器样式） ====== */}
       <ExitPresence open={!!(activeId && current && current.local_url)}>
         {activeId && current && current.local_url && (
-          <Modal>
-            <div
-              className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-paper-900/50 p-4 backdrop-blur-md"
-              onClick={closeLocalModal}
-            >
-              <div
-                className="anim-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-paper-200 bg-white shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              >
+          <AppModal onClose={closeLocalModal} size="lg" bare className="rounded-2xl bg-white">
+              <>
                 {/* 顶部信息栏 */}
                 <div className="flex items-center justify-between px-4 py-3 sm:px-5">
                   <div className="flex min-w-0 items-center gap-3">
@@ -996,9 +988,8 @@ export default function BabySong() {
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-          </Modal>
+              </>
+          </AppModal>
         )}
       </ExitPresence>
     </div>

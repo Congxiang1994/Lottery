@@ -18,6 +18,7 @@ import {
   HanziProgressMap,
 } from "./progress";
 import { loadCachedList, saveCachedList } from "./listCache";
+import { AppModal } from "../common/AppModal";
 import { ExitPresence, Modal } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import { useEscapeClose } from "../common/useEscapeClose";
@@ -493,15 +494,14 @@ export default function HanziPlayer() {
       ================================================================ */}
       <ExitPresence open={activeNum != null}>
         {activeNum != null && (
-          <Modal>
-            <div
-              className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/50 p-4 backdrop-blur-md"
-              onClick={closeModal}
-            >
-              <div
-                className="anim-panel w-full max-w-3xl overflow-hidden rounded-2xl border border-[#d4c4a8] bg-white shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              >
+          <AppModal
+            onClose={closeModal}
+            size="lg"
+            bare
+            escapeClose={false}
+            className="rounded-2xl border-[#d4c4a8] bg-white"
+          >
+              <>
                 {!current ? (
                   <div className="px-5 py-16 text-center text-sm text-[#8b7355]">
                     未找到编号「{activeNum}」的汉字
@@ -647,24 +647,23 @@ export default function HanziPlayer() {
                     </div>
                   </>
                 )}
-              </div>
-            </div>
-          </Modal>
+              </>
+          </AppModal>
         )}
       </ExitPresence>
 
       {/* ====== 选集面板（嵌套在播放器 z-index 之上） ====== */}
       <ExitPresence open={showPicker}>
         {showPicker && (
-          <Modal>
-            <div
-              className="anim-overlay fixed inset-0 z-[60] flex items-center justify-center bg-[#3d2b1f]/40 p-4 backdrop-blur-sm"
-              onClick={() => setShowPicker(false)}
+            <AppModal
+              onClose={() => setShowPicker(false)}
+              size="lg"
+              z={60}
+              bare
+              escapeClose={false}
+              className="rounded-2xl border-[#d4c4a8] bg-[#faf6f1]"
             >
-              <div
-                className="anim-panel w-full max-w-2xl rounded-2xl border border-[#d4c4a8] bg-[#faf6f1] p-5 shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              >
+              <>
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-lg font-bold text-[#3d2b1f]" style={KAI}>
                     选集 · 共 {videos.length} 个
@@ -701,9 +700,8 @@ export default function HanziPlayer() {
                     );
                   })}
                 </div>
-              </div>
-            </div>
-          </Modal>
+              </>
+            </AppModal>
         )}
       </ExitPresence>
     </div>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExitPresence, Modal } from "../common/Modal";
+import { AppModal, ConfirmDialog } from "../common/AppModal";
+import { ExitPresence } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
-import { useEscapeClose } from "../common/useEscapeClose";
 import {
   Activity,
   BookText,
@@ -122,11 +122,6 @@ function KeyModal({
     );
   }, [editing]);
 
-  /* Esc 关闭（与遮罩点击同一条守卫：保存中不许关） */
-  useEscapeClose(true, () => {
-    if (!saving) onClose();
-  });
-
   const save = () => {
     if (!form.name.trim()) {
       setErr("请填写密钥名称");
@@ -152,20 +147,42 @@ function KeyModal({
   };
 
   return (
-    <Modal>
-      <div
-        className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-        onClick={() => !saving && onClose()}
-      >
-        <div
-          className="anim-panel glass max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl p-6 shadow-card"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
-            <KeyRound size={16} className="text-brand-gold" />
-            {editing ? "编辑密钥" : "新建密钥"}
-          </h3>
-          <div className="mt-4 space-y-3">
+    <AppModal
+      onClose={onClose}
+      size="md"
+      dismissable={!saving}
+      title={
+        <>
+          <KeyRound size={16} className="text-brand-gold" />
+          {editing ? "编辑密钥" : "新建密钥"}
+        </>
+      }
+      footer={
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="press rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
+          >
+            取消
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+          >
+            {saving ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> 保存中…
+              </>
+            ) : (
+              "保存"
+            )}
+          </button>
+        </div>
+      }
+    >
+          <div className="space-y-3 px-5 py-4">
             <Field label="名称 *" hint="用于区分调用方，如「每日生成脚本」">
               <input
                 className={inputCls}
@@ -208,42 +225,17 @@ function KeyModal({
             </Field>
           </div>
           {err && (
-            <div className="mt-3 rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            <div className="rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-xs text-rose-700">
               {err}
             </div>
           )}
-          <div className="mt-5 flex justify-end gap-2">
-            <button
-              onClick={onClose}
-              disabled={saving}
-              className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40"
-            >
-              取消
-            </button>
-            <button
-              onClick={save}
-              disabled={saving}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90 disabled:opacity-40"
-            >
-              {saving ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" /> 保存中…
-                </>
-              ) : (
-                "保存"
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Modal>
+    </AppModal>
   );
 }
 
 /* ---------------- 删除密钥确认 ---------------- */
 
-/* 抽成组件而不是内联 JSX：Esc 统一走 common/useEscapeClose（hook 只能在
-   组件顶层调用，内联在父组件 return 里就挂不上了）。 */
+/** 删除密钥确认：统一走 common/AppModal 的 ConfirmDialog（红色=破坏性）。 */
 function DelKeyConfirm({
   name,
   onCancel,
@@ -253,38 +245,14 @@ function DelKeyConfirm({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  useEscapeClose(true, onCancel);
   return (
-    <Modal>
-      <div
-        className="anim-overlay fixed inset-0 z-50 flex items-center justify-center bg-[#3d2b1f]/60 p-4 backdrop-blur-sm"
-        onClick={onCancel}
-      >
-        <div
-          className="anim-panel glass w-full max-w-xs rounded-3xl p-6 shadow-card"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h3 className="text-base font-bold text-paper-900">删除密钥</h3>
-          <p className="mt-2 text-xs leading-relaxed text-paper-700">
-            确定删除「{name}」吗？删除后该密钥立即失效，调用日志会保留。
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <button
-              onClick={onCancel}
-              className="rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100"
-            >
-              取消
-            </button>
-            <button
-              onClick={onConfirm}
-              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
-            >
-              删除
-            </button>
-          </div>
-        </div>
-      </div>
-    </Modal>
+    <ConfirmDialog
+      title="删除密钥"
+      message={`确定删除「${name}」吗？删除后该密钥立即失效，调用日志会保留。`}
+      confirmText="删除"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
   );
 }
 

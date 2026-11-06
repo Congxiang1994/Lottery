@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import { Modal } from "../common/Modal";
+import { AppModal } from "../common/AppModal";
 import { Story } from "./api";
 import {
   AudioBtn,
@@ -96,18 +96,7 @@ export default function StoryModal({
   };
 
   return (
-    <Modal>
-      <div
-        className="anim-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-[#3d2b1f]/65 p-4 backdrop-blur-sm"
-        onClick={onClose}
-        role="dialog"
-        aria-modal="true"
-        aria-label={story.title}
-      >
-        <div
-          className="anim-panel paper-sheet my-6 flex max-h-[calc(100dvh-5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl shadow-card"
-          onClick={(e) => e.stopPropagation()}
-        >
+    <AppModal onClose={onClose} surface="paper" size="lg" bare ariaLabel={story.title}>
           {/* 阅读进度：只在正文可滚时出现，随滚动增长 */}
           {scrollable && (
             <div
@@ -233,8 +222,6 @@ export default function StoryModal({
             </div>
             {navBtn("newer")}
           </div>
-        </div>
-      </div>
-    </Modal>
+    </AppModal>
   );
 }

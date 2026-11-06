@@ -13,7 +13,6 @@ import {
 import { Story, storyApi } from "./api";
 import { PageHeader } from "../common/PageHeader";
 import { useModalHistory } from "../common/useModalHistory";
-import { useEscapeClose } from "../common/useEscapeClose";
 import {
   Cover,
   FONT_KEY,
@@ -331,7 +330,6 @@ export default function StoryPage() {
 
   /* Esc 关闭弹窗。⚠️ 必须只在弹窗打开时注册 —— 旧写法是无条件挂 keydown，
      列表页（没有弹窗）按 Esc 也会去调一次 closeModal()，语义是错的。 */
-  useEscapeClose(active !== null, closeModal);
 
   /* 弹框打开时锁住背景滚动（否则手机上会「穿透」到背后的列表一起滚），
      并补偿滚动条消失带来的宽度 —— 不补的话桌面居中容器会整体横移 5px。 */
