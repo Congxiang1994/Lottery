@@ -147,6 +147,28 @@ def admin_logout(response: Response):
 - 密码校验自带防爆破：连续失败 5 次后按 30s→60s→120s→300s→900s 递增锁定，期间返回 429。
 - 密钥永不进源码：`app.common.password`（scrypt）存库，首次由 `LOTTERY_RUN_PASSWORD` 环境变量引导。
 
+### 一致性自检（重构后必跑）
+
+```bash
+cd backend && .venv/bin/python scripts/audit_style.py     # 架构/风格审计，0 问题才通过
+cd backend && .venv/bin/python scripts/selftest.py        # 关键回归（不依赖网络/pytest）
+```
+
+`audit_style.py` 用 AST 检查五条硬性条款，失败非 0 退出：
+
+| # | 规则 | 为什么 |
+|---|---|---|
+| 1 | import 时不许建目录/建表/连库 | 工具一 import 就写盘；测试无法隔离 |
+| 2 | 域之间不许 import 对方 `router` | 会把 HTTP 层拖进存储层（`access` 曾直接依赖 `stats.router`） |
+| 3 | `HTTPException` 必须带 `status_code=` | 缺省 500，把业务校验错变成服务端故障 |
+| 4 | 运行时不许裸 `print` | 生产里只进 stdout，和 logging 的级别/结构化混在一起 |
+| 5 | 每个域必须有 `router.py` | 目录结构可预测 |
+
+`selftest.py` 覆盖：模块可导入 / 路由已注册 / 私有接口 401 / 密码门往返 /
+smzdm 单轮抓取 / 访问统计口径 / 密码失败锁定 / 库路径单一真源。
+其中「smzdm 单轮抓取」是 2026-11-06 那次 NameError 事故的回归守卫 ——
+**每个新增的后台任务都应该有一条「真的跑一轮」的用例**。
+
 ### 后台任务（进程内循环）规范
 
 - 启动入口统一 `def start()`，由 `main.py` 的 `lifespan` 调用；`async def stop()` 负责优雅退出。
@@ -265,3 +287,51 @@ frontend/src/
 > 设计约定：**单 SPA + 单 FastAPI 应用**即可承载多数模块；只有某模块需要独立进程/端口时，
 > 才单独起服务并在 `deploy/` 放 unit、在 `nginx.conf` 加 `location /api/<feature>/` 反代。
 > 大文件静态资源一律交给 Nginx（`alias` + Range），不要让 FastAPI 经手。
+
+---
+
+## 本轮重构做了什么（2026-11-06，可按需回看）
+
+> 目的：功能是逐个上线的，前后端都留下了大量「同一件事多种写法」。
+> 这轮不是加功能，是把**结构**统一，并留下能防止再次漂移的检查。
+
+### 后端
+
+| 问题 | 改法 |
+|---|---|
+| 会话签名住在 `trigger.config`、密码流控住在 `lottery.services.results_store`，**5 个域反向依赖业务域** | 上移到 `app/common/admin.py` 与 `app/common/security.py`，域内各缩成一行 |
+| 8 处重复 `Path(os.environ.get("LOTTERY_DB_DIR", ...))` | `app/common/paths.py` 唯一真源 |
+| 5 处手写 flock 建表（story / access / smzdm / stats / trigger） | `app/common/db.init_schema()`，并把「依赖新列的索引不能进 SCHEMA」写成参数注释 |
+| `stats` 的 SQL 全在 router、`babysong` 每次连接都执行 DDL、`results_store` **import 时**建表、`access` 跨域 import `stats.router` | 统一成 `config/store/router` 三层；建表集中在 `lifespan`；审计规则 1、2、5 固化 |
+| `lottery/router.py` 内联 110 行 numpy 计票 | `services/history_matrix.py`；router 335 行、只有 HTTP |
+| `smzdm/router.py` 内联 138 行 cURL 解析/配置校验 | `smzdm/credentials.py`；router 366 → 230 行 |
+| `smzdm` **每轮抓取都抛 NameError**（清理判定链时漏删 `"notes": notes`），页面无任何症状 | 修复 + `selftest.py` 加「真的跑一轮」的回归守卫 |
+| 域文档/目录结构不一致 | 8 个域统一为 `config / store / router`（有调度/爬虫的再加 `scheduler`/`crawler`） |
+
+### 前端
+
+| 问题 | 改法 |
+|---|---|
+| 5 份 `PasswordGate`（错误文案/loading 各写一套，babysong 连卡片都不一样） | `common/AdminGate.tsx`（含会话探测中的 Loading，避免空卡片） |
+| 5 份 `fetch` 封装（401 判定与错误体解析已漂移） | `common/http.ts`（`ApiError` + `createApi` + `query`） |
+| 12 处手写弹窗（遮罩 5 种透明度、圆角混用、Esc 监听散落 8 处） | `common/AppModal.tsx` + `ConfirmDialog` |
+| 14 个页面各写 `<h1>`（字号 2xl/3xl/4xl 三档乱跳） | `common/PageHeader.tsx`（hero/page/compact 三档）+ `PrivateBadge` |
+| 主按钮 2 套渐变、输入框 6 份类名 | `common/ui.ts`（`BTN_PRIMARY` / `INPUT` / `CARD` …），金色降级为强调色 |
+| 加载/空态手写 8 处、文案与字号不一 | `common/State.tsx` 的 `Loading` / `Empty` / `ErrorBlock` |
+| 入场动画只有彩票页有 `Reveal`，其它页各写各的 | `common/Reveal.tsx` 上移为通用件 |
+| 页内直接 `fetch` / 缺 api 层（hanzi、babysong、babysong-admin） | 补齐 `hanzi/api.ts`、`babysong/api.ts` |
+
+### 验证方式（可复跑）
+
+```bash
+# 后端
+cd backend
+.venv/bin/python scripts/audit_style.py      # 0 问题
+.venv/bin/python scripts/selftest.py         # 8/8
+# 前端
+cd frontend && env -u NODE_OPTIONS npx tsc --noEmit && env -u NODE_OPTIONS npm run build
+```
+
+生产端到端：15 个页面逐页断言标题档位 / 私有页密码门 / 暗色切换 / JS 零报错；
+5 个私有域断言「错密码停留 + 正确密码进入 + 刷新保持 + 退出回门 + 外观一致」；
+弹窗断言两处遮罩色/模糊/层级/圆角逐项相同。
