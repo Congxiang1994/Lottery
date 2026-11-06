@@ -99,7 +99,7 @@ export default function MarkdownTool() {
           placeholder="在此输入 Markdown…"
           onChange={(e) => setSrc(e.target.value)}
         />
-        <div className="glass h-[520px] overflow-auto rounded-2xl p-5 shadow-card">
+        <div className="glass h-[520px] overflow-auto rounded-3xl p-5 shadow-card">
           {src.trim() ? (
             <div className="md-preview">
               <ReactMarkdown

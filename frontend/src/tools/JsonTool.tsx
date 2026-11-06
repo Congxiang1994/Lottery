@@ -201,7 +201,7 @@ export default function JsonTool() {
               </div>
             </div>
           ) : (
-            <div className="glass h-[420px] overflow-auto rounded-2xl p-4 shadow-card">
+            <div className="glass h-[420px] overflow-auto rounded-3xl p-4 shadow-card">
               <div className="rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                 {result.message}
               </div>

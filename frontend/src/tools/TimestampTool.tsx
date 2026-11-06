@@ -318,7 +318,7 @@ export default function TimestampTool() {
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       {/* 时间戳 → 时间 */}
-      <section className="glass rounded-2xl p-5 shadow-card">
+      <section className="glass rounded-3xl p-5 shadow-card">
         <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
           <Clock size={16} className="text-[#0d9488]" /> 时间戳 → 时间
         </h3>
@@ -380,7 +380,7 @@ export default function TimestampTool() {
       </section>
 
       {/* 时间 → 时间戳 */}
-      <section className="glass rounded-2xl p-5 shadow-card">
+      <section className="glass rounded-3xl p-5 shadow-card">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-base font-bold text-paper-900">
             <Clock size={16} className="text-[#0d9488]" /> 时间 → 时间戳
