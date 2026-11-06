@@ -9,8 +9,16 @@ interface RevealProps {
 /** 入场动画时长，与下面的 transition 保持一致 */
 const DUR_MS = 700;
 
-/** 进入视口时淡入上浮。 */
-export default function Reveal({ children, delay = 0, className = "" }: RevealProps) {
+/**
+ * 进入视口时淡入上浮（**全站唯一的滚动入场动画**）。
+ *
+ * 位置说明：原先住在 `lottery/components/` 下，于是只有彩票相关页面能用它，
+ * 而其它 9 个页面各自要么不做入场、要么手写 `animate-rise` —— 同一站里
+ * 三种入场手感。现在它是通用件，任何页面都可以 `<Reveal>` 包一块内容。
+ *
+ * 用法：``<Reveal delay={120}>...</Reveal>``（delay 用于同屏多块的错峰）
+ */
+export function Reveal({ children, delay = 0, className = "" }: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(false);
   /** 入场动画放完 → 撤掉内联 transform / transition */

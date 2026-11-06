@@ -8,7 +8,7 @@ import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
 import Heatmap from "../components/Heatmap";
 import TrendChart from "../components/TrendChart";
-import Reveal from "../components/Reveal";
+import { Reveal } from "../../common/Reveal";
 import { ErrorBlock, errText } from "../../common/State";
 
 export default function Home() {

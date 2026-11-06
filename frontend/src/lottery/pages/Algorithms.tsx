@@ -10,7 +10,7 @@ import {
 } from "../types";
 import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
-import Reveal from "../components/Reveal";
+import { Reveal } from "../../common/Reveal";
 import {
   Atom, Brain, Cpu, Dices, FunctionSquare, GitCompare, Layers, Orbit,
   Radar, RefreshCw, Search, Sigma, Sparkles, TrendingUp, Trophy, Waves,

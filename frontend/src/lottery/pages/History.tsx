@@ -5,7 +5,7 @@ import { Draw, HistoryPredictions } from "../types";
 import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
 import PredictionMatrix from "../components/PredictionMatrix";
-import Reveal from "../components/Reveal";
+import { Reveal } from "../../common/Reveal";
 import { ErrorBlock, errText } from "../../common/State";
 import { PageHeader } from "../../common/PageHeader";
 import { History as HistoryIcon, Table2, TrendingUp } from "lucide-react";

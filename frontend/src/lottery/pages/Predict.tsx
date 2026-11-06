@@ -4,7 +4,7 @@ import { api } from "../api";
 import { BacktestResult, SavedAlgorithmsLatest, SavedCombined } from "../types";
 import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
-import Reveal from "../components/Reveal";
+import { Reveal } from "../../common/Reveal";
 import { ErrorBlock, errText } from "../../common/State";
 import { PageHeader } from "../../common/PageHeader";
 import { Sparkles, ShieldAlert, Calendar, ChevronDown, ChevronUp, Trophy } from "lucide-react";
