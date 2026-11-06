@@ -31,6 +31,7 @@ import {
   TriggerTask,
   triggerApi,
 } from "./api";
+import { INPUT } from "../common/ui";
 
 /**
  * API 用量触发器 /trigger
@@ -159,8 +160,7 @@ function TaskModal({
       .finally(() => setSaving(false));
   };
 
-  const field =
-    "w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2 text-sm text-paper-900 outline-none focus:border-brand-gold/50";
+  const field = INPUT;
 
   return (
     <AppModal
@@ -195,7 +195,7 @@ function TaskModal({
             <button onClick={onClose} disabled={saving || testing} className="press rounded-xl border border-paper-200 px-4 py-2 text-sm text-paper-700 transition hover:bg-paper-100 disabled:opacity-40">
               取消
             </button>
-            <button onClick={save} disabled={saving || testing} className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40">
+            <button onClick={save} disabled={saving || testing} className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40">
               {saving ? <><Loader2 size={14} className="animate-spin" /> 保存中…</> : "保存"}
             </button>
           </div>
@@ -558,7 +558,7 @@ function TriggerPanel({
           {tab === "tasks" && (
             <button
               onClick={() => openTask(null)}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90"
             >
               <Plus size={15} /> 新建任务
             </button>

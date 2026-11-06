@@ -26,6 +26,7 @@ import {
   copyText,
   storyApi,
 } from "./api";
+import { INPUT } from "../common/ui";
 
 /**
  * 「API 管理」Tab：密钥管理 + 接口定义 + curl 样例 + 调用次数与日志。
@@ -85,8 +86,7 @@ function Field({
   );
 }
 
-const inputCls =
-  "mt-1 w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2 text-sm text-paper-900 outline-none focus:border-brand-gold/50";
+const inputCls = `mt-1 ${INPUT}`;
 
 /* ---------------- 密钥新建 / 编辑 ---------------- */
 
@@ -169,7 +169,7 @@ function KeyModal({
           <button
             onClick={save}
             disabled={saving}
-            className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+            className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
           >
             {saving ? (
               <>
@@ -410,7 +410,7 @@ export default function ApiPanel() {
           </div>
           <button
             onClick={() => openKey(null)}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-3.5 py-2 text-xs font-semibold text-white shadow-glow press transition hover:opacity-90"
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-3.5 py-2 text-xs font-semibold text-white shadow-glow press transition hover:opacity-90"
           >
             <Plus size={14} /> 新建密钥
           </button>

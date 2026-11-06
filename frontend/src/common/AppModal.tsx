@@ -209,7 +209,7 @@ export function ConfirmDialog({
           className={`press rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40 ${
             danger
               ? "bg-gradient-to-br from-rose-600 to-rose-500"
-              : "bg-gradient-to-br from-brand-gold to-brand-red"
+              : "bg-gradient-to-br from-brand-red to-brand-red2"
           }`}
         >
           {busy ? "处理中…" : confirmText}

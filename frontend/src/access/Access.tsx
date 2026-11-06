@@ -62,6 +62,7 @@ import {
   UA_LABEL,
   VisitorModal,
 } from "./parts";
+import { INPUT_SM } from "../common/ui";
 
 type TabKey = "overview" | "logs" | "ips" | "visitors" | "geo" | "ops";
 
@@ -90,8 +91,7 @@ const FEATURE_OPTIONS: [string, string][] = [
   ["other", "其他"],
 ];
 
-const SELECT_CLS =
-  "rounded-lg border border-paper-200 bg-white/60 px-2 py-1.5 text-xs text-paper-900 outline-none transition focus:border-brand-gold/50";
+const SELECT_CLS = INPUT_SM;
 
 /* ============================== 页面 ============================== */
 

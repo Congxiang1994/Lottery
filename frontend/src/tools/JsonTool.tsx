@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Braces, FileJson, Trash2 } from "lucide-react";
 import CopyBtn from "./CopyBtn";
+import { INPUT } from "../common/ui";
 
-const field =
-  "w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2 text-sm text-paper-900 outline-none focus:border-brand-gold/50";
+const field = INPUT;
 const STORAGE_KEY = "tools_json";
 
 const SAMPLE = `{

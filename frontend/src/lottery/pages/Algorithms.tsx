@@ -264,7 +264,7 @@ export default function Algorithms() {
                   <button
                     onClick={submitPassword}
                     disabled={pwdLoading || !pwd}
-                    className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+                    className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
                   >
                     {pwdLoading ? <><Loader2 size={14} className="animate-spin" /> 校验中…</> : "确认运行"}
                   </button>

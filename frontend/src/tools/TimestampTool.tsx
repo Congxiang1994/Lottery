@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Clock, Zap } from "lucide-react";
 import CopyBtn from "./CopyBtn";
+import { INPUT } from "../common/ui";
 
 type Unit = "auto" | "s" | "ms";
 
-const field =
-  "w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2 text-sm text-paper-900 outline-none focus:border-brand-gold/50";
+const field = INPUT;
 const numField =
   "w-full rounded-lg border border-paper-200 bg-white/60 px-1 py-2 text-center text-sm text-paper-900 outline-none focus:border-brand-gold/50";
 

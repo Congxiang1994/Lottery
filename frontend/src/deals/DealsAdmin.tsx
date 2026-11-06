@@ -19,6 +19,7 @@ import {
 import { AdminGate } from "../common/AdminGate";
 import { PageHeader, PrivateBadge } from "../common/PageHeader";
 import { ErrorBlock, errText } from "../common/State";
+import { INPUT } from "../common/ui";
 
 /**
  * 什么值得买 · 捡漏管理 /deals-admin（私有）
@@ -33,8 +34,7 @@ import { ErrorBlock, errText } from "../common/State";
  * 后端保留字段，真被风控掐死时用本地脚本 --push 注入即可。
  */
 
-const inputCls =
-  "w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2 text-sm text-paper-900 outline-none focus:border-brand-gold/50";
+const inputCls = INPUT;
 
 /* ---------------- 小组件 ---------------- */
 

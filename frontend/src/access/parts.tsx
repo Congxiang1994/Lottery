@@ -661,7 +661,7 @@ export function IpModal({
             type="button"
             disabled={saving}
             onClick={save}
-            className="press shrink-0 rounded-lg bg-gradient-to-br from-brand-gold to-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            className="press shrink-0 rounded-lg bg-gradient-to-br from-brand-red to-brand-red2 px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
           >
             {saving ? "保存中…" : "保存标注"}
           </button>
@@ -797,7 +797,7 @@ export function VisitorModal({
             type="button"
             disabled={saving}
             onClick={save}
-            className="press shrink-0 rounded-lg bg-gradient-to-br from-brand-gold to-brand-red px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            className="press shrink-0 rounded-lg bg-gradient-to-br from-brand-red to-brand-red2 px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
           >
             {saving ? "保存中…" : "保存"}
           </button>

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Story, storyApi } from "./api";
 import ApiPanel from "./ApiPanel";
+import { INPUT } from "../common/ui";
 
 /**
  * 每日儿童睡前故事 · 管理页 /story-admin（私有）
@@ -28,8 +29,7 @@ import ApiPanel from "./ApiPanel";
 
 /* ---------------- 通用 ---------------- */
 
-const inputCls =
-  "w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2 text-sm text-paper-900 outline-none focus:border-brand-gold/50";
+const inputCls = INPUT;
 
 function IconBtn({
   children,
@@ -155,7 +155,7 @@ function StoryModal({
           <button
             onClick={save}
             disabled={saving}
-            className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
+            className="press flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
           >
             {saving ? (
               <>
@@ -389,7 +389,7 @@ function StoryAdminPanel({
           {tab === "stories" && (
             <button
               onClick={() => setModal({ open: true, editing: null })}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-gold to-brand-red px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-brand-red to-brand-red2 px-4 py-2 text-sm font-semibold text-white shadow-glow press transition hover:opacity-90"
             >
               <Plus size={15} /> 新建故事
             </button>
