@@ -3,6 +3,7 @@ import { KeyRound, Loader2 } from "lucide-react";
 
 import { isUnauthorized } from "./http";
 import { Loading } from "./State";
+import { INPUT } from "./ui";
 import { errText } from "./State";
 
 /**
@@ -184,7 +185,7 @@ function PasswordForm({
         onKeyDown={(e) => e.key === "Enter" && submit()}
         placeholder="请输入操作密码"
         autoFocus
-        className="mt-4 w-full rounded-xl border border-paper-200 bg-white/60 px-3 py-2.5 text-sm text-paper-900 outline-none transition focus:border-brand-gold/50"
+        className={`mt-4 ${INPUT}`}
       />
       {err && (
         <div

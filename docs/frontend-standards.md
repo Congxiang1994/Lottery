@@ -199,9 +199,23 @@ export default function MyAdmin() {
 
 ```bash
 cd frontend
-env -u NODE_OPTIONS npx tsc --noEmit     # 必须 0 错误
-env -u NODE_OPTIONS npm run build        # 必须成功
+node scripts/audit-ui.mjs                 # UI 一致性审计，必须 0 违规
+env -u NODE_OPTIONS npx tsc --noEmit      # 必须 0 错误
+env -u NODE_OPTIONS npm run build         # 必须成功
 ```
+
+`audit-ui.mjs` 查 7 类「同一件事又被写了一遍」的回归（它们不会让构建失败，
+只会让页面之间慢慢长得不一样）：
+
+| 规则 | 要求 |
+|---|---|
+| `raw-fetch` | 页面里不许裸 `fetch`，走 `common/http.ts` |
+| `handwritten-gate` | 不许手写 `PasswordGate`，用 `AdminGate` |
+| `handwritten-modal` | 不许手写 `anim-overlay` / `anim-panel`，用 `AppModal` |
+| `handwritten-h1` | 不许手写 `<h1>`，用 `PageHeader`（门户/水墨皮肤/密码门白名单豁免） |
+| `handwritten-loading` | 不许手写 `animate-spin + 加载中`，用 `Loading` |
+| `gold-primary-button` | 金色不许作按钮底色，用 `BTN_PRIMARY` |
+| `handwritten-input` | 不许手写输入框类名，用 `INPUT` / `INPUT_SM` |
 
 - [ ] 没有裸 `fetch`、没有手写密码门、没有手写弹窗骨架、没有手写三态
 - [ ] 新路由是 `React.lazy`；已在 `Portal.APPS` / `App.tsx` / `Nav.useNavLinks` 三处注册

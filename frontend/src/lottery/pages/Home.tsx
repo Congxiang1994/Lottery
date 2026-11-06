@@ -8,6 +8,7 @@ import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
 import Heatmap from "../components/Heatmap";
 import TrendChart from "../components/TrendChart";
+import { PageHeader } from "../../common/PageHeader";
 import { Reveal } from "../../common/Reveal";
 import { ErrorBlock, errText } from "../../common/State";
 
@@ -47,14 +48,18 @@ export default function Home() {
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-red" />
           彩票数据可视化与智能推荐平台
         </div>
-        <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-          彩票数据
-          <span className={key === "ssq" ? "gradient-text" : "gradient-text-blue"}>可视化</span>
-          与智能推荐
-        </h1>
-        <p className="mx-auto mt-3 max-w-xl text-sm text-paper-700">
-          双色球 / 大乐透历史开奖全量统计、走势追踪与多策略推荐，一站看透号码规律。
-        </p>
+        <PageHeader
+          size="hero"
+          title={
+            <>
+              彩票数据
+              <span className={key === "ssq" ? "gradient-text" : "gradient-text-blue"}>可视化</span>
+              与智能推荐
+            </>
+          }
+          subtitle="双色球 / 大乐透历史开奖全量统计、走势追踪与多策略推荐，一站看透号码规律。"
+          className="mb-3"
+        />
         <div className="mt-6 flex justify-center">
           <LotteryTabs lotteries={lotteries} value={key} onChange={setKey} />
         </div>

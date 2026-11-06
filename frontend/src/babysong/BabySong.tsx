@@ -17,6 +17,7 @@ import {
 import { AppModal } from "../common/AppModal";
 import { ExitPresence } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
+import { PageHeader } from "../common/PageHeader";
 import { errText } from "../common/State";
 import { babysongApi, type Song as babysongApi_Song } from "./api";
 
@@ -551,9 +552,11 @@ export default function BabySong() {
     <div className="pt-10">
       {/* Hero */}
       <section className="text-center">
-        <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-          <span className="gradient-text">Super Simple Songs</span> 儿歌
-        </h1>
+        <PageHeader
+          size="hero"
+          title={<><span className="gradient-text">Super Simple Songs</span> 儿歌</>}
+          subtitle="518 首经典英文儿歌：点开即播，已下载的站内秒开。"
+        />
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <button
             onClick={openRandom}
