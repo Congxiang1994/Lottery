@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Braces, FileJson, Trash2 } from "lucide-react";
+import { Braces, FileJson, Quote, Trash2, Undo2, UnfoldVertical } from "lucide-react";
 import CopyBtn from "./CopyBtn";
+import { escapeJsonString, unescapeJsonString } from "./jsonEscape";
 import { INPUT } from "../common/ui";
 
 const field = INPUT;
@@ -80,10 +81,18 @@ export default function JsonTool() {
   const [indent, setIndent] = useState<2 | 4>(2);
   const [sortKeys, setSortKeys] = useState(false);
   const [view, setView] = useState<"pretty" | "min">("pretty");
+  /** 转义/反转义前的原文（非空时显示可撤销提示条，6 秒后自动收起） */
+  const [undo, setUndo] = useState<{ text: string; label: string } | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, text);
   }, [text]);
+
+  useEffect(() => {
+    if (!undo) return;
+    const t = window.setTimeout(() => setUndo(null), 6000);
+    return () => window.clearTimeout(t);
+  }, [undo]);
 
   const result = useMemo(() => analyze(text), [text]);
 
@@ -92,6 +101,28 @@ export default function JsonTool() {
     const v = sortKeys ? sortDeep(result.value) : result.value;
     return view === "pretty" ? JSON.stringify(v, null, indent) : JSON.stringify(v);
   }, [result, sortKeys, indent, view]);
+
+  /** 当前内容里可还原的转义处数（0 = 「反转义」不可点） */
+  const unescapeInfo = useMemo(() => unescapeJsonString(text), [text]);
+  const restorable = unescapeInfo.changes + (unescapeInfo.strippedQuotes ? 1 : 0);
+
+  /** 转义：整段文本 → 带引号的 JSON 字符串字面量 */
+  const doEscape = () => {
+    if (!text) return;
+    setUndo({ text, label: "已转义为 JSON 字符串字面量" });
+    setText(escapeJsonString(text));
+  };
+
+  /** 反转义：字面量 → 真实字符（顺手剥掉外层成对引号） */
+  const doUnescape = () => {
+    if (restorable === 0) return;
+    const label =
+      unescapeInfo.changes > 0
+        ? `已还原 ${unescapeInfo.changes} 处转义${unescapeInfo.strippedQuotes ? "，并去掉外层引号" : ""}`
+        : "已去掉外层引号";
+    setUndo({ text, label });
+    setText(unescapeInfo.text);
+  };
 
   const lines = text.split("\n");
   const errLine = result.ok ? -1 : result.line;
@@ -144,19 +175,64 @@ export default function JsonTool() {
 
         <div className="ml-auto flex items-center gap-2">
           <button
+            onClick={doEscape}
+            disabled={!text}
+            title='整段转义成带引号的 JSON 字符串字面量（"…\n…"），可直接贴进 JSON / JS'
+            className="flex items-center gap-1.5 rounded-xl border border-paper-200 bg-paper-100 px-3 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200 disabled:cursor-default disabled:opacity-40"
+          >
+            <Quote size={13} /> 转义
+          </button>
+          <button
+            onClick={doUnescape}
+            disabled={restorable === 0}
+            title='把 \n \t \uXXXX 等字面量还原成真实字符；整段被一对引号包住时顺手剥掉'
+            className="flex items-center gap-1.5 rounded-xl border border-paper-200 bg-paper-100 px-3 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200 disabled:cursor-default disabled:opacity-40"
+          >
+            <UnfoldVertical size={13} /> 反转义
+            {restorable > 0 && (
+              <span className="rounded-full bg-brand-gold/15 px-1.5 py-px text-[11px] font-semibold tabular-nums text-brand-gold">
+                {restorable}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setText(SAMPLE)}
             className="flex items-center gap-1.5 rounded-xl border border-paper-200 bg-paper-100 px-3 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200"
           >
             <FileJson size={13} /> 示例
           </button>
           <button
-            onClick={() => setText("")}
+            onClick={() => {
+              setUndo(null);
+              setText("");
+            }}
             className="flex items-center gap-1.5 rounded-xl border border-paper-200 bg-paper-100 px-3 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200"
           >
             <Trash2 size={13} /> 清空
           </button>
         </div>
       </div>
+
+      {undo && (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-600/25 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          {undo.label}
+          <button
+            onClick={() => {
+              setText(undo.text);
+              setUndo(null);
+            }}
+            className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-0.5 font-medium transition hover:bg-emerald-100"
+          >
+            <Undo2 size={12} /> 撤销
+          </button>
+          <button
+            onClick={() => setUndo(null)}
+            className="rounded-lg px-2 py-0.5 text-emerald-700/90 transition hover:bg-emerald-100"
+          >
+            收起
+          </button>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* 输入 */}
