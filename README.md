@@ -20,7 +20,7 @@
 | 🎵 **Super Simple Songs 儿歌** `/babysong` | 518 首英文儿歌，B 站 / YouTube / 本地视频三通道播放 | [README_babysong.md](./README_babysong.md) |
 | 📖 **每日儿童睡前故事** `/story` | 按日期倒序阅读 + 密码管理页 + `X-API-Key` 对外写入接口 | [README_story.md](./README_story.md) |
 | 💰 **捡漏** `/deals` | 自动盯「什么值得买」标签流，按折扣深度筛数码垂类真漏 | [README_deals.md](./README_deals.md) |
-| 🛠 **实用小工具** `/tools` | 时间戳转换、JSON 格式化、Markdown 预览、随手画板 | 门户内直达 |
+| 🛠 **实用小工具** `/tools` | 时间戳转换、JSON 格式化、Markdown 预览（含 \n 转义还原）、随手画板 | 门户内直达 |
 | ⚡ **API 用量触发器** `/trigger` 🔒 | 到点自动点亮大模型 **5 小时用量窗口** | [README_trigger.md](./README_trigger.md) |
 | 🔍 **访问管理** `/access` 🔒 | 全站访问审计：明细、IP / 访客聚合、地区解析、图表与 CSV 导出 | [README_access.md](./README_access.md) |
 | 📥 **小鹅通下载器** | 视频课程批量下载（108 节动画课实测 108/108 成功，命令行工具） | [tools/xiaoe-downloader/README.md](./tools/xiaoe-downloader/README.md) |

@@ -23,7 +23,7 @@ export default function Tools() {
         title="实用小工具"
         icon={Wrench}
         iconClass="text-[#0d9488]"
-        subtitle="开发者随身工具箱：时间戳双向转换、JSON 格式化与纠错、Markdown 实时预览、随手画板。"
+        subtitle="开发者随身工具箱：时间戳双向转换、JSON 格式化与纠错、Markdown 实时预览（支持反斜杠 n 转义还原）、随手画板。"
       />
 
       {/* Tab 切换（沿用全站 segmented 样式） */}
