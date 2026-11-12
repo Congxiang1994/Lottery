@@ -158,13 +158,20 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
         </div>
       </div>
 
-      {/* 拖拽提示条 */}
-      <div className={`shrink-0 overflow-hidden px-3 text-[11px] transition-all duration-150 ${dragging ? "h-5 py-0.5" : "h-0 py-0"} ${hint ? "bg-rose-50 text-rose-700" : "text-paper-500"}`}>
-        {dragging ? (hint || "拖动中：只可在同一层级内上下调序") : ""}
-      </div>
 
-      {/* 行列表：行高 22px，与左栏一致 */}
-      <div ref={scroller} className="min-h-0 flex-1 overflow-auto py-1">
+      {/* 行列表：行高 22px，与左栏一致。
+          ⚠️ 拖拽提示做成**绝对定位浮层**，绝不能占布局高度 ——
+          之前用 h-5 撑开会在按下手柄的瞬间把整棵树往下推 20px，
+          既破坏与左栏的逐行对齐，观感也像"整块跳了一下"。 */}
+      <div className="relative min-h-0 flex-1">
+        {dragging && (
+          <div className={`pointer-events-none absolute inset-x-0 top-0 z-30 border-b px-3 py-1 text-[11px] ${
+            hint ? "border-rose-200 bg-rose-50/95 text-rose-700" : "border-paper-200 bg-paper-50/95 text-paper-600"
+          }`}>
+            {hint || "拖动中：只可在同一层级内上下调序"}
+          </div>
+        )}
+        <div ref={scroller} className="h-full min-h-0 overflow-auto py-1">
         {rows.length === 0 ? (
           <p className="p-3 text-xs text-paper-500">粘贴或输入 JSON 后显示节点树。</p>
         ) : (
@@ -282,6 +289,8 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
             )}
           </div>
         )}
+      </div>
+
       </div>
 
       {/* 底部状态行 */}
