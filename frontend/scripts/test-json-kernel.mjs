@@ -14,7 +14,7 @@
 import { parseInput, translateError, parseJsonl, resultToText } from "../src/tools/json/parse.ts";
 import { parseLossless, stringifyLossless, toDisplayString, toSafeNumber, isUnsafeIntegerLiteral, collectUnsafeIntegers, hasLossless } from "../src/tools/json/lossless.ts";
 import { computeStats } from "../src/tools/json/stats.ts";
-import { formatJson, minifyJson, sortDeep, toCamel, toSnake, convertKeys, detectKeyCase } from "../src/tools/json/format.ts";
+import { formatJson, minifyJson, sortDeep, toCamel, toSnake, convertKeys, detectKeyCase, styleToInline } from "../src/tools/json/format.ts";
 import { flatten, defaultExpanded, allExpandablePaths, kindOf, isContainer, pointerOf } from "../src/tools/json/views/treeModel.ts";
 
 let failed = 0;
@@ -108,12 +108,43 @@ eq("stats·UTF8 字节", computeStats(undefined, "中文").bytes, 6);
 eq("stats·空文本行数", computeStats(undefined, "").lines, 0);
 
 /* ========================= 4. 格式化 / 键名 ========================= */
+
+// ★ 两种风格必须都能跑通：
+//   标准 = 传统全展开（与 JSON.stringify 一致）；高效 = 纯标量数组内联。
+const SAMPLE_LINE = `{"name":"lottery","version":2,"tools":["timestamp","json","markdown"],"enabled":true,"config":{"theme":"auto","nested":{"a":1,"b":[1,2,3]}}}`;
+const fmtStd = formatJson(SAMPLE_LINE, 2, false, "standard");
+const fmtCompact = formatJson(SAMPLE_LINE, 2, false, "compact");
+
+// 标准风格：数组必须逐元素换行（这是「传统展开」的定义）
+eq("format·标准风格不内联", fmtStd.includes('"tools": [\n'), true);
+eq("format·标准风格行数", fmtStd.split("\n").length, 21);
+// 高效风格：纯标量数组压一行
+eq("format·高效风格内联字符串数组", fmtCompact.includes('"tools": ["timestamp", "json", "markdown"]'), true);
+eq("format·高效风格内联数字数组", fmtCompact.includes('"b": [1, 2, 3]'), true);
+eq("format·高效风格行数", fmtCompact.split("\n").length, 13);
+// 两种风格对「对象数组」都必须展开
+ok("format·标准风格对象数组展开", formatJson('[{"a":1},{"b":2}]', 2, false, "standard").split("\n").length > 3);
+ok("format·高效风格对象数组仍展开", formatJson('[{"a":1},{"b":2}]', 2, false, "compact").split("\n").length > 3);
+
+eq("format·默认风格为标准", formatJson(SAMPLE_LINE).includes('"tools": [\n'), true);
+eq("format·空容器单行", formatJson('{"a":[],"b":{}}'), '{\n  "a": [],\n  "b": {}\n}');
+eq("format·高效内联混合标量", formatJson('{"a":[1,"x",true,null]}', 2, false, "compact").includes('[1, "x", true, null]'), true);
+ok("format·高效超长数组退回多行", formatJson('{"t":[' + Array.from({ length: 30 }, (_, i) => `"x${i}"`).join(",") + ']}', 2, false, "compact").split("\n").length > 3);
+eq("format·高效内联保大整数", formatJson('{"id":[1,12345678901234567890,3]}', 2, false, "compact").includes("[1, 12345678901234567890, 3]"), true);
+eq("format·高效嵌套数组元素各自内联", formatJson('{"a":[[1,2],[3,4]]}', 2, false, "compact"), '{\n  "a": [\n    [1, 2],\n    [3, 4]\n  ]\n}');
+eq("format·高效字符串含逗号不被拆", formatJson('{"a":["x, y","z"]}', 2, false, "compact").includes('["x, y", "z"]'), true);
+eq("format·高效 Tab 缩进", formatJson('{"a":[1,2]}', "tab", false, "compact").includes('"a": [1, 2]'), true);
+eq("format·高效 + 键名排序", formatJson('{"z":[2,1],"a":1}', 2, true, "compact"), '{\n  "a": 1,\n  "z": [2, 1]\n}');
+
 eq("format·默认保留 key 顺序", formatJson('{"z":1,"a":2}'), '{\n  "z": 1,\n  "a": 2\n}');
 eq("format·4 空格", formatJson('{"a":1}', 4).includes('    "a"'), true);
 eq("format·Tab", formatJson('{"a":1}', "tab").includes('\t"a"'), true);
 eq("format·压缩", minifyJson('{ "a" : 1 }'), '{"a":1}');
+eq("format·压缩标量数组无空格", minifyJson('{"a":[1,2,3]}'), '{"a":[1,2,3]}');
 eq("format·排序", stringifyLossless(sortDeep(parseLossless('{"z":1,"a":2}'))), '{"a":2,"z":1}');
 eq("format·排序不破坏数组", stringifyLossless(sortDeep(parseLossless('{"z":[3,1,2]}'))), '{"z":[3,1,2]}');
+eq("format·styleToInline", styleToInline("compact"), true);
+eq("format·styleToInline 标准", styleToInline("standard"), false);
 eq("format·toCamel", toCamel("user_name"), "userName");
 eq("format·toCamel 连字符", toCamel("user-name"), "userName");
 eq("format·toCamel 已有驼峰", toCamel("userName"), "userName");

@@ -14,7 +14,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { FileJson, Quote, Trash2, Undo2, UnfoldVertical } from "lucide-react";
 import { escapeJsonString, unescapeJsonString } from "./jsonEscape";
 import { parseInput } from "./json/parse.ts";
-import { formatJson, minifyJson, type Indent } from "./json/format.ts";
+import { formatJson, minifyJson, type Indent, type FmtStyle } from "./json/format.ts";
 import type { InputKind, ParseResult } from "./json/types.ts";
 import type { EditorStatus } from "./json/views/JsonEditor.tsx";
 
@@ -56,11 +56,34 @@ function loadText(): string {
   return "";
 }
 
+/** 格式化风格的展示文案与说明（类型 FmtStyle 定义在 json/format.ts，此处只做 UI 映射） */
+const FMT_STYLE_LABEL: Record<FmtStyle, string> = { standard: "标准", compact: "高效" };
+
+const FMT_STYLES: { key: FmtStyle; label: string; hint: string }[] = [
+  { key: "standard", label: "标准", hint: "传统展开：每个元素一行，与 JSON.stringify 一致" },
+  { key: "compact", label: "高效", hint: "纯字符串/数字数组压成一行（如 [\"a\",\"b\"]、[1,2,3]），更好读" },
+];
+
+const STYLE_KEY = "tools_json_fmt_style";
+
+function loadStyle(): FmtStyle {
+  try {
+    return localStorage.getItem(STYLE_KEY) === "compact" ? "compact" : "standard";
+  } catch {
+    return "standard";
+  }
+}
+
 export default function JsonTool() {
   const [text, setText] = useState<string>(loadText);
   const [indent, setIndent] = useState<Indent>(2);
   const [sortKeys, setSortKeys] = useState(false);
   const [view, setView] = useState<"pretty" | "min">("pretty");
+  const [fmtStyle, setFmtStyle] = useState<FmtStyle>(loadStyle);
+
+  useEffect(() => {
+    try { localStorage.setItem(STYLE_KEY, fmtStyle); } catch { /* 忽略 */ }
+  }, [fmtStyle]);
   const [undo, setUndo] = useState<{ text: string; label: string } | null>(null);
   const [toast, setToast] = useState("");
 
@@ -95,21 +118,22 @@ export default function JsonTool() {
     setView(mode);
     if (!text.trim()) { setToast("输入为空，无需格式化"); return; }
     try {
-      const next = mode === "min" ? minifyJson(text) : formatJson(text, indent, sortKeys);
+      const next = mode === "min" ? minifyJson(text) : formatJson(text, indent, sortKeys, fmtStyle);
       if (next === text) { setToast(mode === "min" ? "已是压缩形态" : "已是格式化形态"); return; }
-      setWithUndo(next, mode === "min" ? "已压缩源码" : "已格式化源码");
+      setWithUndo(next, mode === "min" ? "已压缩源码" : `已${FMT_STYLE_LABEL[fmtStyle]}格式化`);
     } catch {
       setToast("格式有误，先修正错误再格式化");
     }
   };
 
-  /** 切换缩进 / 排序时，若当前已是格式化形态则立即重排，让选项「看得见」 */
-  const reapplyIfFormatted = (nextIndent: Indent, nextSort: boolean) => {
+  /** 切换缩进 / 排序 / 风格时，若当前已是格式化形态则立即重排，让选项「看得见」 */
+  const reapplyIfFormatted = (nextIndent: Indent, nextSort: boolean, nextStyle: FmtStyle = fmtStyle) => {
     setIndent(nextIndent);
     setSortKeys(nextSort);
+    setFmtStyle(nextStyle);
     if (view !== "pretty" || !text.trim()) return;
     try {
-      const next = formatJson(text, nextIndent, nextSort);
+      const next = formatJson(text, nextIndent, nextSort, nextStyle);
       if (next !== text) setText(next);
     } catch { /* 有错时静默，状态行已提示 */ }
   };
@@ -172,6 +196,27 @@ export default function JsonTool() {
           键名排序
         </label>
 
+        {/* 格式化风格：标准（传统全展开）/ 高效（纯标量数组内联）。
+            前面加「格式」小字标签，避免两个孤零零的「标准/高效」让人看不懂。 */}
+        <div
+          className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium"
+          title="标准：每个元素一行；高效：字符串/数字数组压成一行"
+        >
+          <span className="pl-1.5 pr-0.5 text-[11px] text-paper-500">格式</span>
+          {FMT_STYLES.map((s) => (
+            <button
+              key={s.key}
+              onClick={() => reapplyIfFormatted(indent, sortKeys, s.key)}
+              title={s.hint}
+              className={`rounded-lg px-2.5 py-1.5 transition ${
+                fmtStyle === s.key ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <button onClick={doEscape} disabled={!text} title="整段转义成带引号的 JSON 字符串字面量" className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200 disabled:opacity-40">
             <Quote size={13} /> 转义
@@ -198,17 +243,19 @@ export default function JsonTool() {
       )}
 
       {/* ===== 两个对齐的框：左源码 / 右节点树 =====
-          高度用 vh 计算，保证「工具栏 + 两框 + 底部状态行」一屏内放得下：
-          ≈ 顶部导航 + 标题 + tab + 工具栏 + 状态条 ≈ 300px，再留 24px 呼吸。
-          min-h 兜住小屏，避免压扁到不可用。 */}
-      <div className="grid items-stretch gap-4 lg:grid-cols-2">
-        <div className="h-[min(620px,calc(100vh-330px))] min-h-[340px]">
+          高度策略：不再用固定 vh 常量硬算（撤销条/提示条出现时会算少，把
+          底部状态行挤出视口）。改为「两框等分父容器剩余高度」：
+          - 父容器用 flex-1 + min-h-0 吃掉剩余空间；
+          - 两框各自 h-full，网格 items-stretch 保证同高；
+          - min-h 兜住矮视口，超出时整页滚动而不是把状态行裁掉。 */}
+      <div className="grid min-h-[340px] flex-1 grid-cols-1 items-stretch gap-4 lg:grid-cols-2" style={{ minHeight: "max(340px, calc(100vh - 400px))" }}>
+        <div className="h-full min-h-0">
           <Suspense fallback={<BoxSkeleton label="加载编辑器…" />}>
             <JsonEditor value={text} onChange={setText} status={editorStatus} />
           </Suspense>
         </div>
 
-        <div className="h-[min(620px,calc(100vh-330px))] min-h-[340px]">
+        <div className="h-full min-h-0">
           {result.ok && result.value !== undefined ? (
             <Suspense fallback={<BoxSkeleton label="加载节点树…" />}>
               <TreeView value={result.value} />
