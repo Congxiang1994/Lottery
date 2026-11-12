@@ -700,32 +700,6 @@ export default function DiffTool() {
         </div>
       </div>
 
-      {/* 撤销条 */}
-      {undo && (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-600/25 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-          {undo.label}
-          <button
-            onClick={doUndo}
-            className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-0.5 font-medium transition hover:bg-emerald-100"
-          >
-            <Undo2 size={12} /> 撤销
-          </button>
-          <button onClick={() => setUndo(null)} className="rounded-lg px-2 py-0.5 text-emerald-700/90 transition hover:bg-emerald-100">
-            收起
-          </button>
-        </div>
-      )}
-
-      {/* 选中的行内片段提示 */}
-      {picked && (
-        <div className="flex items-center gap-2 rounded-xl border border-brand-gold/40 bg-brand-gold/10 px-3 py-2 text-xs text-paper-800">
-          已选中一个行内片段，点中间高亮的箭头只推这一段；再点该片段可取消。
-          <button onClick={() => setPicked(null)} className="ml-auto rounded-lg px-2 py-0.5 font-medium transition hover:bg-brand-gold/20">
-            取消选中
-          </button>
-        </div>
-      )}
-
       {/* 对比主体 */}
       <div className="flex flex-col overflow-hidden rounded-2xl border border-paper-200 bg-white/60">
         <div className="flex h-8 shrink-0 items-center gap-2 border-b border-paper-200/70 px-3 text-xs text-paper-600">
@@ -806,6 +780,42 @@ export default function DiffTool() {
           </div>
         </div>
       </div>
+
+      {/*
+        提示条用 **fixed 悬浮在视口底部**，不放进文档流。
+
+        为什么不是「放在框下方」：放下方虽然不推框，但页面本来就超过一屏时，
+        提示条会落到视口外 —— 用户点了推送却看不到任何反馈（实测框底 804、
+        条顶 817、视口 780）。而放上方会整体推开两个编辑器，正在看的位置会跳。
+
+        fixed 同时解决两件事：不占文档流（框位置永远不动）+ 永远可见。
+      */}
+      {(undo || picked) && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex flex-col items-center gap-2 px-4">
+          {undo && (
+            <div className="pointer-events-auto flex w-full max-w-xl items-center gap-2 rounded-xl border border-emerald-600/25 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 shadow-lg">
+              {undo.label}
+              <button
+                onClick={doUndo}
+                className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-0.5 font-medium transition hover:bg-emerald-100"
+              >
+                <Undo2 size={12} /> 撤销
+              </button>
+              <button onClick={() => setUndo(null)} className="rounded-lg px-2 py-0.5 text-emerald-700/90 transition hover:bg-emerald-100">
+                收起
+              </button>
+            </div>
+          )}
+          {picked && (
+            <div className="pointer-events-auto flex w-full max-w-xl items-center gap-2 rounded-xl border border-brand-gold/40 bg-[#fffaf0] px-3 py-2 text-xs text-paper-800 shadow-lg">
+              已选中一个行内改动，点中间金色箭头只推这一组；再点该片段可取消。
+              <button onClick={() => setPicked(null)} className="ml-auto rounded-lg px-2 py-0.5 font-medium transition hover:bg-brand-gold/20">
+                取消选中
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
