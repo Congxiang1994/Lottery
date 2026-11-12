@@ -217,8 +217,23 @@ export default function JsonTool() {
   /** 拖拽预演：拖动中两栏都按预演值渲染 */
   const handlePreview = (value: unknown | null, path: string | null) => {
     if (value === null || path === null) setPreviewValue(null);
-    else { setPreviewValue({ value, path }); setHighlight(null); }
+    else setPreviewValue({ value, path });
   };
+
+  /**
+   * 拖动时左栏高亮被拖节点所在的整块。
+   *
+   * ⚠️ 必须放 effect 里算：handlePreview 只是把预演值塞进 state，
+   * 新的 lines 要到下一轮渲染才生成。若在 handlePreview 里同步算行号，
+   * 拿到的是**拖动前**的行模型，高亮会标错位置。
+   * 这里以 lines 为准：等它更新完，再按 previewValue.path 查整块区间。
+   */
+  useEffect(() => {
+    if (!previewValue || !previewValue.path) { setHighlight(null); return; }
+    const hit = lines.find((l) => l.path === previewValue.path);
+    if (!hit) { setHighlight(null); return; }
+    setHighlight([hit.blockStart, hit.blockEnd]);
+  }, [previewValue, lines]);
 
   /**
    * 拖拽调序落盘。
