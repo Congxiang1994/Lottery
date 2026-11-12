@@ -195,8 +195,8 @@ export default function JsonTool() {
    */
   const effectiveValue = previewValue ? previewValue.value : result.value;
 
-  /** 源码行 —— 左栏渲染它，右栏也从它派生，因此天然对齐 */
-  const lines = useMemo(() => {
+  /** 树行：始终按缩进展开的完整结构（右栏用，压缩时也不变） */
+  const treeLines = useMemo(() => {
     if (!result.ok || effectiveValue === undefined) return [];
     return buildSourceLines(effectiveValue, {
       indent,
@@ -204,6 +204,28 @@ export default function JsonTool() {
       inlineScalarArrays: styleToInline(fmtStyle),
     });
   }, [result.ok, effectiveValue, indent, expanded, fmtStyle]);
+
+  /**
+   * 源码行：左栏渲染它。
+   *
+   * - 格式化视图：与 treeLines 完全一致 → **行行对齐右栏**；
+   * - 压缩视图：只给一行压缩文本。
+   *   ⚠️ 早期这里忽略 view，导致「压缩」点了没反应（底部还提示"已是压缩形态"，
+   *   看起来像按钮坏了）。压缩时两栏不再追求行行对齐，右栏仍显示完整树。
+   */
+  const lines = useMemo(() => {
+    if (!result.ok || effectiveValue === undefined) return [];
+    if (view !== "min") return treeLines;
+    // applyFormat("min") 已把 text 压成单行，这里直接用它，不再二次 minify
+    const compact = text.trim() || "{}";
+    return [{
+      path: "/", index: 0, depth: 0, text: compact, kind: "inline" as const,
+      spanStart: 0, spanEnd: 0, blockStart: 0, blockEnd: 0,
+      valueKind: "object" as const, keyText: null,
+      parentPath: null, index_in_parent: 0, parentIsArray: false, foldable: false,
+      valueText: `压缩为 ${compact.length} 字符`,
+    }];
+  }, [result.ok, effectiveValue, view, treeLines, text]);
 
   const toggleNode = (path: string) => setExpanded((prev) => {
     const next = new Set(prev);
@@ -389,7 +411,7 @@ export default function JsonTool() {
         <div className="h-full min-h-0">
           <Suspense fallback={<BoxSkeleton label="加载节点树…" />}>
             <TreeView
-              lines={lines}
+              lines={view === "min" ? treeLines : lines}
               expanded={expanded}
               onToggle={toggleNode}
               onExpandAll={expandAll}
