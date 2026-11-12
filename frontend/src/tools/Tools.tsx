@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { PageHeader } from "../common/PageHeader";
-import { Braces, Clock, FileText, Pencil, Wrench, type LucideIcon } from "lucide-react";
+import { Braces, Clock, FileText, GitCompare, Pencil, Wrench, type LucideIcon } from "lucide-react";
 import TimestampTool from "./TimestampTool";
 import JsonTool from "./JsonTool";
 import MarkdownTool from "./MarkdownTool";
 import DrawTool from "./DrawTool";
+import DiffTool from "./DiffTool";
 
-type TabKey = "timestamp" | "json" | "markdown" | "draw";
+type TabKey = "timestamp" | "json" | "diff" | "markdown" | "draw";
 
 const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: "timestamp", label: "时间戳", icon: Clock },
   { key: "json", label: "JSON", icon: Braces },
+  { key: "diff", label: "对比", icon: GitCompare },
   { key: "markdown", label: "Markdown", icon: FileText },
   { key: "draw", label: "画板", icon: Pencil },
 ];
@@ -23,7 +25,7 @@ export default function Tools() {
         title="实用小工具"
         icon={Wrench}
         iconClass="text-[#0d9488]"
-        subtitle="开发者随身工具箱：时间戳转换、JSON 源码与可折叠节点树、Markdown 预览、随手画板。"
+        subtitle="开发者随身工具箱：时间戳转换、JSON 源码与可折叠节点树、文本对比（支持行内推送）、Markdown 预览、随手画板。"
       />
 
       {/* Tab 切换（沿用全站 segmented 样式） */}
@@ -44,6 +46,7 @@ export default function Tools() {
       <div className="mt-5">
         {tab === "timestamp" && <TimestampTool />}
         {tab === "json" && <JsonTool />}
+        {tab === "diff" && <DiffTool />}
         {tab === "markdown" && <MarkdownTool />}
         {tab === "draw" && <DrawTool />}
       </div>

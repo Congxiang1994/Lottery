@@ -1035,6 +1035,11 @@ html.theme-anim ::-webkit-scrollbar-thumb {
   --cm-bool: #7c3aed;
   --cm-null: #9c8769;
   --cm-punc: #8b7355;
+  /* 文本对比 · 行内差异（左删红 / 右增绿，夜间另配一套更暗的） */
+  --cmp-del: rgba(225, 29, 72, 0.16);
+  --cmp-del-line: rgba(225, 29, 72, 0.55);
+  --cmp-ins: rgba(5, 150, 105, 0.16);
+  --cmp-pick: rgba(201, 134, 0, 0.9);
 }
 .site-night {
   --cm-fg: #f2e9dc;
@@ -1050,6 +1055,30 @@ html.theme-anim ::-webkit-scrollbar-thumb {
   --cm-bool: #c4b5fd;
   --cm-null: #9c8a77;
   --cm-punc: #b5a18c;
+  --cmp-del: rgba(251, 113, 133, 0.22);
+  --cmp-del-line: rgba(251, 113, 133, 0.7);
+  --cmp-ins: rgba(52, 211, 153, 0.20);
+  --cmp-pick: rgba(232, 195, 122, 0.9);
 }
 .json-editor .cm-editor { height: 100%; }
 .json-editor .cm-editor.cm-focused { outline: none; }
+
+/* ============================================================================
+   小工具 · 文本对比（.diff-host）
+   MergeView 自带布局用「单个外层滚动容器」对齐两侧，这里只补高度与滚动条细节。 */
+.diff-host .cm-mergeView { height: 100%; }
+.diff-host .cm-mergeViewEditors { height: 100%; }
+.diff-host .cm-mergeViewEditor { min-height: 0; }
+.diff-host .cm-editor { height: 100%; }
+.diff-host .cm-editor.cm-focused { outline: none; }
+/* 折叠条：与全站 paper 色板一致，点击展开（merge 自带行为） */
+.diff-host .cm-collapsedLines {
+  color: var(--cm-gutter, #b8a890);
+  background: linear-gradient(to bottom, transparent 0, var(--cm-active, rgba(13,148,136,0.06)) 30%, var(--cm-active, rgba(13,148,136,0.06)) 70%, transparent 100%);
+  font-size: 11px;
+  cursor: pointer;
+}
+.diff-host .cm-collapsedLines:hover { color: var(--cm-fg, #3d2b1f); }
+/* 差异行的行号槽标记：用品牌色系，不用 merge 默认的红绿 */
+.diff-host .cm-changedLineGutter { background: var(--cmp-del-line, rgba(225,29,72,0.55)); }
+.diff-host .cm-merge-b .cm-changedLineGutter { background: var(--cmp-ins, rgba(5,150,105,0.75)); }
