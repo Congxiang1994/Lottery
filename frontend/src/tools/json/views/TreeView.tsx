@@ -1,18 +1,20 @@
 /**
- * 节点树：按**行模型**渲染，与左栏源码行行对齐，支持折叠/展开与同级拖拽调序。
+ * 节点树：可折叠结构视图，支持**同级方块拖拽排序**。
  *
- * 与左栏的关系（2026-11-12 用户需求）：
- *  - 两边共用 ``buildSourceLines`` 产出的行序列，**行数与行序天然一致**；
- *  - 折叠/展开改的是同一个 ``expanded`` 集合 → 左栏对应位置同步变成 `...`；
- *  - 悬停某个节点 → 通过 ``onHoverBlock`` 把「该节点含子孙的整块行区间」告诉父级，
- *    左栏据此铺黄色底色。
+ * 与左栏的关系：两栏共用同一份行模型（sourceLines），行行对齐；
+ * 折叠 / 展开、拖动重排都会同时反映到左栏源码。
  *
- * 拖拽仍限同级，语义与之前一致（只换 key / 元素顺序，不改嵌套）。
+ * 拖拽交互（2026-11-12 用户要求重做）：
+ *  - 按下手柄后进入「方块排序模式」：**只显示同级节点**，每个节点渲染成一个方块；
+ *  - 方块按顺序纵向排列，鼠标上下移动时，方块之间用 `translateY` 平滑让位
+ *    （160ms cubic-bezier 缓动），像"挪动积木"；
+ *  - **不可能拖到子节点上** —— 因为子节点在这个模式下根本不渲染，
+ *    所以不需要红框/错误提示，拖到哪里都是合法的同级位置。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Copy, Minimize2, Maximize2, Network, GripVertical, ClipboardCopy } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Minimize2, Maximize2, Network, GripVertical, ClipboardCopy, X } from "lucide-react";
 import type { SourceLine } from "./sourceLines.ts";
-import { canDropOn, canMoveSibling, moveSibling } from "./treeModel.ts";
+import { canMoveSibling, moveSibling } from "./treeModel.ts";
 import Tip from "../../Tip";
 
 const KIND_COLOR: Record<string, string> = {
@@ -23,168 +25,132 @@ const KIND_COLOR: Record<string, string> = {
 
 /** 与左栏 SourceView 的行高严格一致（22px + py-1 容器内边距） */
 const ROW_H = 22;
+/** 方块模式下的方块高度（更高更好拖，也更有"积木"手感） */
+const BLOCK_H = 34;
+/** 方块重排动画时长 —— 要能看出"滑动让位"，又不能拖沓 */
+const ANIM_MS = 160;
 
 export interface TreeViewProps {
-  /** 行模型（与左栏同一份） */
   lines: SourceLine[];
   expanded: Set<string>;
   onToggle: (path: string) => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
-  /** 悬停节点 → 交出「含子孙的整块行区间」；移出为 null */
   onHoverBlock: (block: [number, number] | null) => void;
-  /** 同级调序回调 */
   onMove?: (parentPath: string, fromIndex: number, toIndex: number, finalValue?: unknown) => void;
-  /**
-   * 拖动中的「预演值」上抛：父组件用它重算行模型，
-   * 于是**左右两栏一起实时变化**（松手前就能看到最终效果）。
-   * 传 null 表示拖动结束，恢复真实值。
-   */
   onPreview?: (value: unknown | null, draggingPath: string | null) => void;
-  /** 原始值（用来算预演结果） */
   rootValue?: unknown;
 }
 
-/**
- * 树与源码**行数必须完全一致**，否则两栏会错位。
- * 容器节点在源码里占「开括号行 + … + 收尾行」，树上：开括号行显示节点本身，
- * 收尾行渲染成一条很淡的连接线占位（不重复显示节点名）。
- */
 function toTreeRows(lines: SourceLine[]): SourceLine[] {
   return lines;
 }
 
-export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCollapseAll, onHoverBlock, onMove, onPreview, rootValue }: TreeViewProps) {
+export default function TreeView({
+  lines, expanded, onToggle, onExpandAll, onCollapseAll, onHoverBlock, onMove, onPreview, rootValue,
+}: TreeViewProps) {
+  /** 正在拖动的节点路径；非 null 即「方块模式」 */
   const [dragging, setDragging] = useState<string | null>(null);
-  const [dropAt, setDropAt] = useState<{ index: number; targetPath: string; valid: boolean } | null>(null);
-  const [hint, setHint] = useState("");
+  /** 鼠标当前处于第几个方块的位置（0..n，n 表示末尾） */
+  const [hoverSlot, setHoverSlot] = useState<number | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const onMoveCb = useRef(onMove);
-  onMoveCb.current = onMove;
-  /** 预演回调也走 ref：避免它进 effect 依赖导致反复解绑/重绑 */
-  const onPreviewRef = useRef(onPreview);
-  onPreviewRef.current = onPreview;
-  /** rootValue 同理（拖动期间父级会更新它，但我们要的是最新一份） */
-  const rootRef = useRef(rootValue);
-  rootRef.current = rootValue;
-  const draggingRef = useRef<string | null>(null);
-  const lastDrop = useRef<{ insertIndex: number; fromIndex: number; parentPath: string; toIndex: number } | null>(null);
-  /** 拖动中预算好的「松手后的值」——松手时直接交给父级落盘，避免它再算一遍拿到旧数据 */
-  const previewValRef = useRef<unknown>(null);
-  /** 拖动开始时的原始位置（rows 会随预演变化，必须提前记住） */
-  const originIndexRef = useRef(new Map<string, number>());
-  /**
-   * 上一帧已上抛的落点签名。
-   * ⚠️ 拖动时 pointermove 每秒能触发几十上百次，若每次都 setState + 上抛
-   * 预演值，父级就会疯狂重算整棵树 → 视觉上疯狂抖动（用户报的那个问题）。
-   * 只有「落点真的变了」才允许通知父级。
-   */
-  const lastEmitRef = useRef<string | null>(null);
+
+  const onMoveCb = useRef(onMove); onMoveCb.current = onMove;
+  const onPreviewRef = useRef(onPreview); onPreviewRef.current = onPreview;
+  const rootRef = useRef(rootValue); rootRef.current = rootValue;
+  /** 上一次已上抛的目标槽位，避免同一位置反复重渲染 */
+  const lastEmit = useRef<number | null>(null);
 
   const rows = useMemo(() => toTreeRows(lines), [lines]);
 
-  /** 行在树里的下标（拖拽落点按树行算） */
-  const rowIndexOf = (path: string) => rows.findIndex((r) => r.path === path);
+  /* ------------------------------------------------------------------ *
+   * 方块模式的数据准备
+   * ------------------------------------------------------------------ */
 
-  const computeDrop = (clientY: number) => {
-    const el = scroller.current;
-    const cur = draggingRef.current;
-    if (!el || !cur) return null;
-    const rect = el.getBoundingClientRect();
-    const y = clientY - rect.top - 4 + el.scrollTop; // py-1 = 4px
-    const hoverIdx = Math.max(0, Math.min(rows.length - 1, Math.floor(y / ROW_H)));
-    const before = y - hoverIdx * ROW_H < ROW_H / 2;
-    const hovered = rows[hoverIdx];
-    // 收尾占位行不是节点，不能当落点
-    if (!hovered || hovered.kind === "close") return null;
-    const from = rows.find((r) => r.path === cur);
-    if (!from) return null;
-    const check = canDropOn(rows, cur, hovered.path);
-    return {
-      valid: check.ok,
-      reason: check.reason,
-      lineIndex: before ? hoverIdx : hoverIdx + 1,
-      target: hovered,
-      insertIndex: hovered.index_in_parent + (before ? 0 : 1),
-    };
+  const draggingRow = dragging ? rows.find((r) => r.path === dragging) : null;
+
+  /**
+   * 同级节点（拖动时只显示它们）。
+   *
+   * ⚠️ 必须排除 close 行：容器节点在行模型里是「open 行 + … + close 行」，
+   * 两行的 path / parentPath 完全相同，不过滤的话同一个节点会出现两次
+   * （实测 tools 重复 3 次、config 重复 5 次）。
+   */
+  const siblings = useMemo(() => {
+    if (!draggingRow) return [];
+    return rows.filter(
+      (r) => r.parentPath === draggingRow.parentPath && r.keyText !== null && r.kind !== "close",
+    );
+  }, [rows, draggingRow]);
+
+  /** 被拖的是同级里的第几个 */
+  const fromSlot = useMemo(() => {
+    if (!draggingRow) return -1;
+    return siblings.findIndex((s) => s.path === draggingRow.path);
+  }, [siblings, draggingRow]);
+
+  /** 目标位置（松手后会落在第几位） */
+  const [targetSlot, setTargetSlot] = useState<number | null>(null);
+
+  /** 拖动开始：记录起点，锁住滚动 */
+  const beginDrag = (e: React.PointerEvent, row: SourceLine) => {
+    if (!onMove) return;
+    if (row.keyText === null) return; // 根节点没有同级
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(row.path);
+    setHovered(null);
+    onHoverBlock(null);
+    setHoverSlot(null);
+    setTargetSlot(null);
+    lastEmit.current = null;
   };
 
+  /** 拖动全程走 document 监听：指针移出容器也不丢事件 */
   useEffect(() => {
-    if (!dragging) return;
+    if (!dragging || !draggingRow) return;
+
+    const listTop = () => scroller.current?.getBoundingClientRect().top ?? 0;
+    const count = siblings.length;
+
+    /** 鼠标 Y → 目标槽位（0..count） */
+    const slotFromY = (clientY: number): number => {
+      const y = clientY - listTop() - 6; // 顶部内边距
+      const raw = Math.round(y / BLOCK_H);
+      return Math.max(0, Math.min(count, raw));
+    };
+
     const onMoveEv = (e: PointerEvent) => {
-      const cur = draggingRef.current;
-      const d = computeDrop(e.clientY);
-      if (!d) return;
-
-      // 落点签名：只有它变化时，才更新视效与上抛预演值。
-      // 指针在同一行内移动不产生任何新状态 → 彻底消除抖动。
-      const sig = `${d.target.path}|${d.lineIndex}|${d.valid ? 1 : 0}`;
-      const changed = sig !== lastEmitRef.current;
-
-      if (changed) {
-        lastEmitRef.current = sig;
-        setDropAt({ index: d.lineIndex, targetPath: d.target.path, valid: d.valid });
-        setHint(d.valid ? "" : (d.reason ?? ""));
+      const slot = slotFromY(e.clientY);
+      // ⚠️ 只在槽位真的变化时才 setState / 上抛预演：
+      //    指针每秒触发几十上百次，无条件更新会疯狂重渲染（之前抖动的根因）。
+      setHoverSlot((prev) => (prev === slot ? prev : slot));
+      const at = slot > fromSlot ? slot - 1 : slot;
+      setTargetSlot((prev) => (prev === at ? prev : at));
+      if (at === lastEmit.current) return;
+      lastEmit.current = at;
+      if (at !== fromSlot && rootRef.current !== undefined && onPreviewRef.current && draggingRow.parentPath !== null) {
+        onPreviewRef.current(moveSibling(rootRef.current, draggingRow.parentPath, fromSlot, at), dragging);
       } else {
-        // 同一落点：最多只纠正一次 hint（比如从有效变无效已在 changed 分支处理）
-        return;
-      }
-      if (d.valid && cur) {
-        const from = rows.find((r) => r.path === cur);
-        if (from && from.parentPath !== null) {
-          const chk0 = canMoveSibling(rows, cur, d.insertIndex);
-          if (chk0.ok && chk0.toIndex !== undefined) {
-            // 原始下标也在拖动开始时记一次（rows 之后会变），存进 ref
-            const orig = originIndexRef.current.get(cur) ?? from.index_in_parent;
-            lastDrop.current = { insertIndex: d.insertIndex, fromIndex: orig, parentPath: from.parentPath, toIndex: chk0.toIndex };
-          }
-        }
-        // 预算「松手后的值」并上抛 → 父级据此重算行模型，
-        // 左右两栏因此同步实时预览，而不是只有树在动。
-        if (from && from.parentPath !== null && onPreviewRef.current && rootRef.current !== undefined) {
-          const chk = canMoveSibling(rows, cur, d.insertIndex);
-          if (chk.ok && chk.toIndex !== undefined) {
-            const orig = originIndexRef.current.get(cur) ?? from.index_in_parent;
-            const nextVal = moveSibling(rootRef.current, from.parentPath, orig, chk.toIndex);
-            previewValRef.current = nextVal;
-            onPreviewRef.current(nextVal, cur);
-          } else {
-            previewValRef.current = null;
-            onPreviewRef.current(null, cur);
-          }
-        }
-      } else {
-        lastDrop.current = null;
-        onPreviewRef.current?.(null, cur);
+        onPreviewRef.current?.(null, dragging);
       }
     };
+
     const onUp = () => {
-      const cur = draggingRef.current;
-      const pending = lastDrop.current;
-      /**
-       * ⚠️ 这里**不能**再从 rows 里取 from.index_in_parent：
-       * 拖动过程中 rows 已是「预演后」的数据，被拖节点在列表里的序号已经变了，
-       * 拿它再校验会判成「位置没有变化」而拒绝落盘（踩过）。
-       * 于是：parentPath 从 pending 里带，fromIndex 用拖动开始时记下的原始值。
-       */
-      if (pending && cur && onMoveCb.current) {
-        if (previewValRef.current !== null) {
-          // 预演值已算好 —— 直接落盘，父级不必再算（它手上的还是拖动前的旧值）
-          onMoveCb.current(pending.parentPath, pending.fromIndex, pending.toIndex, previewValRef.current);
-        }
-      } else if (cur && !pending) {
-        setHint("只能在同一层级内调序");
+      const at = targetSlot;
+      if (at !== null && at !== fromSlot && draggingRow.parentPath !== null && rootRef.current !== undefined) {
+        const nextVal = moveSibling(rootRef.current, draggingRow.parentPath, fromSlot, at);
+        // 直接落盘预演值，父级不必再算（它手上还是拖动前的旧值）
+        onMoveCb.current?.(draggingRow.parentPath, fromSlot, at, nextVal);
       }
-      draggingRef.current = null;
-      lastDrop.current = null;
-      previewValRef.current = null;
-      lastEmitRef.current = null;
-      onPreviewRef.current?.(null, null);
       setDragging(null);
-      setDropAt(null);
-      window.setTimeout(() => setHint(""), 1800);
+      setHoverSlot(null);
+      setTargetSlot(null);
+      lastEmit.current = null;
+      onPreviewRef.current?.(null, null);
     };
+
     document.addEventListener("pointermove", onMoveEv);
     document.addEventListener("pointerup", onUp);
     document.addEventListener("pointercancel", onUp);
@@ -194,85 +160,129 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
       document.removeEventListener("pointercancel", onUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragging, rows]);
+  }, [dragging, draggingRow, siblings.length, fromSlot, targetSlot]);
 
-  const onPointerDown = (e: React.PointerEvent, row: SourceLine) => {
-    if (!onMove) return;
-    if (row.keyText === null) { setHint("根节点没有同级，无法排序"); return; }
-    draggingRef.current = row.path;
-    originIndexRef.current.set(row.path, row.index_in_parent);
-    lastEmitRef.current = null;
-    setDragging(row.path);
-    setHint("");
-    // 清掉拖动前残留的悬停高亮，避免黄底跟着抖
-    setHovered(null);
-    onHoverBlock(null);
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const draggingRow = dragging ? rows.find((r) => r.path === dragging) : null;
+  /* ------------------------------------------------------------------ *
+   * 方块模式的视觉排序
+   * ------------------------------------------------------------------ */
 
   /**
-   * 拖动时的「落点槽位」——只用来画占位方条与高亮，
-   * **不再做视觉位移**：行数据本身已由父级按预演值重算，
-   * 两侧都在真实重排（这才是「实时预览」）。
+   * 每个方块在拖动中的目标位置（用于 translateY 平滑让位）。
+   * - 被拖方块：跟随目标槽位；
+   * - 其它方块：目标槽在它之前 → 下移一格；之后 → 上移一格。
    */
-  const dropSlot = useMemo(() => {
-    if (!dragging || !dropAt) return null;
-    return { at: Math.max(0, Math.min(rows.length, dropAt.index)), valid: dropAt.valid };
-  }, [dragging, dropAt, rows.length]);
+  const blockOrder = useMemo(() => {
+    const n = siblings.length;
+    const map = new Map<string, number>();
+    const target = targetSlot ?? fromSlot;
+    let cursor = 0;
+    for (let i = 0; i < n; i += 1) {
+      if (i === fromSlot) continue;         // 被拖方块单独处理
+      if (cursor === target) cursor += 1;    // 给被拖方块留位
+      map.set(siblings[i].path, cursor);
+      cursor += 1;
+    }
+    // 被拖方块本身固定在 target 位
+    if (fromSlot >= 0) map.set(siblings[fromSlot].path, Math.max(0, Math.min(n - 1, target)));
+    return map;
+  }, [siblings, fromSlot, targetSlot]);
+
+  const isDraggingMode = dragging !== null && siblings.length > 0;
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-paper-200 bg-white/60">
-      {/* 头部：与左栏同高 */}
+      {/* 头部 */}
       <div className="flex h-7 shrink-0 items-center gap-2 border-b border-paper-200/70 px-3 text-xs text-paper-600">
         <Network size={13} className="text-[#0d9488]" /> 节点树
-        <span className="tabular-nums">{rows.length} 个节点</span>
+        <span className="tabular-nums">
+          {isDraggingMode ? `调整「${draggingRow?.keyText}」的兄弟顺序` : `${rows.length} 个节点`}
+        </span>
         <div className="ml-auto flex items-center gap-1">
-          <Tip text="展开全部节点" side="bottom">
-            <button onClick={onExpandAll} className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-[#0d9488]">
-              <Maximize2 size={11} strokeWidth={2.4} />
-            </button>
-          </Tip>
-          <Tip text="折叠全部节点" side="bottom">
-            <button onClick={onCollapseAll} className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-paper-900">
-              <Minimize2 size={11} strokeWidth={2.4} />
-            </button>
-          </Tip>
+          {isDraggingMode ? (
+            <Tip text="取消拖动（Esc）" side="bottom">
+              <button
+                onClick={() => { setDragging(null); setTargetSlot(null); onPreviewRef.current?.(null, null); }}
+                className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-rose-600"
+              >
+                <X size={12} strokeWidth={2.4} />
+              </button>
+            </Tip>
+          ) : (
+            <>
+              <Tip text="展开全部节点" side="bottom">
+                <button onClick={onExpandAll} className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-[#0d9488]">
+                  <Maximize2 size={11} strokeWidth={2.4} />
+                </button>
+              </Tip>
+              <Tip text="折叠全部节点" side="bottom">
+                <button onClick={onCollapseAll} className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-paper-900">
+                  <Minimize2 size={11} strokeWidth={2.4} />
+                </button>
+              </Tip>
+            </>
+          )}
         </div>
       </div>
 
-
-      {/* 行列表：行高 22px，与左栏一致。
-          ⚠️ 拖拽提示做成**绝对定位浮层**，绝不能占布局高度 ——
-          之前用 h-5 撑开会在按下手柄的瞬间把整棵树往下推 20px，
-          既破坏与左栏的逐行对齐，观感也像"整块跳了一下"。 */}
-      <div className="relative min-h-0 flex-1">
-        <div ref={scroller} className="h-full min-h-0 overflow-auto py-1">
+      {/* 主体 */}
+      <div ref={scroller} className="relative min-h-0 flex-1 overflow-auto py-1">
         {rows.length === 0 ? (
           <p className="p-3 text-xs text-paper-500">粘贴或输入 JSON 后显示节点树。</p>
-        ) : (
-          <div className="relative" style={{ height: rows.length * ROW_H }}>
-            {/* 占位方条：占据「松手后这一行会出现的位置」，行高与真实行一致。
-                比一根细线直观得多 —— 一眼看到它最终落在哪一行、什么缩进。 */}
-            {dropSlot && !dropSlot.valid && (
+        ) : isDraggingMode ? (
+          /* ============ 方块模式：只显示同级节点，像挪动积木 ============ */
+          <div className="px-2" style={{ height: siblings.length * BLOCK_H + 8 }}>
+            {siblings.map((s, i) => {
+              const isSelf = s.path === dragging;
+              const slot = blockOrder.get(s.path) ?? i;
+              return (
+                <div
+                  key={s.path}
+                  className={`absolute left-2 right-2 flex items-center gap-2 rounded-xl border px-2.5 text-[12.5px] ${
+                    isSelf
+                      ? "z-20 border-[#0d9488] bg-white shadow-lg"
+                      : "z-10 border-paper-200 bg-white/95 shadow-sm"
+                  }`}
+                  style={{
+                    height: BLOCK_H - 4,
+                    top: 4,
+                    transform: `translateY(${slot * BLOCK_H}px)`,
+                    transition: `transform ${ANIM_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+                    cursor: isSelf ? "grabbing" : "default",
+                  }}
+                >
+                  <GripVertical size={12} className={isSelf ? "text-[#0d9488]" : "text-paper-300"} />
+                  <span className="shrink-0 font-mono text-[#0d9488]">{s.keyText}</span>
+                  <span className="shrink-0 text-paper-400">:</span>
+                  <span className={`min-w-0 flex-1 truncate font-mono ${KIND_COLOR[s.valueKind] ?? ""}`}>
+                    {s.valueText}
+                  </span>
+                  {isSelf && <span className="shrink-0 rounded-full bg-[#0d9488]/12 px-1.5 py-px text-[10px] text-[#0d9488]">拖动中</span>}
+                </div>
+              );
+            })}
+            {/* 落位提示：一条细的插入标记，不是红框 */}
+            {hoverSlot !== null && (
               <div
-                className="pointer-events-none absolute left-1 right-1 z-20 rounded-lg border-2 border-dashed border-rose-400 bg-rose-500/10"
-                style={{ top: dropSlot.at * ROW_H + 1, height: ROW_H - 2 }}
+                className="pointer-events-none absolute left-2 right-2 rounded-full bg-[#0d9488]/60"
+                style={{
+                  height: 2,
+                  top: 4 + Math.max(0, Math.min(siblings.length, hoverSlot)) * BLOCK_H - 1,
+                  transition: `top ${ANIM_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+                }}
               />
             )}
-
+          </div>
+        ) : (
+          /* ============ 普通模式：完整树，行行对齐左栏 ============ */
+          <div className="relative" style={{ height: rows.length * ROW_H }}>
             {rows.map((row, i) => {
-              // 收尾括号行：左栏有这一行，右栏也要占位，否则后面全部错位。
-              // 视觉上做得极淡，避免看起来像「重复的节点」。
+              // 收尾括号行：左栏有这一行，右栏也要占位，否则后面全部错位
               if (row.kind === "close") {
-                const vClose = i;
                 return (
                   <div
                     key={`${row.index}-${row.path}-close`}
-                    className="absolute left-0 flex w-full items-center text-[12.5px] text-paper-300 transition-transform duration-100"
-                    style={{ height: ROW_H, transform: `translateY(${vClose * ROW_H}px)`, paddingLeft: 4 + row.depth * 16 }}
+                    className="absolute left-0 flex w-full items-center text-[12.5px] text-paper-300"
+                    style={{ height: ROW_H, transform: `translateY(${i * ROW_H}px)`, paddingLeft: 4 + row.depth * 16 }}
                     aria-hidden
                   >
                     <span className="w-3 shrink-0" />
@@ -283,15 +293,11 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
 
               const isFoldable = !row.foldPath ? row.kind === "open" : true;
               const isExpanded = row.kind === "open" && !row.foldPath;
-              const vIndex = i;
-              const isBeingDragged = dragging === row.path;
 
               return (
                 <div
                   key={`${row.index}-${row.path}-${row.kind}`}
                   onMouseEnter={() => {
-                    // ⚠️ 拖动中禁止悬停高亮：行在动，鼠标会不停进出不同行，
-                    // 每次进出都 setState + 通知父级高亮，会引发持续重渲染（抖动源之一）。
                     if (dragging) return;
                     setHovered(row.path);
                     onHoverBlock([row.blockStart, row.blockEnd]);
@@ -301,20 +307,14 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
                     setHovered((prev) => (prev === row.path ? null : prev));
                     onHoverBlock(null);
                   }}
-                  className={`group absolute left-0 flex w-full items-center gap-1 rounded-lg px-1 text-[12.5px] transition-all duration-100 ${
-                    isBeingDragged ? "z-10 scale-[1.01] bg-[#0d9488]/10 opacity-50 shadow-sm"
-                      : hovered === row.path ? "bg-amber-300/35" : "hover:bg-amber-200/25"
+                  className={`group absolute left-0 flex w-full items-center gap-1 rounded-lg px-1 text-[12.5px] ${
+                    hovered === row.path ? "bg-amber-300/35" : "hover:bg-amber-200/25"
                   }`}
-                  style={{
-                    height: ROW_H,
-                    transform: `translateY(${vIndex * ROW_H}px)`,
-                    paddingLeft: 4 + row.depth * 16,
-                  }}
+                  style={{ height: ROW_H, transform: `translateY(${i * ROW_H}px)`, paddingLeft: 4 + row.depth * 16 }}
                 >
-                  {/* 拖拽手柄 */}
                   {row.keyText !== null && onMove ? (
                     <button
-                      onPointerDown={(e) => onPointerDown(e, row)}
+                      onPointerDown={(e) => beginDrag(e, row)}
                       title="拖动调整同级顺序"
                       className="grid h-4 w-3 shrink-0 cursor-grab place-items-center text-paper-300 opacity-0 transition hover:text-paper-600 group-hover:opacity-100 active:cursor-grabbing"
                       style={{ touchAction: "none" }}
@@ -323,7 +323,6 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
                     </button>
                   ) : <span className="w-3 shrink-0" />}
 
-                  {/* 折叠箭头：容器才显示 */}
                   {isFoldable ? (
                     <button
                       onClick={() => onToggle(row.path)}
@@ -340,11 +339,13 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
                       <span className="shrink-0 text-paper-400">:</span>
                     </>
                   )}
-                  <span className={`min-w-0 flex-1 truncate font-mono ${row.kind === "open" || row.kind === "inline" ? "text-paper-500" : (KIND_COLOR[row.valueKind] ?? "")}`} title={row.valueText}>
-                    {row.foldPath ? `${row.text.trim().replace(/^"?(?:[^"\\]|\\.)*"?:\s*/, "")}` : row.kind === "open" ? row.valueText : row.valueText}
+                  <span
+                    className={`min-w-0 flex-1 truncate font-mono ${row.kind === "open" || row.kind === "inline" ? "text-paper-500" : (KIND_COLOR[row.valueKind] ?? "")}`}
+                    title={row.valueText}
+                  >
+                    {row.valueText}
                   </span>
 
-                  {/* 复制：路径 / 值，用图标+颜色+小字区分 */}
                   <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
                     <button
                       onClick={() => navigator.clipboard?.writeText(row.path)}
@@ -364,25 +365,16 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
                 </div>
               );
             })}
-
           </div>
         )}
       </div>
 
-      </div>
-
       {/* 底部状态行 */}
       <div className="flex h-6 shrink-0 items-center gap-1.5 border-t border-paper-200/70 px-3 text-[11px] text-paper-500">
-        {/* 拖拽提示统一走这行，不再用顶部浮层 —— 浮层会盖住第一个节点。
-            有错误原因时优先显示原因（红色），否则显示正在拖动谁。 */}
-        {dragging && hint ? (
-          <span className="truncate font-medium text-rose-600">{hint}</span>
-        ) : draggingRow ? (
-          <span className="truncate">正在拖动「{draggingRow.keyText ?? draggingRow.path}」· 只可同级调序</span>
-        ) : hint ? (
-          <span className="truncate font-medium text-rose-600">{hint}</span>
+        {isDraggingMode ? (
+          <span className="truncate text-[#0d9488]">上下移动选择位置 · 松手生效 · Esc 取消</span>
         ) : (
-          <span className="truncate">悬停节点高亮源码 · 拖动行首手柄调序 · 箭头折叠/展开</span>
+          <span className="truncate">悬停节点高亮源码 · 拖手柄调整同级顺序 · 箭头折叠/展开</span>
         )}
       </div>
     </div>
