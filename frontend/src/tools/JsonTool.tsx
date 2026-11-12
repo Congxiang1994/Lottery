@@ -14,17 +14,17 @@
  * 字段顺序改为**右侧节点树里拖拽调序**（仅同级），不再提供按字母的「键名排序」——
  * 字符序对业务字段没有意义，人工拖出自己想要的顺序更直观。
  */
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { FileJson, Quote, Trash2, Undo2, UnfoldVertical } from "lucide-react";
 import { escapeJsonString, unescapeJsonString } from "./jsonEscape";
 import { parseInput } from "./json/parse.ts";
 import { formatJson, minifyJson, prettyJson, styleToInline, type Indent, type FmtStyle } from "./json/format.ts";
 import type { InputKind, ParseResult } from "./json/types.ts";
-import type { EditorStatus } from "./json/views/JsonEditor.tsx";
+import { buildSourceLines, containerPaths, foldablePaths } from "./json/views/sourceLines.ts";
 import { moveSibling } from "./json/views/treeModel.ts";
 import Tip from "./Tip";
 
-const JsonEditor = lazy(() => import("./json/views/JsonEditor.tsx"));
+const SourceView = lazy(() => import("./json/views/SourceView.tsx"));
 const TreeView = lazy(() => import("./json/views/TreeView.tsx"));
 
 const STORAGE_KEY = "tools_json_v2";
@@ -90,6 +90,10 @@ export default function JsonTool() {
     try { localStorage.setItem(STYLE_KEY, fmtStyle); } catch { /* 忽略 */ }
   }, [fmtStyle]);
   const [undo, setUndo] = useState<{ text: string; label: string } | null>(null);
+  /** 展开/折叠的节点路径集合 —— 左右两栏共用这一份，保证行行对齐 */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(["/"]));
+  /** 左栏当前高亮的行区间（悬停节点树时由右栏回调写入） */
+  const [highlight, setHighlight] = useState<[number, number] | null>(null);
   const [toast, setToast] = useState("");
 
   useEffect(() => {
@@ -142,20 +146,6 @@ export default function JsonTool() {
     } catch { /* 有错时静默，状态行已提示 */ }
   };
 
-  /**
-   * 节点树里同级拖拽调序 → 回写源码。
-   *
-   * 只换同级顺序（对象 key 序 / 数组元素序），不改变嵌套关系；
-   * 回写时沿用当前缩进与格式风格，避免「拖一下就变回另一种样式」。
-   */
-  const handleMove = (parentPath: string, fromIndex: number, toIndex: number) => {
-    if (!result.ok || result.value === undefined) return;
-    const moved = moveSibling(result.value, parentPath, fromIndex, toIndex);
-    // prettyJson 要的是 Indent（2 | 4 | "tab"），不是展开后的 "\t"
-    const next = prettyJson(moved, { indent, inlineScalarArrays: styleToInline(fmtStyle) });
-    if (next !== text) setWithUndo(next, "已调整同级的字段顺序");
-  };
-
   /* ------------------------- 转义 / 反转义 ------------------------- */
   const unescapeInfo = useMemo(() => unescapeJsonString(text), [text]);
   const restorable = unescapeInfo.changes + (unescapeInfo.strippedQuotes ? 1 : 0);
@@ -169,20 +159,70 @@ export default function JsonTool() {
     setWithUndo(unescapeInfo.text, label);
   };
 
-  /* ------------------------- 左框底部状态行 ------------------------- */
-  const editorStatus: EditorStatus = useMemo(() => {
-    if (!text.trim()) return { tone: "idle", text: "等待输入 JSON" };
-    if (result.ok) {
-      return { tone: "ok", text: `格式有效 · ${KIND_LABEL[result.kind]} · ${result.stats.keys} 键 · 深度 ${result.stats.depth}` };
-    }
-    const err = result.errors[0];
-    if (!err) return { tone: "error", text: "格式无效" };
-    const where = err.line > 0 ? `第 ${err.line} 行第 ${err.col} 列：` : "";
-    return { tone: "error", text: `${where}${err.message}` };
-  }, [text, result]);
-
   /** 无效时把光标定位到出错位置，方便直接改 */
   const err = result.errors[0];
+
+  /* ------------------------- 行模型（左右两栏共用） ------------------------- */
+  /** 可折叠的路径集合（纯标量数组在高效风格下内联，不可折叠） */
+  const foldable = useMemo(
+    () => (result.ok && result.value !== undefined ? foldablePaths(result.value, styleToInline(fmtStyle)) : new Set<string>()),
+    [result, fmtStyle],
+  );
+
+  /** 数据或风格变化时重置展开状态：默认展开根 + 第一层，其它折叠 */
+  const firstDoc = useRef<unknown>(null);
+  useEffect(() => {
+    if (!result.ok || result.value === undefined) return;
+    if (firstDoc.current === result.value) return;
+    firstDoc.current = result.value;
+    const init = new Set<string>();
+    if (foldable.has("/")) init.add("/");
+    for (const p of containerPaths(result.value)) {
+      // 只自动展开到第二层，深层默认折叠，避免一进来就爆屏
+      const depth = p.split("/").filter(Boolean).length;
+      if (depth <= 1 && foldable.has(p)) init.add(p);
+    }
+    setExpanded(init);
+    setHighlight(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
+
+  /** 源码行 —— 左栏渲染它，右栏也从它派生，因此天然对齐 */
+  const lines = useMemo(() => {
+    if (!result.ok || result.value === undefined) return [];
+    return buildSourceLines(result.value, {
+      indent,
+      expanded,
+      inlineScalarArrays: styleToInline(fmtStyle),
+    });
+  }, [result, indent, expanded, fmtStyle]);
+
+  const toggleNode = (path: string) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(path)) next.delete(path); else next.add(path);
+    return next;
+  });
+
+  const expandAll = () => setExpanded(new Set(foldable));
+  const collapseAll = () => setExpanded(new Set());
+
+  /** 拖拽调序后：值变了 → 行模型重算；展开状态保留 */
+  const handleMove = (parentPath: string, fromIndex: number, toIndex: number) => {
+    if (!result.ok || result.value === undefined) return;
+    const moved = moveSibling(result.value, parentPath, fromIndex, toIndex);
+    const next = prettyJson(moved, { indent, inlineScalarArrays: styleToInline(fmtStyle) });
+    if (next !== text) setWithUndo(next, "已调整同级的字段顺序");
+  };
+
+  /** 左栏底部状态行文案 */
+  const statusText = useMemo(() => {
+    if (!text.trim()) return { tone: "idle" as const, text: "等待输入 JSON" };
+    if (result.ok) return { tone: "ok" as const, text: `格式有效 · ${KIND_LABEL[result.kind]} · ${result.stats.keys} 键 · 深度 ${result.stats.depth}` };
+    const e0 = result.errors[0];
+    if (!e0) return { tone: "error" as const, text: "格式无效" };
+    const where = e0.line > 0 ? `第 ${e0.line} 行第 ${e0.col} 列：` : "";
+    return { tone: "error" as const, text: `${where}${e0.message}` };
+  }, [text, result]);
 
   return (
     <div className="space-y-3">
@@ -284,37 +324,31 @@ export default function JsonTool() {
           - 两框各自 h-full，网格 items-stretch 保证同高；
           - min-h 兜住矮视口，超出时整页滚动而不是把状态行裁掉。 */}
       <div className="grid min-h-[340px] flex-1 grid-cols-1 items-stretch gap-4 lg:grid-cols-2" style={{ minHeight: "max(340px, calc(100vh - 400px))" }}>
+        {/* 左栏：按行模型渲染的源码（与右栏行行对齐） */}
         <div className="h-full min-h-0">
-          <Suspense fallback={<BoxSkeleton label="加载编辑器…" />}>
-            <JsonEditor value={text} onChange={setText} status={editorStatus} />
+          <Suspense fallback={<BoxSkeleton label="加载源码…" />}>
+            <SourceView
+              lines={lines}
+              highlight={highlight}
+              onExpand={(p) => setExpanded((prev) => new Set(prev).add(p))}
+              onReplace={(t) => setWithUndo(t, "已粘贴内容")}
+            />
           </Suspense>
         </div>
 
+        {/* 右栏：节点树（同一份行模型派生） */}
         <div className="h-full min-h-0">
-          {result.ok && result.value !== undefined ? (
-            <Suspense fallback={<BoxSkeleton label="加载节点树…" />}>
-              <TreeView value={result.value} onMove={handleMove} />
-            </Suspense>
-          ) : (
-            <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-paper-200 bg-white/60">
-              <div className="flex h-7 shrink-0 items-center gap-2 border-b border-paper-200/70 px-3 text-xs text-paper-600">
-                节点树
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 p-4">
-                {err ? (
-                  <>
-                    <p className="text-sm text-rose-700">{err.message}</p>
-                    <p className="text-[11px] text-paper-500">
-                      修正左侧 JSON 后，这里会自动显示可折叠的节点树。
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-sm text-paper-500">左侧输入 JSON 后，这里显示可折叠的节点树。</p>
-                )}
-              </div>
-              <div className="h-6 shrink-0 border-t border-paper-200/70" />
-            </div>
-          )}
+          <Suspense fallback={<BoxSkeleton label="加载节点树…" />}>
+            <TreeView
+              lines={lines}
+              expanded={expanded}
+              onToggle={toggleNode}
+              onExpandAll={expandAll}
+              onCollapseAll={collapseAll}
+              onHoverBlock={setHighlight}
+              onMove={handleMove}
+            />
+          </Suspense>
         </div>
       </div>
     </div>

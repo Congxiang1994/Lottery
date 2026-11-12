@@ -24,7 +24,9 @@ export interface FlatNode {
   childCount: number;
   /** 父容器路径；根节点为 null */
   parentPath: string | null;
-  /** 在父容器里的序号（对象 key 按插入序、数组按下标） */
+  /** 在父容器里的序号（对象 key 按插入序、数组按下标）—— 拖拽用 */
+  index_in_parent: number;
+  /** 旧名，保留兼容；恒等于 index_in_parent */
   index: number;
   /** 父容器是数组时为 true —— 决定拖拽语义是「换元素顺序」 */
   parentIsArray: boolean;
@@ -79,6 +81,7 @@ export function flatten(root: unknown, expanded: Set<string>): FlatNode[] {
     out.push({
       path, depth, key, kind, value: v, text, expandable, expanded: isExp, childCount: entries.length,
       parentPath: parentParts === null ? null : pointerOf(parentParts),
+      index_in_parent: index,
       index,
       parentIsArray,
     });
@@ -92,6 +95,18 @@ export function flatten(root: unknown, expanded: Set<string>): FlatNode[] {
 }
 
 /* ------------------------- 同级重排（拖拽调序） ------------------------- */
+
+/**
+ * 拖拽判据只需要这几个字段 —— 定义为最小结构，
+ * 让 FlatNode 与 SourceLine 都能直接传进来（两者字段命名保持一致）。
+ */
+export interface SiblingLike {
+  path: string;
+  parentPath: string | null;
+  /** 在父容器里的序号（不是行号！） */
+  index_in_parent: number;
+  parentIsArray?: boolean;
+}
 
 /** 同级移动的合法性：必须同父、且不是根节点本身 */
 export interface MoveCheck {
@@ -113,15 +128,16 @@ export interface MoveCheck {
  * @param fromPath 被拖节点路径
  * @param toIndex  目标插入位（0..兄弟数，含末尾）
  */
-export function canMoveSibling(nodes: FlatNode[], fromPath: string, toIndex: number): MoveCheck {
+export function canMoveSibling(nodes: SiblingLike[], fromPath: string, toIndex: number): MoveCheck {
   const from = nodes.find((n) => n.path === fromPath);
   if (!from) return { ok: false, reason: "找不到被拖动的节点" };
   if (from.parentPath === null) return { ok: false, reason: "根节点没有同级，无法排序" };
   const siblings = nodes.filter((n) => n.parentPath === from.parentPath);
   if (toIndex < 0 || toIndex > siblings.length) return { ok: false, reason: "目标位置越界" };
   // 摘下后插入：原位置在插入位之前，实际下标会前移一位
-  const insertAt = toIndex > from.index ? toIndex - 1 : toIndex;
-  if (insertAt === from.index) return { ok: false, reason: "位置没有变化" };
+  const cur = from.index_in_parent;
+  const insertAt = toIndex > cur ? toIndex - 1 : toIndex;
+  if (insertAt === cur) return { ok: false, reason: "位置没有变化" };
   return { ok: true, toIndex: insertAt };
 }
 
@@ -130,7 +146,7 @@ export function canMoveSibling(nodes: FlatNode[], fromPath: string, toIndex: num
  * 只有**同一父容器**的两个节点之间才允许换位（用户要求「只允许同一层」），
  * 跨层级一律拒绝，避免把字段拖进别的对象、改变 JSON 结构。
  */
-export function canDropOn(nodes: FlatNode[], fromPath: string, targetPath: string): MoveCheck {
+export function canDropOn(nodes: SiblingLike[], fromPath: string, targetPath: string): MoveCheck {
   const from = nodes.find((n) => n.path === fromPath);
   const target = nodes.find((n) => n.path === targetPath);
   if (!from || !target) return { ok: false, reason: "节点不存在" };

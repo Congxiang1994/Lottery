@@ -31,7 +31,7 @@ export function sortDeep(v: unknown): unknown {
 /* ------------------------- 美化序列化器 ------------------------- */
 
 /** 标量（含 LosslessNumber）→ JSON 字面量文本 */
-function scalarText(v: unknown): string {
+export function scalarText(v: unknown): string {
   if (v === null) return "null";
   if (isLN(v)) return v.value; // 大整数原样写回，绝不 Number()
   if (typeof v === "string") return JSON.stringify(v);
@@ -42,7 +42,7 @@ function scalarText(v: unknown): string {
 }
 
 /** 数组里全是标量（无对象/数组/LosslessNumber 之外的东西） */
-function isScalarArray(v: unknown[]): boolean {
+export function isScalarArray(v: unknown[]): boolean {
   return v.every((x) => x === null || isLN(x) || typeof x !== "object");
 }
 

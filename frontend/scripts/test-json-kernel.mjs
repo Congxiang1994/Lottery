@@ -16,6 +16,7 @@ import { parseLossless, stringifyLossless, toDisplayString, toSafeNumber, isUnsa
 import { computeStats } from "../src/tools/json/stats.ts";
 import { formatJson, minifyJson, sortDeep, toCamel, toSnake, convertKeys, detectKeyCase, styleToInline } from "../src/tools/json/format.ts";
 import { flatten, defaultExpanded, allExpandablePaths, kindOf, isContainer, pointerOf, canMoveSibling, canDropOn, moveSibling } from "../src/tools/json/views/treeModel.ts";
+import { buildSourceLines, blockOf, foldablePaths, containerPaths } from "../src/tools/json/views/sourceLines.ts";
 
 let failed = 0;
 let passed = 0;
@@ -220,6 +221,54 @@ eq("move·值不变", toDisplayString(reordered.a), "1");
 // 大整数在重排中不丢精度
 const bigOrder = parseLossless('{"x":1,"id":12345678901234567890}');
 eq("move·重排保大整数", stringifyLossless(moveSibling(bigOrder, "", 0, 1)).includes("12345678901234567890"), true);
+
+/* ==================== 5c. 行模型（左右两栏行行对齐的基础） ==================== */
+const lmVal = parseLossless('{"name":"lottery","tools":["a","b"],"config":{"theme":"auto","a":1}}');
+
+// 展开根 + config
+const lmAll = buildSourceLines(lmVal, { indent: 2, expanded: new Set(["/", "/config"]), inlineScalarArrays: false });
+eq("lines·总数", lmAll.length, 8);
+eq("lines·首行是根开括号", lmAll[0].text, "{");
+eq("lines·末行是根闭括号", lmAll[lmAll.length - 1].text, "}");
+eq("lines·根占满整块", JSON.stringify([lmAll[0].blockStart, lmAll[0].blockEnd]), "[0,7]");
+eq("lines·config 整块区间", JSON.stringify(blockOf(lmAll, "/config")), "[3,6]");
+eq("lines·叶子单行", JSON.stringify(blockOf(lmAll, "/name")), "[1,1]");
+ok("lines·行号连续", lmAll.every((l, i) => l.index === i));
+// 关键：每个节点在行模型里都有确定的 block 区间 → 悬停即可高亮
+ok("lines·所有节点都有 block 区间",
+  ["/", "/name", "/tools", "/config", "/config/theme", "/config/a"].every((p) => blockOf(lmAll, p) !== null));
+
+// 折叠 config：行数减少，内容变 ...
+const lmFold = buildSourceLines(lmVal, { indent: 2, expanded: new Set(["/"]), inlineScalarArrays: false });
+eq("lines·折叠后行数", lmFold.length, 5);
+ok("lines·折叠行显示 ...", lmFold.some((l) => l.text.includes("config\": {...}")));
+eq("lines·折叠行标记 foldPath 指向 config", lmFold.some((l) => l.foldPath === "/config"), true);
+
+// 全部折叠：只剩根一行
+const lmNone = buildSourceLines(lmVal, { indent: 2, expanded: new Set(), inlineScalarArrays: false });
+eq("lines·全折叠只剩一行", lmNone.length, 1);
+eq("lines·全折叠显示 {...}", lmNone[0].text, "{...}");
+
+// 高效风格：纯标量数组内联成单行，不可折叠
+const lmCompact = buildSourceLines(lmVal, { indent: 2, expanded: new Set(["/"]), inlineScalarArrays: true });
+ok("lines·高效内联标量数组", lmCompact.some((l) => l.text.includes('"tools": ["a", "b"]')));
+eq("lines·内联数组不可折叠", foldablePaths(lmVal, true).has("/tools"), false);
+eq("lines·非内联时可折叠", foldablePaths(lmVal, false).has("/tools"), true);
+
+// 缩进生效
+eq("lines·2 空格缩进", lmAll[1].text.startsWith('  "name"'), true);
+eq("lines·4 空格缩进", buildSourceLines(lmVal, { indent: 4, expanded: new Set(["/"]), inlineScalarArrays: false })[1].text.startsWith('    "name"'), true);
+eq("lines·Tab 缩进", buildSourceLines(lmVal, { indent: "tab", expanded: new Set(["/"]), inlineScalarArrays: false })[1].text.startsWith('\t"name"'), true);
+
+// 大整数无损
+const lmBig = buildSourceLines(parseLossless('{"id":12345678901234567890}'), { indent: 2, expanded: new Set(["/"]) });
+ok("lines·大整数无损", lmBig.some((l) => l.text.includes("12345678901234567890")));
+
+// 拖拽所需字段齐全
+const lc = lmAll.find((l) => l.path === "/config/a");
+eq("lines·parentPath", lc.parentPath, "/config");
+eq("lines·index_in_parent", lc.index_in_parent, 1);
+ok("lines·父是对象时 parentIsArray=false", lc.parentIsArray === false);
 
 /* ========================= 6. 全链路大整数 ========================= */
 eq("chain·parse→format→tree", (() => {
