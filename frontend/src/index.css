@@ -1013,3 +1013,43 @@ html.theme-anim ::-webkit-scrollbar-thumb {
 .site-night .md-preview .hljs-attribute, .site-night .md-preview .hljs-property, .site-night .md-preview .hljs-variable, .site-night .md-preview .hljs-template-variable, .site-night .md-preview .hljs-params { color: #79c0ff; }
 .site-night .md-preview .hljs-deletion { color: #ffdcd7; }
 
+
+/* ============================================================================
+   JSON 工作台 · CodeMirror 6 主题变量（跟随全站亮/暗两档）
+   ----------------------------------------------------------------------------
+   编辑器本体用 EditorView.theme 读这些变量，不引自带主题 —— 自带配色会和
+   paper 色板 / .site-night 打架（见 docs/json-studio-refactor-plan.md §2.1）。
+   改色只改这里，不要去组件里写死颜色。
+   ========================================================================== */
+:root {
+  --cm-fg: #3d2b1f;
+  --cm-caret: #0d9488;
+  --cm-gutter: #b8a890;
+  --cm-active: rgba(13, 148, 136, 0.06);
+  --cm-sel: rgba(13, 148, 136, 0.20);
+  --cm-match: rgba(201, 134, 0, 0.22);
+  --cm-search: rgba(201, 134, 0, 0.35);
+  --cm-key: #0d9488;
+  --cm-str: #b45309;
+  --cm-num: #7c3aed;
+  --cm-bool: #7c3aed;
+  --cm-null: #9c8769;
+  --cm-punc: #8b7355;
+}
+.site-night {
+  --cm-fg: #f2e9dc;
+  --cm-caret: #5eead4;
+  --cm-gutter: #6e5f51;
+  --cm-active: rgba(94, 234, 212, 0.07);
+  --cm-sel: rgba(94, 234, 212, 0.22);
+  --cm-match: rgba(232, 195, 122, 0.22);
+  --cm-search: rgba(232, 195, 122, 0.32);
+  --cm-key: #5eead4;
+  --cm-str: #f2b866;
+  --cm-num: #c4b5fd;
+  --cm-bool: #c4b5fd;
+  --cm-null: #9c8a77;
+  --cm-punc: #b5a18c;
+}
+.json-editor .cm-editor { height: 100%; }
+.json-editor .cm-editor.cm-focused { outline: none; }

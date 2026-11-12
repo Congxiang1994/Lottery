@@ -99,7 +99,7 @@ export const APPS: AppEntry[] = [
   {
     id: "tools",
     title: "实用小工具",
-    desc: "开发者随身工具箱：时间戳转换、JSON 格式化与转义/反转义、Markdown 预览、随手画板，一处搞定。",
+    desc: "开发者随身工具箱：时间戳转换、JSON 工作台（格式化 / 树与网格 / 查询 / Diff / 转换 / Schema / 代码生成 / JSONL）、Markdown 预览、随手画板。",
     icon: Wrench,
     tags: ["小工具", "效率"],
     href: "/tools",
