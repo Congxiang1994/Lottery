@@ -15,7 +15,7 @@ import { parseInput, translateError, parseJsonl, resultToText } from "../src/too
 import { parseLossless, stringifyLossless, toDisplayString, toSafeNumber, isUnsafeIntegerLiteral, collectUnsafeIntegers, hasLossless } from "../src/tools/json/lossless.ts";
 import { computeStats } from "../src/tools/json/stats.ts";
 import { formatJson, minifyJson, sortDeep, toCamel, toSnake, convertKeys, detectKeyCase, styleToInline } from "../src/tools/json/format.ts";
-import { flatten, defaultExpanded, allExpandablePaths, kindOf, isContainer, pointerOf } from "../src/tools/json/views/treeModel.ts";
+import { flatten, defaultExpanded, allExpandablePaths, kindOf, isContainer, pointerOf, canMoveSibling, canDropOn, moveSibling } from "../src/tools/json/views/treeModel.ts";
 
 let failed = 0;
 let passed = 0;
@@ -177,6 +177,49 @@ eq("tree·容器文本", collapsed[0].text, "Object(3)");
 eq("tree·数组文本", flatten(parseLossless("[1,2]"), new Set())[0].text, "Array(2)");
 eq("tree·大整数叶子展示", flatten(parseLossless(BIG), new Set(["/"]))[1].text, "12345678901234567890");
 eq("tree·null 叶子", kindOf(null), "null");
+
+/* ==================== 5b. 同级拖拽调序 ==================== */
+const orderVal = parseLossless('{"a":1,"b":2,"c":3,"list":["x","y","z"],"cfg":{"k":1,"m":2}}');
+const orderRows = flatten(orderVal, new Set(["/", "/list", "/cfg"]));
+
+// 结构字段
+eq("move·parentPath 正确", orderRows.find((r) => r.path === "/b").parentPath, "/");
+eq("move·index 正确", orderRows.find((r) => r.path === "/c").index, 2);
+eq("move·数组标记", orderRows.find((r) => r.path === "/list/0").parentIsArray, true);
+eq("move·根无父", orderRows[0].parentPath, null);
+
+// 对象同级换位：a(0) 移到 b 之后（toIndex=2 → 摘下后插到 1）
+const c1 = canMoveSibling(orderRows, "/a", 2);
+eq("move·同级允许", c1.ok, true);
+eq("move·摘下后下标换算", c1.toIndex, 1);
+eq("move·对象重排结果", stringifyLossless(moveSibling(orderVal, "", 0, 1)), '{"b":2,"a":1,"c":3,"list":["x","y","z"],"cfg":{"k":1,"m":2}}');
+// 移到末尾
+eq("move·移到末尾", stringifyLossless(moveSibling(orderVal, "", 0, 2)).startsWith('{"b":2,"c":3,"a":1'), true);
+
+// 数组元素换位
+eq("move·数组重排", stringifyLossless(moveSibling(orderVal, "/list", 0, 2)).includes('"list":["y","z","x"]'), true);
+// 嵌套对象内部换位
+eq("move·嵌套重排", stringifyLossless(moveSibling(orderVal, "/cfg", 0, 1)).includes('"cfg":{"m":2,"k":1}'), true);
+
+// 跨层必须拒绝
+eq("move·跨层拒绝", canDropOn(orderRows, "/a", "/cfg/k").ok, false);
+ok("move·跨层给理由", canDropOn(orderRows, "/a", "/cfg/k").reason.includes("同一层级"));
+eq("move·拖到自己拒绝", canDropOn(orderRows, "/a", "/a").ok, false);
+eq("move·根节点拒绝", canMoveSibling(orderRows, "/", 0).ok, false);
+eq("move·越界拒绝", canMoveSibling(orderRows, "/a", 99).ok, false);
+eq("move·位置没变拒绝", canMoveSibling(orderRows, "/a", 0).ok, false);
+
+// 同级允许
+eq("move·同级对象允许", canDropOn(orderRows, "/a", "/c").ok, true);
+eq("move·同级数组允许", canDropOn(orderRows, "/list/0", "/list/2").ok, true);
+
+// 语义不变：重排后仍是同样的键值集合（只是顺序变了）
+const reordered = moveSibling(orderVal, "", 0, 2);
+eq("move·语义不变键集合", JSON.stringify(Object.keys(reordered).sort()), JSON.stringify(["a", "b", "c", "cfg", "list"]));
+eq("move·值不变", toDisplayString(reordered.a), "1");
+// 大整数在重排中不丢精度
+const bigOrder = parseLossless('{"x":1,"id":12345678901234567890}');
+eq("move·重排保大整数", stringifyLossless(moveSibling(bigOrder, "", 0, 1)).includes("12345678901234567890"), true);
 
 /* ========================= 6. 全链路大整数 ========================= */
 eq("chain·parse→format→tree", (() => {

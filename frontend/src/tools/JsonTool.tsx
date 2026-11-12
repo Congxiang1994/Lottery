@@ -7,16 +7,21 @@
  *  - 左框底部一行字说明「格式是否有效 / 无效错在第几行」；
  *  - 布局只有两个框，左右高度严格对齐（头部 h-7 + 主体自适应 + 底部 h-6）。
  *
- * 保留：格式化/压缩（就地生效）、2/4/Tab 缩进、键名排序、转义/反转义成对往返、
- * 示例、清空、撤销条、中文错误定位、大整数无损、localStorage 持久化、统计条。
+ * 保留：格式化/压缩（就地生效）、2/4/Tab 缩进、格式风格（标准/高效）、
+ * 转义/反转义成对往返、示例、清空、撤销条、中文错误定位、大整数无损、
+ * localStorage 持久化、统计条。
+ *
+ * 字段顺序改为**右侧节点树里拖拽调序**（仅同级），不再提供按字母的「键名排序」——
+ * 字符序对业务字段没有意义，人工拖出自己想要的顺序更直观。
  */
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { FileJson, Quote, Trash2, Undo2, UnfoldVertical } from "lucide-react";
 import { escapeJsonString, unescapeJsonString } from "./jsonEscape";
 import { parseInput } from "./json/parse.ts";
-import { formatJson, minifyJson, type Indent, type FmtStyle } from "./json/format.ts";
+import { formatJson, minifyJson, prettyJson, styleToInline, type Indent, type FmtStyle } from "./json/format.ts";
 import type { InputKind, ParseResult } from "./json/types.ts";
 import type { EditorStatus } from "./json/views/JsonEditor.tsx";
+import { moveSibling } from "./json/views/treeModel.ts";
 
 const JsonEditor = lazy(() => import("./json/views/JsonEditor.tsx"));
 const TreeView = lazy(() => import("./json/views/TreeView.tsx"));
@@ -77,7 +82,6 @@ function loadStyle(): FmtStyle {
 export default function JsonTool() {
   const [text, setText] = useState<string>(loadText);
   const [indent, setIndent] = useState<Indent>(2);
-  const [sortKeys, setSortKeys] = useState(false);
   const [view, setView] = useState<"pretty" | "min">("pretty");
   const [fmtStyle, setFmtStyle] = useState<FmtStyle>(loadStyle);
 
@@ -118,7 +122,7 @@ export default function JsonTool() {
     setView(mode);
     if (!text.trim()) { setToast("输入为空，无需格式化"); return; }
     try {
-      const next = mode === "min" ? minifyJson(text) : formatJson(text, indent, sortKeys, fmtStyle);
+      const next = mode === "min" ? minifyJson(text) : formatJson(text, indent, false, fmtStyle);
       if (next === text) { setToast(mode === "min" ? "已是压缩形态" : "已是格式化形态"); return; }
       setWithUndo(next, mode === "min" ? "已压缩源码" : `已${FMT_STYLE_LABEL[fmtStyle]}格式化`);
     } catch {
@@ -126,16 +130,29 @@ export default function JsonTool() {
     }
   };
 
-  /** 切换缩进 / 排序 / 风格时，若当前已是格式化形态则立即重排，让选项「看得见」 */
-  const reapplyIfFormatted = (nextIndent: Indent, nextSort: boolean, nextStyle: FmtStyle = fmtStyle) => {
+  /** 切换缩进 / 风格时，若当前已是格式化形态则立即重排，让选项「看得见」 */
+  const reapplyIfFormatted = (nextIndent: Indent, nextStyle: FmtStyle = fmtStyle) => {
     setIndent(nextIndent);
-    setSortKeys(nextSort);
     setFmtStyle(nextStyle);
     if (view !== "pretty" || !text.trim()) return;
     try {
-      const next = formatJson(text, nextIndent, nextSort, nextStyle);
+      const next = formatJson(text, nextIndent, false, nextStyle);
       if (next !== text) setText(next);
     } catch { /* 有错时静默，状态行已提示 */ }
+  };
+
+  /**
+   * 节点树里同级拖拽调序 → 回写源码。
+   *
+   * 只换同级顺序（对象 key 序 / 数组元素序），不改变嵌套关系；
+   * 回写时沿用当前缩进与格式风格，避免「拖一下就变回另一种样式」。
+   */
+  const handleMove = (parentPath: string, fromIndex: number, toIndex: number) => {
+    if (!result.ok || result.value === undefined) return;
+    const moved = moveSibling(result.value, parentPath, fromIndex, toIndex);
+    // prettyJson 要的是 Indent（2 | 4 | "tab"），不是展开后的 "\t"
+    const next = prettyJson(moved, { indent, inlineScalarArrays: styleToInline(fmtStyle) });
+    if (next !== text) setWithUndo(next, "已调整同级的字段顺序");
   };
 
   /* ------------------------- 转义 / 反转义 ------------------------- */
@@ -184,18 +201,13 @@ export default function JsonTool() {
         </div>
         <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
           {([2, 4, "tab"] as const).map((n) => (
-            <button key={n} onClick={() => reapplyIfFormatted(n, sortKeys)} className={`rounded-lg px-2.5 py-1.5 transition ${
+            <button key={n} onClick={() => reapplyIfFormatted(n)} className={`rounded-lg px-2.5 py-1.5 transition ${
               indent === n ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
             }`}>
               {n === "tab" ? "Tab" : `${n} 空格`}
             </button>
           ))}
         </div>
-        <label className="flex cursor-pointer items-center gap-1.5 text-sm text-paper-700">
-          <input type="checkbox" checked={sortKeys} onChange={(e) => reapplyIfFormatted(indent, e.target.checked)} className="h-4 w-4 accent-[#0d9488]" />
-          键名排序
-        </label>
-
         {/* 格式化风格：标准（传统全展开）/ 高效（纯标量数组内联）。
             前面加「格式」小字标签，避免两个孤零零的「标准/高效」让人看不懂。 */}
         <div
@@ -206,7 +218,7 @@ export default function JsonTool() {
           {FMT_STYLES.map((s) => (
             <button
               key={s.key}
-              onClick={() => reapplyIfFormatted(indent, sortKeys, s.key)}
+              onClick={() => reapplyIfFormatted(indent, s.key)}
               title={s.hint}
               className={`rounded-lg px-2.5 py-1.5 transition ${
                 fmtStyle === s.key ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
@@ -258,7 +270,7 @@ export default function JsonTool() {
         <div className="h-full min-h-0">
           {result.ok && result.value !== undefined ? (
             <Suspense fallback={<BoxSkeleton label="加载节点树…" />}>
-              <TreeView value={result.value} />
+              <TreeView value={result.value} onMove={handleMove} />
             </Suspense>
           ) : (
             <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-paper-200 bg-white/60">
