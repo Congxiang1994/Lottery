@@ -164,13 +164,6 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
           之前用 h-5 撑开会在按下手柄的瞬间把整棵树往下推 20px，
           既破坏与左栏的逐行对齐，观感也像"整块跳了一下"。 */}
       <div className="relative min-h-0 flex-1">
-        {dragging && (
-          <div className={`pointer-events-none absolute inset-x-0 top-0 z-30 border-b px-3 py-1 text-[11px] ${
-            hint ? "border-rose-200 bg-rose-50/95 text-rose-700" : "border-paper-200 bg-paper-50/95 text-paper-600"
-          }`}>
-            {hint || "拖动中：只可在同一层级内上下调序"}
-          </div>
-        )}
         <div ref={scroller} className="h-full min-h-0 overflow-auto py-1">
         {rows.length === 0 ? (
           <p className="p-3 text-xs text-paper-500">粘贴或输入 JSON 后显示节点树。</p>
@@ -295,8 +288,14 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
 
       {/* 底部状态行 */}
       <div className="flex h-6 shrink-0 items-center gap-1.5 border-t border-paper-200/70 px-3 text-[11px] text-paper-500">
-        {draggingRow ? (
+        {/* 拖拽提示统一走这行，不再用顶部浮层 —— 浮层会盖住第一个节点。
+            有错误原因时优先显示原因（红色），否则显示正在拖动谁。 */}
+        {dragging && hint ? (
+          <span className="truncate font-medium text-rose-600">{hint}</span>
+        ) : draggingRow ? (
           <span className="truncate">正在拖动「{draggingRow.keyText ?? draggingRow.path}」· 只可同级调序</span>
+        ) : hint ? (
+          <span className="truncate font-medium text-rose-600">{hint}</span>
         ) : (
           <span className="truncate">悬停节点高亮源码 · 拖动行首手柄调序 · 箭头折叠/展开</span>
         )}
