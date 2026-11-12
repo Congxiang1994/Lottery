@@ -94,6 +94,8 @@ export default function JsonTool() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["/"]));
   /** 左栏当前高亮的行区间（悬停节点树时由右栏回调写入） */
   const [highlight, setHighlight] = useState<[number, number] | null>(null);
+  /** 拖拽中的「预演值」：非 null 时两栏都按它渲染，实现拖动即实时预览 */
+  const [previewValue, setPreviewValue] = useState<{ value: unknown; path: string } | null>(null);
   const [toast, setToast] = useState("");
 
   useEffect(() => {
@@ -187,15 +189,21 @@ export default function JsonTool() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result]);
 
+  /**
+   * 「生效值」：拖动中被拖节点的预演值优先，其余情况是真实值。
+   * 两栏都从它派生 → 拖动时左右同时变化，且行行对齐自动保持。
+   */
+  const effectiveValue = previewValue ? previewValue.value : result.value;
+
   /** 源码行 —— 左栏渲染它，右栏也从它派生，因此天然对齐 */
   const lines = useMemo(() => {
-    if (!result.ok || result.value === undefined) return [];
-    return buildSourceLines(result.value, {
+    if (!result.ok || effectiveValue === undefined) return [];
+    return buildSourceLines(effectiveValue, {
       indent,
       expanded,
       inlineScalarArrays: styleToInline(fmtStyle),
     });
-  }, [result, indent, expanded, fmtStyle]);
+  }, [result.ok, effectiveValue, indent, expanded, fmtStyle]);
 
   const toggleNode = (path: string) => setExpanded((prev) => {
     const next = new Set(prev);
@@ -206,11 +214,33 @@ export default function JsonTool() {
   const expandAll = () => setExpanded(new Set(foldable));
   const collapseAll = () => setExpanded(new Set());
 
-  /** 拖拽调序后：值变了 → 行模型重算；展开状态保留 */
-  const handleMove = (parentPath: string, fromIndex: number, toIndex: number) => {
-    if (!result.ok || result.value === undefined) return;
-    const moved = moveSibling(result.value, parentPath, fromIndex, toIndex);
+  /** 拖拽预演：拖动中两栏都按预演值渲染 */
+  const handlePreview = (value: unknown | null, path: string | null) => {
+    if (value === null || path === null) setPreviewValue(null);
+    else { setPreviewValue({ value, path }); setHighlight(null); }
+  };
+
+  /**
+   * 拖拽调序落盘。
+   *
+   * ⚠️ 必须用「预演值」而不是重新算：拖动过程中两栏已经在按预演值显示，
+   * 松手时若从 result.value 再重算一遍，会拿到**拖动前**的旧顺序，
+   * 表现为「松手后又跳回原位」（踩过这个坑）。
+   * 有预演值就直接落盘它，没有才回退到重算。
+   */
+  const handleMove = (
+    parentPath: string,
+    fromIndex: number,
+    toIndex: number,
+    /** 拖动中已算好的最终值 —— 优先用它，父级自己再算会拿到拖动前的旧值 */
+    finalValue?: unknown,
+  ) => {
+    if (!result.ok) return;
+    const moved = finalValue !== undefined
+      ? finalValue
+      : moveSibling(result.value as unknown, parentPath, fromIndex, toIndex);
     const next = prettyJson(moved, { indent, inlineScalarArrays: styleToInline(fmtStyle) });
+    setPreviewValue(null);
     if (next !== text) setWithUndo(next, "已调整同级的字段顺序");
   };
 
@@ -351,6 +381,8 @@ export default function JsonTool() {
               onCollapseAll={collapseAll}
               onHoverBlock={setHighlight}
               onMove={handleMove}
+              onPreview={handlePreview}
+              rootValue={result.value}
             />
           </Suspense>
         </div>

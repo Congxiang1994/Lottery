@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Copy, Minimize2, Maximize2, Network, GripVertical, ClipboardCopy } from "lucide-react";
 import type { SourceLine } from "./sourceLines.ts";
-import { canDropOn, canMoveSibling } from "./treeModel.ts";
+import { canDropOn, canMoveSibling, moveSibling } from "./treeModel.ts";
 import Tip from "../../Tip";
 
 const KIND_COLOR: Record<string, string> = {
@@ -34,7 +34,15 @@ export interface TreeViewProps {
   /** 悬停节点 → 交出「含子孙的整块行区间」；移出为 null */
   onHoverBlock: (block: [number, number] | null) => void;
   /** 同级调序回调 */
-  onMove?: (parentPath: string, fromIndex: number, toIndex: number) => void;
+  onMove?: (parentPath: string, fromIndex: number, toIndex: number, finalValue?: unknown) => void;
+  /**
+   * 拖动中的「预演值」上抛：父组件用它重算行模型，
+   * 于是**左右两栏一起实时变化**（松手前就能看到最终效果）。
+   * 传 null 表示拖动结束，恢复真实值。
+   */
+  onPreview?: (value: unknown | null, draggingPath: string | null) => void;
+  /** 原始值（用来算预演结果） */
+  rootValue?: unknown;
 }
 
 /**
@@ -46,7 +54,7 @@ function toTreeRows(lines: SourceLine[]): SourceLine[] {
   return lines;
 }
 
-export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCollapseAll, onHoverBlock, onMove }: TreeViewProps) {
+export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCollapseAll, onHoverBlock, onMove, onPreview, rootValue }: TreeViewProps) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<{ index: number; targetPath: string; valid: boolean } | null>(null);
   const [hint, setHint] = useState("");
@@ -54,8 +62,18 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
   const scroller = useRef<HTMLDivElement>(null);
   const onMoveCb = useRef(onMove);
   onMoveCb.current = onMove;
+  /** 预演回调也走 ref：避免它进 effect 依赖导致反复解绑/重绑 */
+  const onPreviewRef = useRef(onPreview);
+  onPreviewRef.current = onPreview;
+  /** rootValue 同理（拖动期间父级会更新它，但我们要的是最新一份） */
+  const rootRef = useRef(rootValue);
+  rootRef.current = rootValue;
   const draggingRef = useRef<string | null>(null);
-  const lastDrop = useRef<{ insertIndex: number; fromIndex: number } | null>(null);
+  const lastDrop = useRef<{ insertIndex: number; fromIndex: number; parentPath: string; toIndex: number } | null>(null);
+  /** 拖动中预算好的「松手后的值」——松手时直接交给父级落盘，避免它再算一遍拿到旧数据 */
+  const previewValRef = useRef<unknown>(null);
+  /** 拖动开始时的原始位置（rows 会随预演变化，必须提前记住） */
+  const originIndexRef = useRef(new Map<string, number>());
 
   const rows = useMemo(() => toTreeRows(lines), [lines]);
 
@@ -95,22 +113,54 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
       setHint(d.valid ? "" : (d.reason ?? ""));
       if (d.valid && cur) {
         const from = rows.find((r) => r.path === cur);
-        if (from) lastDrop.current = { insertIndex: d.insertIndex, fromIndex: from.index_in_parent };
-      } else lastDrop.current = null;
+        if (from && from.parentPath !== null) {
+          const chk0 = canMoveSibling(rows, cur, d.insertIndex);
+          if (chk0.ok && chk0.toIndex !== undefined) {
+            // 原始下标也在拖动开始时记一次（rows 之后会变），存进 ref
+            const orig = originIndexRef.current.get(cur) ?? from.index_in_parent;
+            lastDrop.current = { insertIndex: d.insertIndex, fromIndex: orig, parentPath: from.parentPath, toIndex: chk0.toIndex };
+          }
+        }
+        // 预算「松手后的值」并上抛 → 父级据此重算行模型，
+        // 左右两栏因此同步实时预览，而不是只有树在动。
+        if (from && from.parentPath !== null && onPreviewRef.current && rootRef.current !== undefined) {
+          const chk = canMoveSibling(rows, cur, d.insertIndex);
+          if (chk.ok && chk.toIndex !== undefined) {
+            const orig = originIndexRef.current.get(cur) ?? from.index_in_parent;
+            const nextVal = moveSibling(rootRef.current, from.parentPath, orig, chk.toIndex);
+            previewValRef.current = nextVal;
+            onPreviewRef.current(nextVal, cur);
+          } else {
+            previewValRef.current = null;
+            onPreviewRef.current(null, cur);
+          }
+        }
+      } else {
+        lastDrop.current = null;
+        onPreviewRef.current?.(null, cur);
+      }
     };
     const onUp = () => {
       const cur = draggingRef.current;
       const pending = lastDrop.current;
-      const from = cur ? rows.find((r) => r.path === cur) : null;
-      if (pending && from && cur && onMoveCb.current && from.parentPath !== null) {
-        const chk = canMoveSibling(rows, cur, pending.insertIndex);
-        if (chk.ok && chk.toIndex !== undefined) onMoveCb.current(from.parentPath, from.index_in_parent, chk.toIndex);
-        else if (chk.reason) setHint(chk.reason);
+      /**
+       * ⚠️ 这里**不能**再从 rows 里取 from.index_in_parent：
+       * 拖动过程中 rows 已是「预演后」的数据，被拖节点在列表里的序号已经变了，
+       * 拿它再校验会判成「位置没有变化」而拒绝落盘（踩过）。
+       * 于是：parentPath 从 pending 里带，fromIndex 用拖动开始时记下的原始值。
+       */
+      if (pending && cur && onMoveCb.current) {
+        if (previewValRef.current !== null) {
+          // 预演值已算好 —— 直接落盘，父级不必再算（它手上的还是拖动前的旧值）
+          onMoveCb.current(pending.parentPath, pending.fromIndex, pending.toIndex, previewValRef.current);
+        }
       } else if (cur && !pending) {
         setHint("只能在同一层级内调序");
       }
       draggingRef.current = null;
       lastDrop.current = null;
+      previewValRef.current = null;
+      onPreviewRef.current?.(null, null);
       setDragging(null);
       setDropAt(null);
       window.setTimeout(() => setHint(""), 1800);
@@ -130,6 +180,7 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
     if (!onMove) return;
     if (row.keyText === null) { setHint("根节点没有同级，无法排序"); return; }
     draggingRef.current = row.path;
+    originIndexRef.current.set(row.path, row.index_in_parent);
     setDragging(row.path);
     setHint("");
     e.preventDefault();
@@ -137,6 +188,16 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
   };
 
   const draggingRow = dragging ? rows.find((r) => r.path === dragging) : null;
+
+  /**
+   * 拖动时的「落点槽位」——只用来画占位方条与高亮，
+   * **不再做视觉位移**：行数据本身已由父级按预演值重算，
+   * 两侧都在真实重排（这才是「实时预览」）。
+   */
+  const dropSlot = useMemo(() => {
+    if (!dragging || !dropAt) return null;
+    return { at: Math.max(0, Math.min(rows.length, dropAt.index)), valid: dropAt.valid };
+  }, [dragging, dropAt, rows.length]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-paper-200 bg-white/60">
@@ -169,11 +230,12 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
           <p className="p-3 text-xs text-paper-500">粘贴或输入 JSON 后显示节点树。</p>
         ) : (
           <div className="relative" style={{ height: rows.length * ROW_H }}>
-            {/* 插入位指示线 */}
-            {dropAt && dropAt.index < rows.length && (
+            {/* 占位方条：占据「松手后这一行会出现的位置」，行高与真实行一致。
+                比一根细线直观得多 —— 一眼看到它最终落在哪一行、什么缩进。 */}
+            {dropSlot && !dropSlot.valid && (
               <div
-                className={`pointer-events-none absolute left-1 right-1 z-20 rounded-full ${dropAt.valid ? "bg-[#0d9488]" : "bg-rose-500"}`}
-                style={{ top: dropAt.index * ROW_H - 1 - 4, height: 2, boxShadow: dropAt.valid ? "0 0 8px rgba(13,148,136,.6)" : "0 0 8px rgba(244,63,94,.6)" }}
+                className="pointer-events-none absolute left-1 right-1 z-20 rounded-lg border-2 border-dashed border-rose-400 bg-rose-500/10"
+                style={{ top: dropSlot.at * ROW_H + 1, height: ROW_H - 2 }}
               />
             )}
 
@@ -181,11 +243,12 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
               // 收尾括号行：左栏有这一行，右栏也要占位，否则后面全部错位。
               // 视觉上做得极淡，避免看起来像「重复的节点」。
               if (row.kind === "close") {
+                const vClose = i;
                 return (
                   <div
                     key={`${row.index}-${row.path}-close`}
-                    className="absolute left-0 flex w-full items-center text-[12.5px] text-paper-300"
-                    style={{ height: ROW_H, transform: `translateY(${i * ROW_H}px)`, paddingLeft: 4 + row.depth * 16 }}
+                    className="absolute left-0 flex w-full items-center text-[12.5px] text-paper-300 transition-transform duration-100"
+                    style={{ height: ROW_H, transform: `translateY(${vClose * ROW_H}px)`, paddingLeft: 4 + row.depth * 16 }}
                     aria-hidden
                   >
                     <span className="w-3 shrink-0" />
@@ -194,11 +257,10 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
                 );
               }
 
-              const isDragging = dragging === row.path;
               const isFoldable = !row.foldPath ? row.kind === "open" : true;
               const isExpanded = row.kind === "open" && !row.foldPath;
-              const shift = dropAt && dropAt.targetPath === row.path && dragging !== row.path
-                ? (dropAt.index > i ? 6 : -6) : 0;
+              const vIndex = i;
+              const isBeingDragged = dragging === row.path;
 
               return (
                 <div
@@ -212,12 +274,12 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
                     onHoverBlock(null);
                   }}
                   className={`group absolute left-0 flex w-full items-center gap-1 rounded-lg px-1 text-[12.5px] transition-all duration-100 ${
-                    isDragging ? "z-10 scale-[1.01] bg-[#0d9488]/10 opacity-60 shadow-sm"
+                    isBeingDragged ? "z-10 scale-[1.01] bg-[#0d9488]/10 opacity-50 shadow-sm"
                       : hovered === row.path ? "bg-amber-300/35" : "hover:bg-amber-200/25"
                   }`}
                   style={{
                     height: ROW_H,
-                    transform: `translateY(${i * ROW_H + shift}px)`,
+                    transform: `translateY(${vIndex * ROW_H}px)`,
                     paddingLeft: 4 + row.depth * 16,
                   }}
                 >
@@ -275,11 +337,6 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
               );
             })}
 
-            {/* 末尾落点线 */}
-            {dropAt && dropAt.index >= rows.length && (
-              <div className="pointer-events-none absolute left-1 right-1 z-20 h-0.5 rounded-full bg-[#0d9488]"
-                style={{ top: rows.length * ROW_H - 1 - 4, boxShadow: "0 0 8px rgba(13,148,136,.6)" }} />
-            )}
           </div>
         )}
       </div>
