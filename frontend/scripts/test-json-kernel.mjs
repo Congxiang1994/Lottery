@@ -61,6 +61,16 @@ const err = translateError("Unexpected token o in JSON at position 5", '{"a":1} 
 ok("parse·错误中文化", err.message.includes("关键词") || err.message.includes("意外符号"), err.message);
 ok("parse·错误带行列", err.line > 0 && err.col > 0, JSON.stringify(err));
 eq("parse·未结束提示", translateError("Unexpected end of JSON input", "{").message.includes("未完整结束"), true);
+
+// 错误必须能定位到具体行列 —— 这是左框底部那行字的核心价值。
+// JSON5 / jsonrepair 的报错本身不带位置，靠 jsonc-parser 的 offset 兜底换算。
+const multiErr = P('{\n  "a":\n  "b": oops\n}');
+eq("parse·错误带行号（多行输入）", multiErr.errors[0].line, 3);
+ok("parse·错误带列号", multiErr.errors[0].col > 0, JSON.stringify(multiErr.errors[0]));
+eq("parse·单行错误行号为 1", P('{"a":1,,}').errors[0].line, 1);
+ok("parse·残缺也有位置", P('{"a":').errors[0].line >= 1, JSON.stringify(P('{"a":').errors[0]));
+// 可修复的输入不该报错（repair 兜住了单引号/缺引号这类），此处固化该行为
+eq("parse·可修复输入不报错", P('{"a": oops}').ok, true);
 eq("parse·JSONL 空行标记", parseJsonl('{"a":1}\n\n{"a":2}')[1].ok, false);
 eq("parse·JSONL 错误行中文", parseJsonl('{"a":1}\nbad')[1].error.length > 0, true);
 ok("parse·resultToText JSONL 每行一条", resultToText(P('{"a":1}\n{"a":2}')).split("\n").length === 2);

@@ -64,16 +64,30 @@ export function translateError(raw: string, text: string): ParseError {
   return { message, line, col, pos };
 }
 
-function fail(kind: InputKind, raw: string, text: string): ParseResult {
+function fail(kind: InputKind, raw: string, text: string, offset?: number): ParseResult {
+  const err = translateError(raw, text);
+  // 若调用方拿到了更精确的字符偏移（如 jsonc-parser 的 offset），用它换算行列，
+  // 否则 JSON5 / jsonrepair 抛出的消息里完全没有位置信息，状态行就只能报「有错」
+  // 却说不出错在哪一行 —— 那对用户毫无帮助。
+  const located = typeof offset === "number" && offset >= 0
+    ? lineColFromOffset(text, offset)
+    : { line: err.line, col: err.col };
   return {
     ok: false,
     kind,
     value: undefined,
-    errors: [translateError(raw, text)],
+    errors: [{ ...err, line: located.line, col: located.col, pos: typeof offset === "number" ? offset : err.pos }],
     source: text,
     lossless: false,
     stats: computeStats(undefined, text),
   };
+}
+
+/** 字符偏移 → 1-based 行列 */
+function lineColFromOffset(text: string, offset: number): { line: number; col: number } {
+  const safe = Math.max(0, Math.min(offset, text.length));
+  const before = text.slice(0, safe);
+  return { line: before.split("\n").length, col: safe - before.lastIndexOf("\n") };
 }
 
 function okResult(kind: InputKind, value: unknown, text: string, extra: Partial<ParseResult> = {}): ParseResult {
@@ -174,7 +188,10 @@ export function parseInput(text: string, opts: ParseOptions = {}): ParseResult {
   if (!text.trim()) return { ...okResult("empty", undefined, text), stats: EMPTY_STATS };
 
   let strictErr = "无法解析";
+  let strictOffset: number | undefined;
   let jsoncErrText = "";
+  let jsoncOffset: number | undefined;
+  let repairOffset: number | undefined;
   const whole = isWholeJsonDocument(text);
   const foreign = hasForeignText(text);
 
@@ -195,6 +212,8 @@ export function parseInput(text: string, opts: ParseOptions = {}): ParseResult {
     return okResult("json", parseLossless(text), text);
   } catch (e) {
     strictErr = (e as Error).message;
+    const pm = strictErr.match(/position (\d+)/i);
+    if (pm) strictOffset = parseInt(pm[1], 10);
   }
 
   // 4) JSON5（无引号键 / 单引号 / 尾逗号 / 十六进制 / 注释）
@@ -202,8 +221,10 @@ export function parseInput(text: string, opts: ParseOptions = {}): ParseResult {
     try {
       const v = JSON5.parse(text);
       return okResult("json5", tryParseLosslessFromLoose(v, text), text);
-    } catch {
-      /* 继续下一档 */
+    } catch (e) {
+      // JSON5 的报错形如 "... at line 3 column 5"（由 translateError 解析），
+      // 这里不需要单独记 offset —— 它的行列信息已在线格式里。
+      void e;
     }
   }
 
@@ -215,7 +236,11 @@ export function parseInput(text: string, opts: ParseOptions = {}): ParseResult {
     if (v !== undefined && fatal.length === 0) {
       return okResult("jsonc", tryParseLosslessFromLoose(v, text), text);
     }
-    if (errs.length) jsoncErrText = errs.map((e) => printParseErrorCode(e.error)).join("; ");
+    if (errs.length) {
+      jsoncErrText = errs.map((e) => printParseErrorCode(e.error)).join("; ");
+      // jsonc-parser 的 offset 是字符偏移，最准
+      jsoncOffset = errs[0].offset;
+    }
   }
 
   // 6) 自动修复：只对「完整文档」放行（见文件头 ③）
@@ -223,12 +248,15 @@ export function parseInput(text: string, opts: ParseOptions = {}): ParseResult {
     try {
       const repaired = jsonrepair(text);
       return okResult("repaired", parseLossless(repaired), text);
-    } catch {
-      /* 继续 */
+    } catch (e) {
+      const pm = (e as Error).message.match(/position (\d+)/i);
+      if (pm) repairOffset = parseInt(pm[1], 10);
     }
   }
 
-  return fail("invalid", jsoncErrText || strictErr || "无法解析", text);
+  // 位置优先级：JSONC 的精确 offset > 严格解析的 position > 修复阶段 position
+  const offset = jsoncOffset ?? strictOffset ?? repairOffset;
+  return fail("invalid", jsoncErrText || strictErr || "无法解析", text, offset);
 }
 
 /** JSON5 / JSONC 可能已丢大整数；补成合法 JSON 后无损复核，补不回来则保留原值 */

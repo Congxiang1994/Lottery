@@ -1,23 +1,22 @@
 /**
- * JSON 工具：极简双栏 —— 左 JSON 源码，右常驻可折叠节点树。
+ * JSON 工具：**两个对齐的框** —— 左 JSON 源码，右可折叠节点树。
  *
- * 产品定位（用户 2026-11-12 明确）：一般就一个 JSON，不要多标签、不要模式切换、
- * 不要查询栏、不要上传下载/图片导出/快捷键、不要「键名风格」这类含义不明的按钮。
- * 右侧树只做一件事：把结构铺开、能折叠、能复制路径/值；源码是唯一真源。
+ * 产品定位（用户 2026-11-12 明确两轮反馈）：
+ *  - 一般就一个 JSON：不要多标签、不要模式切换、不要上传下载/图片导出/快捷键；
+ *  - 「格式化」**直接改源码本身**，不再单开结果框；
+ *  - 左框底部一行字说明「格式是否有效 / 无效错在第几行」；
+ *  - 布局只有两个框，左右高度严格对齐（头部 h-7 + 主体自适应 + 底部 h-6）。
  *
- * 保留：格式化/压缩、2/4/Tab 缩进、键名排序、转义/反转义成对往返、示例、清空、
- * 撤销条、中文错误定位、大整数无损、localStorage 持久化、统计条。
- *
- * ⚠️ 编辑器输入用 selfEditRef 标记跳过外部回写，避免旧一代结果覆盖新输入
- *    （详见 json/views/JsonEditor.tsx）。
+ * 保留：格式化/压缩（就地生效）、2/4/Tab 缩进、键名排序、转义/反转义成对往返、
+ * 示例、清空、撤销条、中文错误定位、大整数无损、localStorage 持久化、统计条。
  */
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { Braces, FileJson, Quote, Trash2, Undo2, UnfoldVertical, Network } from "lucide-react";
-import CopyBtn from "./CopyBtn";
+import { FileJson, Quote, Trash2, Undo2, UnfoldVertical } from "lucide-react";
 import { escapeJsonString, unescapeJsonString } from "./jsonEscape";
 import { parseInput } from "./json/parse.ts";
 import { formatJson, minifyJson, type Indent } from "./json/format.ts";
 import type { InputKind, ParseResult } from "./json/types.ts";
+import type { EditorStatus } from "./json/views/JsonEditor.tsx";
 
 const JsonEditor = lazy(() => import("./json/views/JsonEditor.tsx"));
 const TreeView = lazy(() => import("./json/views/TreeView.tsx"));
@@ -49,7 +48,6 @@ function loadText(): string {
     }
     if (typeof parsed === "string") return parsed;
   } catch {
-    // 兼容更早期「直接存纯文本」的格式
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw && !raw.trimStart().startsWith("[") && !raw.trimStart().startsWith("{")) return raw;
@@ -64,6 +62,7 @@ export default function JsonTool() {
   const [sortKeys, setSortKeys] = useState(false);
   const [view, setView] = useState<"pretty" | "min">("pretty");
   const [undo, setUndo] = useState<{ text: string; label: string } | null>(null);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(text)); } catch { /* 超额忽略 */ }
@@ -75,20 +74,44 @@ export default function JsonTool() {
     return () => window.clearTimeout(t);
   }, [undo]);
 
-  const result: ParseResult = useMemo(() => parseInput(text), [text]);
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(""), 2000);
+    return () => window.clearTimeout(t);
+  }, [toast]);
 
-  const output = useMemo(() => {
-    if (!result.ok || result.value === undefined) return "";
-    try {
-      return view === "min" ? minifyJson(text) : formatJson(text, indent, sortKeys);
-    } catch {
-      return "";
-    }
-  }, [result, text, view, indent, sortKeys]);
+  const result: ParseResult = useMemo(() => parseInput(text), [text]);
 
   const setWithUndo = (next: string, label: string) => {
     setUndo({ text, label });
     setText(next);
+  };
+
+  /**
+   * 格式化 / 压缩：**直接改写源码本身**（用户要求）。
+   * 解析失败时不动源码，只在状态行报错——避免把用户输入破坏成半成品。
+   */
+  const applyFormat = (mode: "pretty" | "min") => {
+    setView(mode);
+    if (!text.trim()) { setToast("输入为空，无需格式化"); return; }
+    try {
+      const next = mode === "min" ? minifyJson(text) : formatJson(text, indent, sortKeys);
+      if (next === text) { setToast(mode === "min" ? "已是压缩形态" : "已是格式化形态"); return; }
+      setWithUndo(next, mode === "min" ? "已压缩源码" : "已格式化源码");
+    } catch {
+      setToast("格式有误，先修正错误再格式化");
+    }
+  };
+
+  /** 切换缩进 / 排序时，若当前已是格式化形态则立即重排，让选项「看得见」 */
+  const reapplyIfFormatted = (nextIndent: Indent, nextSort: boolean) => {
+    setIndent(nextIndent);
+    setSortKeys(nextSort);
+    if (view !== "pretty" || !text.trim()) return;
+    try {
+      const next = formatJson(text, nextIndent, nextSort);
+      if (next !== text) setText(next);
+    } catch { /* 有错时静默，状态行已提示 */ }
   };
 
   /* ------------------------- 转义 / 反转义 ------------------------- */
@@ -104,36 +127,48 @@ export default function JsonTool() {
     setWithUndo(unescapeInfo.text, label);
   };
 
+  /* ------------------------- 左框底部状态行 ------------------------- */
+  const editorStatus: EditorStatus = useMemo(() => {
+    if (!text.trim()) return { tone: "idle", text: "等待输入 JSON" };
+    if (result.ok) {
+      return { tone: "ok", text: `格式有效 · ${KIND_LABEL[result.kind]} · ${result.stats.keys} 键 · 深度 ${result.stats.depth}` };
+    }
+    const err = result.errors[0];
+    if (!err) return { tone: "error", text: "格式无效" };
+    const where = err.line > 0 ? `第 ${err.line} 行第 ${err.col} 列：` : "";
+    return { tone: "error", text: `${where}${err.message}` };
+  }, [text, result]);
+
+  /** 无效时把光标定位到出错位置，方便直接改 */
   const err = result.errors[0];
-  const errLines = text.split(/\r?\n/);
-  const errLineText = err && err.line > 0 ? errLines[err.line - 1] ?? "" : "";
 
   return (
     <div className="space-y-3">
       {/* 选项栏 */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
-          {(["pretty", "min"] as const).map((v) => (
-            <button key={v} onClick={() => setView(v)} className={`rounded-lg px-3 py-1.5 transition ${
-              view === v ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+          <button onClick={() => applyFormat("pretty")} className={`rounded-lg px-3 py-1.5 transition ${
+            view === "pretty" ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+          }`}>
+            格式化
+          </button>
+          <button onClick={() => applyFormat("min")} className={`rounded-lg px-3 py-1.5 transition ${
+            view === "min" ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+          }`}>
+            压缩
+          </button>
+        </div>
+        <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
+          {([2, 4, "tab"] as const).map((n) => (
+            <button key={n} onClick={() => reapplyIfFormatted(n, sortKeys)} className={`rounded-lg px-2.5 py-1.5 transition ${
+              indent === n ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
             }`}>
-              {v === "pretty" ? "格式化" : "压缩"}
+              {n === "tab" ? "Tab" : `${n} 空格`}
             </button>
           ))}
         </div>
-        {view === "pretty" && (
-          <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
-            {([2, 4, "tab"] as const).map((n) => (
-              <button key={n} onClick={() => setIndent(n)} className={`rounded-lg px-2.5 py-1.5 transition ${
-                indent === n ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
-              }`}>
-                {n === "tab" ? "Tab" : `${n} 空格`}
-              </button>
-            ))}
-          </div>
-        )}
         <label className="flex cursor-pointer items-center gap-1.5 text-sm text-paper-700">
-          <input type="checkbox" checked={sortKeys} onChange={(e) => setSortKeys(e.target.checked)} className="h-4 w-4 accent-[#0d9488]" />
+          <input type="checkbox" checked={sortKeys} onChange={(e) => reapplyIfFormatted(indent, e.target.checked)} className="h-4 w-4 accent-[#0d9488]" />
           键名排序
         </label>
 
@@ -150,86 +185,67 @@ export default function JsonTool() {
         </div>
       </div>
 
-      {undo && (
+      {(undo || toast) && (
         <div className="flex items-center gap-2 rounded-xl border border-emerald-600/25 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-          {undo.label}
-          <button onClick={() => { setText(undo.text); setUndo(null); }} className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-0.5 font-medium transition hover:bg-emerald-100"><Undo2 size={12} /> 撤销</button>
-          <button onClick={() => setUndo(null)} className="rounded-lg px-2 py-0.5 text-emerald-700/90 transition hover:bg-emerald-100">收起</button>
+          <span className="truncate">{toast || undo?.label}</span>
+          {undo && (
+            <>
+              <button onClick={() => { setText(undo.text); setUndo(null); }} className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-0.5 font-medium transition hover:bg-emerald-100"><Undo2 size={12} /> 撤销</button>
+              <button onClick={() => setUndo(null)} className="shrink-0 rounded-lg px-2 py-0.5 text-emerald-700/90 transition hover:bg-emerald-100">收起</button>
+            </>
+          )}
         </div>
       )}
 
-      {/* 状态栏 */}
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-paper-600">
-        <span className={`inline-flex items-center gap-1 ${result.ok ? "text-emerald-700" : "text-rose-700"}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${result.ok ? "bg-emerald-500" : "bg-rose-500"}`} />
-          {result.ok ? `${KIND_LABEL[result.kind]} · 有效` : "解析失败"}
-        </span>
-        <span className="tabular-nums">{result.stats.keys} 键</span>
-        <span className="tabular-nums">深度 {result.stats.depth}</span>
-        <span className="tabular-nums">{result.stats.nodes} 节点</span>
-        <span className="tabular-nums">{(result.stats.bytes / 1024).toFixed(2)} KB</span>
-        <span className="tabular-nums">{result.stats.lines} 行</span>
-        {result.lossless && <span className="rounded-full bg-violet-600/15 px-1.5 py-px font-semibold text-violet-700">含超大整数 · 已无损保留</span>}
-      </div>
+      {/* ===== 两个对齐的框：左源码 / 右节点树 =====
+          高度用 vh 计算，保证「工具栏 + 两框 + 底部状态行」一屏内放得下：
+          ≈ 顶部导航 + 标题 + tab + 工具栏 + 状态条 ≈ 300px，再留 24px 呼吸。
+          min-h 兜住小屏，避免压扁到不可用。 */}
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <div className="h-[min(620px,calc(100vh-330px))] min-h-[340px]">
+          <Suspense fallback={<BoxSkeleton label="加载编辑器…" />}>
+            <JsonEditor value={text} onChange={setText} status={editorStatus} />
+          </Suspense>
+        </div>
 
-      {/* 双栏：左源码+格式化结果 / 右节点树 */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-3">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-xs text-paper-600">
-              <Braces size={13} className="text-[#0d9488]" /> JSON 源码
-              <span className="ml-auto tabular-nums">{text.length} 字符</span>
-            </div>
-            <Suspense fallback={<div className="grid h-[300px] place-items-center rounded-2xl border border-paper-200 bg-white/60 text-xs text-paper-500">加载编辑器…</div>}>
-              <JsonEditor value={text} onChange={setText} height={300} />
+        <div className="h-[min(620px,calc(100vh-330px))] min-h-[340px]">
+          {result.ok && result.value !== undefined ? (
+            <Suspense fallback={<BoxSkeleton label="加载节点树…" />}>
+              <TreeView value={result.value} />
             </Suspense>
-          </div>
-          {result.ok && result.value !== undefined && (
-            <div className="relative">
-              <div className="mb-2 flex items-center gap-2 text-xs text-paper-600">
-                <span className="inline-flex items-center gap-1 text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> 格式有效</span>
-                <span className="ml-auto">格式化结果</span>
+          ) : (
+            <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-paper-200 bg-white/60">
+              <div className="flex h-7 shrink-0 items-center gap-2 border-b border-paper-200/70 px-3 text-xs text-paper-600">
+                节点树
               </div>
-              <textarea
-                readOnly
-                value={output}
-                className="h-[160px] w-full resize-y rounded-2xl border border-paper-200 bg-paper-50/60 p-3 font-mono text-[13px] leading-relaxed text-paper-900 outline-none"
-              />
-              <div className="absolute right-2 top-8"><CopyBtn text={output} title="复制结果" /></div>
+              <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 p-4">
+                {err ? (
+                  <>
+                    <p className="text-sm text-rose-700">{err.message}</p>
+                    <p className="text-[11px] text-paper-500">
+                      修正左侧 JSON 后，这里会自动显示可折叠的节点树。
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-paper-500">左侧输入 JSON 后，这里显示可折叠的节点树。</p>
+                )}
+              </div>
+              <div className="h-6 shrink-0 border-t border-paper-200/70" />
             </div>
           )}
         </div>
-
-        <div className="flex flex-col">
-          <div className="mb-2 flex items-center gap-2 text-xs text-paper-600">
-            <Network size={13} className="text-[#0d9488]" /> 节点树
-            <span className="ml-auto">结构</span>
-          </div>
-          <div className="h-[440px]">
-            {result.ok && result.value !== undefined ? (
-              <Suspense fallback={<div className="glass grid h-full place-items-center rounded-2xl text-xs text-paper-500 shadow-card">加载节点树…</div>}>
-                <TreeView value={result.value} />
-              </Suspense>
-            ) : (
-              <div className="glass h-full overflow-auto rounded-2xl p-4 shadow-card">
-                {err && <div className="rounded-lg border border-rose-600/25 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err.message}</div>}
-                {errLineText && (
-                  <div className="mt-3">
-                    <div className="mb-1 text-[11px] text-paper-500">出错位置（第 {err.line} 行）：</div>
-                    <pre className="overflow-x-auto rounded-xl border border-paper-200 bg-white/60 p-3 font-mono text-[13px] leading-relaxed text-paper-900">
-                      <div className="text-paper-400 select-none">{String(err.line).padStart(3, " ")} │ </div>
-                      <div>{errLineText}</div>
-                      <div className="text-rose-600 select-none">{" ".repeat(Math.max(0, err.col - 1) + String(err.line).length + 3)}↑ 这里</div>
-                    </pre>
-                  </div>
-                )}
-                {!err && <p className="text-sm text-paper-500">左侧输入 JSON 后，这里显示可折叠的节点树。</p>}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
+    </div>
+  );
+}
 
+/** 加载态占位：保持和真实框一样的骨架，避免布局跳动 */
+function BoxSkeleton({ label }: { label: string }) {
+  return (
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-paper-200 bg-white/60">
+      <div className="h-7 shrink-0 border-b border-paper-200/70" />
+      <div className="grid min-h-0 flex-1 place-items-center text-xs text-paper-500">{label}</div>
+      <div className="h-6 shrink-0 border-t border-paper-200/70" />
     </div>
   );
 }

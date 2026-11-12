@@ -51,28 +51,30 @@ export default function TreeView({ value }: TreeViewProps) {
   });
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="mb-2 flex items-center gap-2 text-xs text-paper-600">
-        <span className="inline-flex items-center gap-1 text-[#0d9488]"><Network size={12} /> 节点树</span>
-        <span className="tabular-nums">{rows.length} 行可见</span>
-        <div className="ml-auto flex items-center gap-1">
-          <button onClick={() => setExpanded(allPaths)} title="展开全部" className="grid h-7 w-7 place-items-center rounded-lg border border-paper-200 bg-white/50 text-paper-700 transition hover:bg-paper-100">
-            <UnfoldVertical size={13} />
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-paper-200 bg-white/60">
+      {/* 头部：与左栏编辑器头部同高同版式（h-7 + px-3 + text-xs） */}
+      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-paper-200/70 px-3 text-xs text-paper-600">
+        <Network size={13} className="text-[#0d9488]" /> 节点树
+        <span className="tabular-nums">{rows.length} 行</span>
+        <div className="ml-auto flex items-center gap-0.5">
+          <button onClick={() => setExpanded(allPaths)} title="展开全部" className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-paper-900">
+            <UnfoldVertical size={12} />
           </button>
-          <button onClick={() => setExpanded(new Set())} title="折叠全部" className="grid h-7 w-7 place-items-center rounded-lg border border-paper-200 bg-white/50 text-paper-700 transition hover:bg-paper-100">
-            <FoldVertical size={13} />
+          <button onClick={() => setExpanded(new Set())} title="折叠全部" className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-paper-900">
+            <FoldVertical size={12} />
           </button>
         </div>
       </div>
 
-      <div ref={parentRef} className="glass min-h-0 flex-1 overflow-auto rounded-2xl p-2 shadow-card">
+      {/* 主体：占满剩余高度 */}
+      <div ref={parentRef} className="min-h-0 flex-1 overflow-auto p-2">
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((vi) => {
             const node: FlatNode = rows[vi.index];
             return (
               <div
                 key={node.path}
-                className="absolute left-0 flex w-full items-center gap-1 rounded-lg px-1 text-[13px] hover:bg-paper-100/70"
+                className="group absolute left-0 flex w-full items-center gap-1 rounded-lg px-1 text-[13px] hover:bg-paper-100/70"
                 style={{ height: vi.size, transform: `translateY(${vi.start}px)`, paddingLeft: 4 + node.depth * 18 }}
               >
                 {node.expandable ? (
@@ -86,21 +88,31 @@ export default function TreeView({ value }: TreeViewProps) {
                 <span className={`min-w-0 flex-1 truncate font-mono ${KIND_COLOR[node.kind] ?? ""}`} title={node.text}>
                   {node.text}
                 </span>
-                <span className="shrink-0 text-[10px] text-paper-400">{node.expandable ? node.childCount : node.kind}</span>
-                <CopyBtn text={node.path} title="复制 JSON Pointer 路径" />
-                <button
-                  onClick={() => navigator.clipboard?.writeText(toDisplayString(node.value))}
-                  title="复制值"
-                  className="grid h-6 w-6 shrink-0 place-items-center rounded-lg text-paper-500 transition hover:bg-paper-100 hover:text-paper-900"
-                >
-                  <Copy size={12} />
-                </button>
+                {/* 复制按钮平时隐藏，悬停该行才出现 —— 避免整屏小图标噪声 */}
+                <span className="shrink-0 text-[10px] text-paper-400 opacity-100 group-hover:opacity-0">{node.expandable ? node.childCount : node.kind}</span>
+                <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                  <CopyBtn text={node.path} title="复制 JSON Pointer 路径" />
+                  <button
+                    onClick={() => navigator.clipboard?.writeText(toDisplayString(node.value))}
+                    title="复制值"
+                    className="grid h-7 w-7 place-items-center rounded-lg text-paper-500 transition hover:bg-paper-200 hover:text-paper-900"
+                  >
+                    <Copy size={12} />
+                  </button>
+                </div>
               </div>
             );
           })}
         </div>
+        {rows.length <= 1 && !rows[0]?.expandable && (
+          <p className="p-3 text-xs text-paper-500">输入 JSON 后这里显示可折叠的节点树。</p>
+        )}
       </div>
-      <p className="mt-1.5 text-[11px] text-paper-500">点箭头折叠 / 展开节点 · 右侧按钮复制路径或值</p>
+
+      {/* 底部：与左栏状态行同高同版式（h-6 + px-3 + text-[11px]） */}
+      <div className="flex h-6 shrink-0 items-center gap-1.5 border-t border-paper-200/70 px-3 text-[11px] text-paper-500">
+        点箭头折叠 / 展开，右侧按钮复制路径或值
+      </div>
     </div>
   );
 }
