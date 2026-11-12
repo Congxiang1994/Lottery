@@ -54,6 +54,16 @@ export default function TreeView({
   /** 鼠标当前处于第几个方块的位置（0..n，n 表示末尾） */
   const [hoverSlot, setHoverSlot] = useState<number | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  /**
+   * 拖动期间**冻结**的同级列表。
+   *
+   * ⚠️ 这是修掉"顺序乱掉"的关键：拖动时父级会不断按预演值重算行模型，
+   * rows / siblings / fromSlot 都会随之变化 —— 方块模式若继续读实时数据，
+   * 起始位与方块顺序就会跟着漂移，表现为左右不一致、方块位置乱跳。
+   * 所以在按下的瞬间把兄弟列表连同起始下标一起冻结，拖动全程只认这一份。
+   */
+  const [frozen, setFrozen] = useState<{ list: SourceLine[]; from: number; parentPath: string } | null>(null);
+
   const scroller = useRef<HTMLDivElement>(null);
 
   const onMoveCb = useRef(onMove); onMoveCb.current = onMove;
@@ -68,27 +78,23 @@ export default function TreeView({
    * 方块模式的数据准备
    * ------------------------------------------------------------------ */
 
-  const draggingRow = dragging ? rows.find((r) => r.path === dragging) : null;
+  /** 被拖的节点：优先从冻结列表里取（实时 rows 会随预演变化，不能依赖） */
+  const draggingRow = useMemo(() => {
+    if (!dragging) return null;
+    if (frozen) return frozen.list.find((r) => r.path === dragging) ?? null;
+    return rows.find((r) => r.path === dragging) ?? null;
+  }, [dragging, frozen, rows]);
 
   /**
-   * 同级节点（拖动时只显示它们）。
+   * 同级节点（方块模式下显示的内容）——使用**冻结**的那一份，不读实时 rows。
    *
-   * ⚠️ 必须排除 close 行：容器节点在行模型里是「open 行 + … + close 行」，
-   * 两行的 path / parentPath 完全相同，不过滤的话同一个节点会出现两次
-   * （实测 tools 重复 3 次、config 重复 5 次）。
+   * 说明：容器节点在行模型里是「open 行 + … + close 行」，两行 path / parentPath
+   * 相同，所以构建冻结列表时已排除 close 行，避免同一节点重复出现。
    */
-  const siblings = useMemo(() => {
-    if (!draggingRow) return [];
-    return rows.filter(
-      (r) => r.parentPath === draggingRow.parentPath && r.keyText !== null && r.kind !== "close",
-    );
-  }, [rows, draggingRow]);
+  const siblings = frozen?.list ?? [];
 
-  /** 被拖的是同级里的第几个 */
-  const fromSlot = useMemo(() => {
-    if (!draggingRow) return -1;
-    return siblings.findIndex((s) => s.path === draggingRow.path);
-  }, [siblings, draggingRow]);
+  /** 被拖的是同级里的第几个（也来自冻结数据） */
+  const fromSlot = frozen?.from ?? -1;
 
   /** 目标位置（松手后会落在第几位） */
   const [targetSlot, setTargetSlot] = useState<number | null>(null);
@@ -99,6 +105,13 @@ export default function TreeView({
     if (row.keyText === null) return; // 根节点没有同级
     e.preventDefault();
     e.stopPropagation();
+    // 先冻结兄弟列表（此刻 rows 还是拖动前的真实数据）
+    const sibs = rows.filter(
+      (r) => r.parentPath === row.parentPath && r.keyText !== null && r.kind !== "close",
+    );
+    const from = sibs.findIndex((r) => r.path === row.path);
+    if (from < 0 || row.parentPath === null) return;
+    setFrozen({ list: sibs, from, parentPath: row.parentPath });
     setDragging(row.path);
     setHovered(null);
     onHoverBlock(null);
@@ -145,6 +158,7 @@ export default function TreeView({
         onMoveCb.current?.(draggingRow.parentPath, fromSlot, at, nextVal);
       }
       setDragging(null);
+      setFrozen(null);
       setHoverSlot(null);
       setTargetSlot(null);
       lastEmit.current = null;
@@ -201,7 +215,7 @@ export default function TreeView({
           {isDraggingMode ? (
             <Tip text="取消拖动（Esc）" side="bottom">
               <button
-                onClick={() => { setDragging(null); setTargetSlot(null); onPreviewRef.current?.(null, null); }}
+                onClick={() => { setDragging(null); setFrozen(null); setTargetSlot(null); setHoverSlot(null); lastEmit.current = null; onPreviewRef.current?.(null, null); }}
                 className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-rose-600"
               >
                 <X size={12} strokeWidth={2.4} />
