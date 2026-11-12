@@ -305,13 +305,17 @@ export default function JsonTool() {
         </div>
       </div>
 
+      {/* 撤销 / 操作提示：**固定在视口底部居中，不占任何布局高度**。
+          ⚠️ 它绝不能出现在两框上方 —— 一旦插入文档流，两框就会被整体下推，
+          页面「跳一下」，同时也破坏了两栏的行对齐。
+          需要整行横幅又不想动布局时，浮层是唯一解。 */}
       {(undo || toast) && (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-600/25 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+        <div className="fixed bottom-6 left-1/2 z-[60] flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2 rounded-xl border border-paper-300 bg-white/95 px-3 py-2 text-xs text-paper-800 shadow-lg backdrop-blur">
           <span className="truncate">{toast || undo?.label}</span>
           {undo && (
             <>
-              <button onClick={() => { setText(undo.text); setUndo(null); }} className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-0.5 font-medium transition hover:bg-emerald-100"><Undo2 size={12} /> 撤销</button>
-              <button onClick={() => setUndo(null)} className="shrink-0 rounded-lg px-2 py-0.5 text-emerald-700/90 transition hover:bg-emerald-100">收起</button>
+              <button onClick={() => { setText(undo.text); setUndo(null); }} className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-0.5 font-medium text-[#0d9488] transition hover:bg-[#0d9488]/10"><Undo2 size={12} /> 撤销</button>
+              <button onClick={() => setUndo(null)} className="shrink-0 rounded-lg px-2 py-0.5 text-paper-600 transition hover:bg-paper-100">收起</button>
             </>
           )}
         </div>
