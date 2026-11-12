@@ -74,6 +74,13 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
   const previewValRef = useRef<unknown>(null);
   /** 拖动开始时的原始位置（rows 会随预演变化，必须提前记住） */
   const originIndexRef = useRef(new Map<string, number>());
+  /**
+   * 上一帧已上抛的落点签名。
+   * ⚠️ 拖动时 pointermove 每秒能触发几十上百次，若每次都 setState + 上抛
+   * 预演值，父级就会疯狂重算整棵树 → 视觉上疯狂抖动（用户报的那个问题）。
+   * 只有「落点真的变了」才允许通知父级。
+   */
+  const lastEmitRef = useRef<string | null>(null);
 
   const rows = useMemo(() => toTreeRows(lines), [lines]);
 
@@ -109,8 +116,20 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
       const cur = draggingRef.current;
       const d = computeDrop(e.clientY);
       if (!d) return;
-      setDropAt({ index: d.lineIndex, targetPath: d.target.path, valid: d.valid });
-      setHint(d.valid ? "" : (d.reason ?? ""));
+
+      // 落点签名：只有它变化时，才更新视效与上抛预演值。
+      // 指针在同一行内移动不产生任何新状态 → 彻底消除抖动。
+      const sig = `${d.target.path}|${d.lineIndex}|${d.valid ? 1 : 0}`;
+      const changed = sig !== lastEmitRef.current;
+
+      if (changed) {
+        lastEmitRef.current = sig;
+        setDropAt({ index: d.lineIndex, targetPath: d.target.path, valid: d.valid });
+        setHint(d.valid ? "" : (d.reason ?? ""));
+      } else {
+        // 同一落点：最多只纠正一次 hint（比如从有效变无效已在 changed 分支处理）
+        return;
+      }
       if (d.valid && cur) {
         const from = rows.find((r) => r.path === cur);
         if (from && from.parentPath !== null) {
@@ -160,6 +179,7 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
       draggingRef.current = null;
       lastDrop.current = null;
       previewValRef.current = null;
+      lastEmitRef.current = null;
       onPreviewRef.current?.(null, null);
       setDragging(null);
       setDropAt(null);
@@ -181,8 +201,12 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
     if (row.keyText === null) { setHint("根节点没有同级，无法排序"); return; }
     draggingRef.current = row.path;
     originIndexRef.current.set(row.path, row.index_in_parent);
+    lastEmitRef.current = null;
     setDragging(row.path);
     setHint("");
+    // 清掉拖动前残留的悬停高亮，避免黄底跟着抖
+    setHovered(null);
+    onHoverBlock(null);
     e.preventDefault();
     e.stopPropagation();
   };
@@ -266,10 +290,14 @@ export default function TreeView({ lines, expanded, onToggle, onExpandAll, onCol
                 <div
                   key={`${row.index}-${row.path}-${row.kind}`}
                   onMouseEnter={() => {
+                    // ⚠️ 拖动中禁止悬停高亮：行在动，鼠标会不停进出不同行，
+                    // 每次进出都 setState + 通知父级高亮，会引发持续重渲染（抖动源之一）。
+                    if (dragging) return;
                     setHovered(row.path);
                     onHoverBlock([row.blockStart, row.blockEnd]);
                   }}
                   onMouseLeave={() => {
+                    if (dragging) return;
                     setHovered((prev) => (prev === row.path ? null : prev));
                     onHoverBlock(null);
                   }}
