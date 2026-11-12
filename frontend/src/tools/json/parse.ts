@@ -1,10 +1,9 @@
 /**
- * 统一解析管线（JsonStudio 最值钱的部分）。
+ * JSON 解析管线（无 UI 依赖的纯函数）。
  *
  * 探测优先级（从严格到宽松，命中即停）：
- *   empty → strict JSON → escaped → JSONL → JSON5 → JSONC → repair → log
+ *   empty → escaped → JSONL → strict JSON → JSON5 → JSONC → repair
  *
- * 每条分支都返回同一种 ParseResult，视图层无需关心输入到底是哪来的。
  * 全链路用 lossless-json 解析，大整数不降级。
  *
  * ⚠️ 三条实测得出的顺序约束（改之前先读）：
@@ -14,18 +13,17 @@
  *     （`[{"a":1},{"a":2}]`），把「逐行记录」误变成单个数组。
  *  ③ **残缺 / 前后带杂字的文本不得交给 repair 或 JSONC 容错**：
  *     jsonrepair('{"a":') 会补成 `{"a":null}` 假装成功；jsonc-parser 对
- *     'xxx {"b":2} yyy' 会返回 {"b":2} 并只报 InvalidSymbol。这类必须走
- *     「日志片段提取」或明确失败，不能假装有校。
+ *     'xxx {"b":2} yyy' 会返回 {"b":2} 并只报 InvalidSymbol。这类必须明确失败，
+ *     不能假装有校。
  *
- * ⚠️ 竞态：本函数纯同步；调用方做「粘贴自动格式化」时必须自己带
- * version / AbortController 校验，旧结果不得覆盖新输入（JsonStudio v1.2.0 教训）。
+ * ⚠️ 日志混合文本提取已按产品收敛移除：这里是「一个 JSON」的工具，
+ *    片段提取属于多文档场景，不再需要（也不再产生 log 分支）。
  */
 import JSON5 from "json5";
 import { jsonrepair } from "jsonrepair";
 import { parse as parseJsonc, printParseErrorCode, type ParseError as JsoncErr } from "jsonc-parser";
 import { parseLossless, stringifyLossless, hasLossless } from "./lossless.ts";
 import { computeStats } from "./stats.ts";
-import { extractFragments } from "./extract.ts";
 import { EMPTY_STATS, type InputKind, type ParseError, type ParseOptions, type ParseResult, type JsonlLine } from "./types.ts";
 
 /* ------------------------- 错误翻译（中文 + 行列定位） ------------------------- */
@@ -94,7 +92,7 @@ function okResult(kind: InputKind, value: unknown, text: string, extra: Partial<
 /* ------------------------- 输入形态预判定 ------------------------- */
 
 /** 整段是「一个带引号的 JSON 字符串字面量」，且内层能被解析成 JSON */
-function tryEscaped(text: string): { value: unknown; inner: string } | null {
+function tryEscaped(text: string): { value: unknown } | null {
   const t = text.trim();
   if (t.length < 2 || t[0] !== '"' || t[t.length - 1] !== '"') return null;
   let inner: string;
@@ -107,7 +105,7 @@ function tryEscaped(text: string): { value: unknown; inner: string } | null {
   const s = inner.trim();
   if (!s || !/^[{[]/.test(s)) return null;
   try {
-    return { value: parseLossless(s), inner: s };
+    return { value: parseLossless(s) };
   } catch {
     return null;
   }
@@ -136,9 +134,7 @@ function isWholeJsonDocument(text: string): boolean {
   return last === "}" || last === "]";
 }
 
-/** 文本是否含 JSON 之外的非空白杂字（日志混合文本特征） */
 function hasForeignText(text: string): boolean {
-  // 剥掉前置注释后，若首字符不是 { [ 就是杂字（如 'xxx {"a":1}'）
   return !/^[{[]/.test(stripLeadingComments(text.trim()));
 }
 
@@ -149,8 +145,7 @@ export function parseJsonl(text: string): JsonlLine[] {
     const line = i + 1;
     if (!raw.trim()) return { line, raw, ok: false, error: "空行" };
     try {
-      const value = parseLossless(raw);
-      return { line, raw, ok: true, value };
+      return { line, raw, ok: true, value: parseLossless(raw) };
     } catch (e) {
       return { line, raw, ok: false, error: translateError((e as Error).message, raw).message };
     }
@@ -160,29 +155,21 @@ export function parseJsonl(text: string): JsonlLine[] {
 function looksLikeJsonl(text: string): boolean {
   const rows = text.split(/\r?\n/).filter((r) => r.trim());
   if (rows.length < 2) return false;
-  let hits = 0;
   for (const r of rows) {
     if (!/^[{[]/.test(r.trim())) return false;
     try {
       parseLossless(r);
-      hits += 1;
     } catch {
       return false;
     }
   }
-  return hits >= 2;
+  return true;
 }
 
 /* ------------------------- 主入口 ------------------------- */
 
 export function parseInput(text: string, opts: ParseOptions = {}): ParseResult {
-  const {
-    allowLoose = true,
-    allowRepair = true,
-    allowJsonl = true,
-    allowLogExtract = true,
-    allowEscaped = true,
-  } = opts;
+  const { allowLoose = true, allowRepair = true, allowJsonl = true, allowEscaped = true } = opts;
 
   if (!text.trim()) return { ...okResult("empty", undefined, text), stats: EMPTY_STATS };
 
@@ -220,12 +207,11 @@ export function parseInput(text: string, opts: ParseOptions = {}): ParseResult {
     }
   }
 
-  // 5) JSONC（注释 + 尾逗号）：只在「完整文档」且错误非致命时接受
+  // 5) JSONC（注释 + 尾逗号）
   if (allowLoose && whole && !foreign) {
     const errs: JsoncErr[] = [];
     const v = parseJsonc(text, errs, { allowTrailingComma: true, disallowComments: false });
-    // 实测：'{"a":' 报 ValueExpected + CloseBraceExpected 却仍返回 {} → 必须全量拒绝
-    const fatal = errs.filter((e) => e.error !== 3 && e.error !== 15); // 3=TrailingComma 15=Comment 可容忍
+    const fatal = errs.filter((e) => e.error !== 3 && e.error !== 15);
     if (v !== undefined && fatal.length === 0) {
       return okResult("jsonc", tryParseLosslessFromLoose(v, text), text);
     }
@@ -242,22 +228,10 @@ export function parseInput(text: string, opts: ParseOptions = {}): ParseResult {
     }
   }
 
-  // 7) 日志混合文本：原文不变，片段进独立面板
-  if (allowLogExtract) {
-    const fragments = extractFragments(text);
-    if (fragments.length) {
-      return okResult("log", undefined, text, { fragments });
-    }
-  }
-
-  return fail("invalid", (jsoncErrText || strictErr || "无法解析"), text);
+  return fail("invalid", jsoncErrText || strictErr || "无法解析", text);
 }
 
-/**
- * JSON5 / JSONC 解析出的普通 JS 对象可能已经丢了大整数。
- * 尝试把原文用 jsonrepair 补成合法 JSON 后无损解析；补不回来就保留原值
- * （视图会给「精度可能丢失」提示，绝不假装无损）。
- */
+/** JSON5 / JSONC 可能已丢大整数；补成合法 JSON 后无损复核，补不回来则保留原值 */
 function tryParseLosslessFromLoose(v: unknown, text: string): unknown {
   try {
     return parseLossless(jsonrepair(text));
@@ -266,15 +240,11 @@ function tryParseLosslessFromLoose(v: unknown, text: string): unknown {
   }
 }
 
-/** 把解析结果统一转成「可展示的 JSON 文本」（不同 kind 有不同形态） */
+/** 统一转成可展示的 JSON 文本 */
 export function resultToText(result: ParseResult, indent: number | string = 2): string {
   if (!result.ok) return "";
-  if (result.kind === "log") return result.source; // 日志提取不改原文
   if (result.kind === "jsonl") {
-    return (result.lines ?? [])
-      .filter((l) => l.ok)
-      .map((l) => stringifyLossless(l.value))
-      .join("\n");
+    return (result.lines ?? []).filter((l) => l.ok).map((l) => stringifyLossless(l.value)).join("\n");
   }
   return stringifyLossless(result.value, indent);
 }

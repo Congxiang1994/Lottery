@@ -1,8 +1,25 @@
 # JSON 工具重构方案 · 对标 JsonStudio
 
-> 状态：**方案待评审，未开发**。确认后再进入阶段 1。
+> 状态：**已实施并上线（commit `7e5f649`），随后按用户 2026-11-12 反馈收敛为极简双栏**。
 > 日期：2026-11-12 · 目标：`/tools` 的 JSON 标签页
 > 对标来源：[sundegan/JsonStudio](https://github.com/sundegan/JsonStudio)（[官网](https://jsonstudio.js.org/zh/)）
+>
+> ## ⚠️ 当前实现范围（产品收敛，2026-11-12 下午）
+>
+> 用户明确要求：**只要「左 JSON 源码 + 右可折叠节点树」双栏**，其余全部去掉：
+> ① 去掉多标签（一般就一个 JSON）；② 去掉上传/下载/导出图片/快捷键；
+> ③ 去掉「键名风格」（含义不明）；④ 去掉树视图/Grid/Diff/转换/Schema/代码生成/JSONL 等模式；
+> ⑤ 去掉源码下方的 JSONPath 等查询栏。
+>
+> 因此本文 §3–§6 的「多模式工作台」架构与依赖清单**仅是首版实施记录，不再是当前形态**。
+> 当前保留的能力：统一解析（严格/转义/JSON5/JSONC/修复/JSONL）、大整数无损、格式化/压缩/
+> 缩进/键名排序、转义与反转义、示例/清空/撤销、中文错误定位、统计条、CodeMirror 编辑器、
+> 右侧常驻只读可折叠节点树（展开全部/折叠全部/复制路径或值）。
+>
+> 当前依赖已相应卸载：`@cfworker/json-schema` / `diff` / `fast-xml-parser` / `genson-js` /
+> `html-to-image` / `jmespath` / `jsonpath-plus` / `papaparse` / `smol-toml` / `yaml` 及
+> `@types/jmespath` / `@types/papaparse`。保留 CodeMirror 6 + `@tanstack/react-virtual` +
+> `json5` / `jsonc-parser` / `jsonrepair` / `lossless-json`。
 
 ---
 
