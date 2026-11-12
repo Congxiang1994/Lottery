@@ -22,6 +22,7 @@ import { formatJson, minifyJson, prettyJson, styleToInline, type Indent, type Fm
 import type { InputKind, ParseResult } from "./json/types.ts";
 import type { EditorStatus } from "./json/views/JsonEditor.tsx";
 import { moveSibling } from "./json/views/treeModel.ts";
+import Tip from "./Tip";
 
 const JsonEditor = lazy(() => import("./json/views/JsonEditor.tsx"));
 const TreeView = lazy(() => import("./json/views/TreeView.tsx"));
@@ -185,60 +186,82 @@ export default function JsonTool() {
 
   return (
     <div className="space-y-3">
-      {/* 选项栏 */}
+      {/* 选项栏
+          分组逻辑（用户 2026-11-12 要求）：
+            ① 「格式化」是主动作，缩进 / 风格都是它的参数 → 同组，紧跟其后；
+            ② 「压缩」是另一种独立动作 → 单独一组，与格式化解耦；
+            ③ 转义 / 示例 / 清空是工具动作 → 靠右。 */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* ① 格式化 + 它的参数（缩进、风格） */}
         <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
-          <button onClick={() => applyFormat("pretty")} className={`rounded-lg px-3 py-1.5 transition ${
-            view === "pretty" ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
-          }`}>
-            格式化
-          </button>
-          <button onClick={() => applyFormat("min")} className={`rounded-lg px-3 py-1.5 transition ${
-            view === "min" ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
-          }`}>
-            压缩
-          </button>
-        </div>
-        <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
-          {([2, 4, "tab"] as const).map((n) => (
-            <button key={n} onClick={() => reapplyIfFormatted(n)} className={`rounded-lg px-2.5 py-1.5 transition ${
-              indent === n ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+          <Tip text="按当前缩进与风格重排源码（就地改写）">
+            <button onClick={() => applyFormat("pretty")} className={`rounded-lg px-3 py-1.5 transition ${
+              view === "pretty" ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
             }`}>
-              {n === "tab" ? "Tab" : `${n} 空格`}
+              格式化
             </button>
-          ))}
+          </Tip>
         </div>
-        {/* 格式化风格：标准（传统全展开）/ 高效（纯标量数组内联）。
-            前面加「格式」小字标签，避免两个孤零零的「标准/高效」让人看不懂。 */}
-        <div
-          className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium"
-          title="标准：每个元素一行；高效：字符串/数字数组压成一行"
-        >
-          <span className="pl-1.5 pr-0.5 text-[11px] text-paper-500">格式</span>
-          {FMT_STYLES.map((s) => (
-            <button
-              key={s.key}
-              onClick={() => reapplyIfFormatted(indent, s.key)}
-              title={s.hint}
-              className={`rounded-lg px-2.5 py-1.5 transition ${
-                fmtStyle === s.key ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
-              }`}
-            >
-              {s.label}
-            </button>
+
+        <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
+          <span className="pl-1.5 pr-0.5 text-[11px] text-paper-500">缩进</span>
+          {([2, 4, "tab"] as const).map((n) => (
+            <Tip key={n} text={n === "tab" ? "每层缩进一个制表符" : `每层缩进 ${n} 个空格`}>
+              <button onClick={() => reapplyIfFormatted(n)} className={`rounded-lg px-2.5 py-1.5 transition ${
+                indent === n ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+              }`}>
+                {n === "tab" ? "Tab" : `${n} 空格`}
+              </button>
+            </Tip>
           ))}
         </div>
 
+        <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
+          <span className="pl-1.5 pr-0.5 text-[11px] text-paper-500">格式</span>
+          {FMT_STYLES.map((s) => (
+            <Tip key={s.key} text={s.hint}>
+              <button
+                onClick={() => reapplyIfFormatted(indent, s.key)}
+                className={`rounded-lg px-2.5 py-1.5 transition ${
+                  fmtStyle === s.key ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+                }`}
+              >
+                {s.label}
+              </button>
+            </Tip>
+          ))}
+        </div>
+
+        {/* ② 压缩：独立动作，单独分组 */}
+        <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
+          <Tip text="去掉所有空白，压成单行（就地改写）">
+            <button onClick={() => applyFormat("min")} className={`rounded-lg px-3 py-1.5 transition ${
+              view === "min" ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+            }`}>
+              压缩
+            </button>
+          </Tip>
+        </div>
+
+        {/* ③ 工具动作 */}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <button onClick={doEscape} disabled={!text} title="整段转义成带引号的 JSON 字符串字面量" className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200 disabled:opacity-40">
-            <Quote size={13} /> 转义
-          </button>
-          <button onClick={doUnescape} disabled={restorable === 0} title="把 \n \t \uXXXX 等字面量还原成真实字符" className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200 disabled:opacity-40">
-            <UnfoldVertical size={13} /> 反转义
-            {restorable > 0 && <span className="rounded-full bg-brand-gold/15 px-1.5 py-px text-[11px] font-semibold tabular-nums text-brand-gold">{restorable}</span>}
-          </button>
-          <button onClick={() => setWithUndo(SAMPLE, "已载入示例")} className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200"><FileJson size={13} /> 示例</button>
-          <button onClick={() => { setUndo(null); setText(""); }} className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200"><Trash2 size={13} /> 清空</button>
+          <Tip text="整段转义成带引号的 JSON 字符串字面量">
+            <button onClick={doEscape} disabled={!text} className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200 disabled:opacity-40">
+              <Quote size={13} /> 转义
+            </button>
+          </Tip>
+          <Tip text='把 \n \t \uXXXX 等字面量还原成真实字符'>
+            <button onClick={doUnescape} disabled={restorable === 0} className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200 disabled:opacity-40">
+              <UnfoldVertical size={13} /> 反转义
+              {restorable > 0 && <span className="rounded-full bg-brand-gold/15 px-1.5 py-px text-[11px] font-semibold tabular-nums text-brand-gold">{restorable}</span>}
+            </button>
+          </Tip>
+          <Tip text="载入一段示例 JSON">
+            <button onClick={() => setWithUndo(SAMPLE, "已载入示例")} className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200"><FileJson size={13} /> 示例</button>
+          </Tip>
+          <Tip text="清空当前内容">
+            <button onClick={() => { setUndo(null); setText(""); }} className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200"><Trash2 size={13} /> 清空</button>
+          </Tip>
         </div>
       </div>
 

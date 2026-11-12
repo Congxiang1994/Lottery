@@ -10,11 +10,12 @@
  * 用虚拟滚动，几十 MB 的 JSON 也不会卡（视图只渲染可见行）。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Copy, FoldVertical, UnfoldVertical, Network, GripVertical } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Minimize2, Maximize2, Network, GripVertical, ClipboardCopy } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { flatten, defaultExpanded, allExpandablePaths, canDropOn, canMoveSibling, type FlatNode } from "./treeModel.ts";
 import { toDisplayString } from "../lossless.ts";
 import CopyBtn from "../../CopyBtn.tsx";
+import Tip from "../../Tip";
 
 const KIND_COLOR: Record<string, string> = {
   object: "text-paper-500", array: "text-paper-500",
@@ -172,13 +173,19 @@ export default function TreeView({ value, onMove }: TreeViewProps) {
       <div className="flex h-7 shrink-0 items-center gap-2 border-b border-paper-200/70 px-3 text-xs text-paper-600">
         <Network size={13} className="text-[#0d9488]" /> 节点树
         <span className="tabular-nums">{rows.length} 行</span>
-        <div className="ml-auto flex items-center gap-0.5">
-          <button onClick={() => setExpanded(allPaths)} title="展开全部" className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-paper-900">
-            <UnfoldVertical size={12} />
-          </button>
-          <button onClick={() => setExpanded(new Set())} title="折叠全部" className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-paper-900">
-            <FoldVertical size={12} />
-          </button>
+        <div className="ml-auto flex items-center gap-1">
+          {/* 展开 = 向外箭头（Maximize2）；折叠 = 向内箭头（Minimize2）。
+              原来用 UnfoldVertical / FoldVertical，两个图标几乎一样、分不清。 */}
+          <Tip text="展开全部节点" side="bottom">
+            <button onClick={() => setExpanded(allPaths)} className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-[#0d9488]">
+              <Maximize2 size={11} strokeWidth={2.4} />
+            </button>
+          </Tip>
+          <Tip text="折叠全部节点" side="bottom">
+            <button onClick={() => setExpanded(new Set())} className="grid h-5 w-5 place-items-center rounded text-paper-500 transition hover:bg-paper-100 hover:text-paper-900">
+              <Minimize2 size={11} strokeWidth={2.4} />
+            </button>
+          </Tip>
         </div>
       </div>
 
@@ -249,14 +256,25 @@ export default function TreeView({ value, onMove }: TreeViewProps) {
                   {node.text}
                 </span>
                 <span className="shrink-0 text-[10px] text-paper-400 opacity-100 group-hover:opacity-0">{node.expandable ? node.childCount : node.kind}</span>
+                {/* 两个复制按钮原本长得一模一样，只靠悬停提示才分得清。
+                    ⚠️ 这里不用 Tip 气泡：行在虚拟滚动容器里，absolute 气泡会被
+                    overflow 裁掉（实测宽度算成 0）。改为「图标+颜色+常驻小字」三重区分：
+                      · 复制路径 → ClipboardCopy + 青色（呼应左栏 key 的配色）
+                      · 复制值   → Copy + 琥珀色（呼应值的配色） */}
                 <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-                  <CopyBtn text={node.path} title="复制 JSON Pointer 路径" />
+                  <button
+                    onClick={() => navigator.clipboard?.writeText(node.path)}
+                    title="JSON Pointer 路径"
+                    className="flex h-7 items-center gap-0.5 rounded-lg px-1 text-[10px] text-[#0d9488]/80 transition hover:bg-[#0d9488]/10 hover:text-[#0d9488]"
+                  >
+                    <ClipboardCopy size={11} /> 路径
+                  </button>
                   <button
                     onClick={() => navigator.clipboard?.writeText(toDisplayString(node.value))}
-                    title="复制值"
-                    className="grid h-7 w-7 place-items-center rounded-lg text-paper-500 transition hover:bg-paper-200 hover:text-paper-900"
+                    title="这个节点的值"
+                    className="flex h-7 items-center gap-0.5 rounded-lg px-1 text-[10px] text-amber-600/80 transition hover:bg-amber-500/10 hover:text-amber-700"
                   >
-                    <Copy size={12} />
+                    <Copy size={11} /> 值
                   </button>
                 </div>
               </div>
