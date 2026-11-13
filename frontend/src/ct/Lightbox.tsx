@@ -31,9 +31,11 @@ export interface LightboxProps {
   onIndexChange: (index: number) => void;
   /** 关闭 */
   onClose: () => void;
+  /** 每张图片的副标题（如「第 2 次检查 · 2026-01-21」），可省略 */
+  labels?: string[];
 }
 
-export function Lightbox({ images, index, onIndexChange, onClose }: LightboxProps) {
+export function Lightbox({ images, index, onIndexChange, onClose, labels = [] }: LightboxProps) {
   const open = index >= 0 && index < images.length;
   const prev = useCallback(() => {
     if (images.length < 2) return;
@@ -69,12 +71,17 @@ export function Lightbox({ images, index, onIndexChange, onClose }: LightboxProp
       className="ct-lightbox-panel"
     >
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {/* 顶部：序号 + 关闭 */}
+        {/* 顶部：序号 + 所属检查 + 关闭 */}
         <div className="flex shrink-0 items-center justify-between gap-3 px-1 pb-2 text-white/80">
-          <span className="inline-flex items-center gap-1.5 text-xs">
-            <ZoomIn size={13} />
-            {index + 1} / {images.length}
-          </span>
+          <div className="flex items-baseline gap-2.5">
+            <span className="inline-flex items-center gap-1.5 text-xs">
+              <ZoomIn size={13} />
+              {index + 1} / {images.length}
+            </span>
+            {labels[index] && (
+              <span className="text-xs font-medium text-white/70">{labels[index]}</span>
+            )}
+          </div>
           <button
             type="button"
             onClick={onClose}
