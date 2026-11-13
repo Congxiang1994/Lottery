@@ -108,7 +108,7 @@ FEATURE_LABELS = {
     "trigger": "API 触发器",
     "stats": "访问统计",
     "access": "访问管理",
-    "ct": "CT 报告",
+    "ct": "检查结果",
     "other": "其他",
     "probe": "探测/扫描",
 }

@@ -49,7 +49,7 @@ const EMPTY_FORM: FormState = {
 export default function CTAdmin() {
   return (
     <AdminGate
-      title="CT 检查记录管理"
+      title="健康管理"
       subtitle="私有功能 · 全站操作密码"
       desc="维护检查记录与报告照片；分享页 /ct 的分享口令与此独立。"
       probe={() => ctAdminApi.session()}
@@ -159,7 +159,7 @@ function AdminPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   return (
     <div className="pt-8">
       <PageHeader
-        title="CT 检查记录管理"
+        title="健康管理"
         subtitle="维护检查信息与报告照片 · 分享页 /ct 实时读取"
         icon={ScanLine}
         iconClass="text-brand-blue"

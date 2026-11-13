@@ -39,7 +39,7 @@ import { shortDate } from "./logic";
 export default function CT() {
   return (
     <AdminGate
-      title="CT 检查结果"
+      title="检查结果"
       subtitle="私有功能 · 分享口令"
       desc="输入分享口令即可查看检查记录，并可把链接发给医生。"
       probe={() => ctApi.session()}
@@ -193,7 +193,7 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   return (
     <div className="pt-8">
       <PageHeader
-        title="CT 检查结果"
+        title="检查结果"
         subtitle="检查记录 · 可直接转发给医生"
         icon={FileScan}
         iconClass="text-brand-blue"

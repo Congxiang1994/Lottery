@@ -164,7 +164,7 @@ export const APPS: AppEntry[] = [
   },
   {
     id: "ct",
-    title: "CT 检查结果",
+    title: "检查结果",
     desc: "私有工具：结构化检查记录与报告照片，独立分享口令保护，可直接把链接发给医生查看。",
     icon: FileScan,
     tags: ["医疗报告", "私有"],
@@ -175,7 +175,7 @@ export const APPS: AppEntry[] = [
   },
   {
     id: "ct-admin",
-    title: "CT 记录管理",
+    title: "健康管理",
     desc: "私有工具：增删改检查记录、上传报告照片、调整顺序；分享页 /ct 实时读取。",
     icon: SlidersHorizontal,
     tags: ["内容管理", "私有"],
