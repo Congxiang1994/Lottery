@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CalendarDays,
   ChevronDown,
@@ -19,8 +19,8 @@ import { Empty, ErrorBlock, Loading } from "../common/State";
 import { ExitPresence } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
 import { ctApi, type CtExam } from "./api";
-import { Lightbox } from "./Lightbox";
-import { flattenPhotos, globalPhotoIndex, shortDate } from "./logic";
+import { Lightbox, type LightboxImage } from "./Lightbox";
+import { shortDate } from "./logic";
 
 /**
  * CT 检查记录分享页 /ct（只读）
@@ -63,9 +63,6 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
       否则监听会在滚动刚开始时把 activeExam 覆盖回旧值（点下一次没反应）。 */
   const programmaticScroll = useRef(false);
   const unlockRef = useRef<(() => void) | null>(null);
-
-  const [lightImages, setLightImages] = useState<{ url: string; caption: string }[]>([]);
-  const [lightIndex, setLightIndex] = useState(-1);
   const navRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -92,29 +89,32 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
 
   const hasExams = exams.length > 0;
 
-  /** 全部照片按检查顺序摊平（灯箱左右切换用） */
-  const allPhotos = useMemo(() => flattenPhotos(exams), [exams]);
-
   /* ---------------- 返回键：灯箱压历史栈，侧滑只关灯箱 ---------------- */
 
-  const closeLightbox = useCallback(() => setLightIndex(-1), []);
+  /** 正在预览的照片（null = 关闭）。单张预览，不做左右切换。 */
+  const [preview, setPreview] = useState<LightboxImage | null>(null);
+
+  const closeLightbox = useCallback(() => setPreview(null), []);
   const lightHistory = useModalHistory("ctLightbox", closeLightbox);
 
   const closeImage = useCallback(() => {
-    setLightIndex(-1);
+    setPreview(null);
     lightHistory.pop();
   }, [lightHistory]);
 
-  /** 点某次检查里的第 k 张照片 → 换算成全局下标开灯箱 */
+  /** 点某次检查里的第 k 张照片 → 开单张预览 */
   const openPhoto = useCallback(
     (examIndex: number, photoIndex: number) => {
-      const idx = globalPhotoIndex(exams, examIndex, photoIndex);
-      if (idx < 0) return;
-      setLightImages(allPhotos.map((p) => ({ url: p.url, caption: p.caption })));
-      setLightIndex(idx);
+      const e = exams[examIndex];
+      const p = e?.photos[photoIndex];
+      if (!p) return;
+      setPreview({
+        url: p.url,
+        caption: p.caption || `第 ${examIndex + 1} 次检查 · ${shortDate(e.exam_time)}`,
+      });
       lightHistory.push();
     },
-    [exams, allPhotos, lightHistory],
+    [exams, lightHistory],
   );
 
   /* ---------------- 滚动感知当前是第几次 ---------------- */
@@ -335,24 +335,17 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
               ))}
             </div>
 
-            {allPhotos.length > 0 && (
+            {exams.some((e) => e.photos.length > 0) && (
               <p className="text-[11px] text-paper-500">
-                提示：点击报告照片可放大查看（← → 切换，Esc 或返回键关闭）。
+                提示：点击报告照片可放大查看（双指缩放，Esc 或返回键关闭）。
               </p>
             )}
           </>
         )}
       </div>
 
-      <ExitPresence open={lightIndex >= 0}>
-        {lightIndex >= 0 && (
-          <Lightbox
-            images={lightImages}
-            index={lightIndex}
-            onIndexChange={setLightIndex}
-            onClose={closeImage}
-          />
-        )}
+      <ExitPresence open={preview !== null}>
+        {preview !== null && <Lightbox image={preview} onClose={closeImage} />}
       </ExitPresence>
     </div>
   );
