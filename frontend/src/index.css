@@ -303,6 +303,10 @@ summary:active {
   background: rgba(20, 16, 12, 0.92);
   padding: 0.5rem;
   backdrop-filter: blur(8px);
+  /* ⚠️ 整层遮罩都要禁用浏览器默认手势：手指落在顶部栏/底部缩略图之间的
+     空隙时，浏览器仍会把它当成整页 pinch-zoom。只给 .ct-zoom-stage 加不够。 */
+  touch-action: none;
+  overscroll-behavior: contain;
 }
 .ct-lightbox-panel {
   max-width: min(1400px, 96vw);
@@ -310,6 +314,26 @@ summary:active {
   border: none;
   box-shadow: none;
   backdrop-filter: none;
+}
+
+/* ---------- 灯箱照片缩放（只缩放照片，不缩放整页）----------
+   ⚠️ touch-action: none 是这一整套手势的**前提**：它告诉浏览器「这个区域的手势
+   我自己处理」，否则双指捏合会被浏览器当成整页 zoom（iOS/Android 默认行为），
+   JS 里的 preventDefault 也来不及拦（浏览器已在合成层开始缩放）。
+   配合 Lightbox.tsx 里 touchstart/move/end 的 preventDefault（passive:false）双保险。
+
+   ⚠️ 只作用在 .ct-zoom-stage 上，不写进全局 meta viewport ——
+   不影响站内其它页面的可访问性缩放。 */
+.ct-zoom-stage {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: contain;
+}
+.ct-zoom-img {
+  will-change: transform;
+  transform-origin: center center;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 /* ⚠️ 按压反馈已上移到文件顶部的「全站交互基线」段（必须在 .card-hover 之前才能
