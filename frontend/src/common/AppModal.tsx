@@ -45,6 +45,12 @@ export interface AppModalProps {
   actions?: ReactNode;
   /** 面板外观：glass（默认，半透明毛玻璃）/ paper（长文阅读，书页纸面） */
   surface?: "glass" | "paper";
+  /**
+   * 遮罩（面板之外那层）的定制类名。
+   * 默认遮罩是暖棕半透明 + 轻模糊；**图片查看这类需要深色底的场景**用它覆盖
+   * （如 `!p-0 bg-black/90` 让图片顶满屏幕）。
+   */
+  overlayClassName?: string;
   /** 面板定制样式（如动画延迟） */
   style?: CSSProperties;
   /**
@@ -83,6 +89,7 @@ export function AppModal({
   description,
   actions,
   surface = "glass",
+  overlayClassName = "",
   style,
   z = 50,
   size = "md",
@@ -116,7 +123,7 @@ export function AppModal({
       <div
         className={`anim-overlay fixed inset-0 ${
           z === 60 ? "z-[60]" : "z-50"
-        } flex items-center justify-center overflow-y-auto overscroll-contain bg-[#3d2b1f]/60 p-4 backdrop-blur-sm`}
+        } flex items-center justify-center overflow-y-auto overscroll-contain bg-[#3d2b1f]/60 p-4 backdrop-blur-sm ${overlayClassName}`}
         onClick={dismissable ? onClose : undefined}
         role="dialog"
         aria-modal="true"

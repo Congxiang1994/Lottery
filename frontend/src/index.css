@@ -291,6 +291,27 @@ summary:active {
   animation: panel-out 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
+/* ---------- 报告图片灯箱（CT 报告放大查看）----------
+   图片查看要**深色底**：报告照片多为白底黑字，深色遮罩下边界清楚、看得清。
+   默认遮罩是暖棕半透明（.anim-overlay 的 bg-[#3d2b1f]/60），面板是 .glass 毛玻璃 ——
+   两者都不适合看图，这里整层覆盖掉。
+
+   ⚠️ 为什么写成独立 class 而不用 Tailwind 的 `!bg-[#14100c]/92`：
+   任意值 + `!` 前缀要写成 `!bg-[#14100c]`，Vite/Tailwind 3.4 的转义容易踩空
+   （实测该类根本没生成，页面仍是浅色遮罩）。自定义 class 稳定且可读。 */
+.ct-lightbox-overlay {
+  background: rgba(20, 16, 12, 0.92);
+  padding: 0.5rem;
+  backdrop-filter: blur(8px);
+}
+.ct-lightbox-panel {
+  max-width: min(1400px, 96vw);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 /* ⚠️ 按压反馈已上移到文件顶部的「全站交互基线」段（必须在 .card-hover 之前才能
    让卡片的悬停抬升按自己的 250ms 生效）。此处不再重复定义 .press。 */
 

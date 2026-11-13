@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink, FileScan, Link2, Printer, ShieldCheck } from "lucide-react";
 
 import { AdminGate } from "../common/AdminGate";
 import { PageHeader, PrivateBadge } from "../common/PageHeader";
 import { Empty, ErrorBlock, Loading } from "../common/State";
+import { ExitPresence } from "../common/Modal";
 import { copyText } from "../common/http";
 import { BTN_PRIMARY, BTN_SECONDARY } from "../common/ui";
 import { ctApi, type CtReportMeta } from "./api";
 import { CT_REPORT_SCOPE, extractReport, scopeCss } from "./embed";
+import { Lightbox, useImageClick } from "./Lightbox";
+import { collectImages } from "./images";
 
 /**
  * CT 报告分享页 /ct
@@ -44,6 +47,12 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
+  // 灯箱状态：图片列表 + 当前下标（-1 = 未打开）
+  const [images, setImages] = useState<string[]>([]);
+  const [lightIndex, setLightIndex] = useState(-1);
+  /** 报告容器节点（回调 ref 写入：报告是异步渲染的，用 useRef+useEffect 会错过挂载时机） */
+  const [reportNode, setReportNode] = useState<HTMLDivElement | null>(null);
+
   const load = () => {
     setLoading(true);
     setErr(null);
@@ -77,6 +86,28 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
     const parsed = extractReport(html);
     return { css: scopeCss(parsed.css), body: parsed.body };
   }, [html]);
+
+  /** 报告渲染后收集图片（base64 src），供灯箱使用 */
+  useEffect(() => {
+    if (!reportNode) {
+      setImages([]);
+      return;
+    }
+    setImages(collectImages(reportNode));
+  }, [reportNode, embedded]);
+
+  /** 点报告里的图片 → 开灯箱（事件委托，不改报告 HTML） */
+  const openImage = useCallback((index: number) => setLightIndex(index), []);
+  /** 挂点击监听（callback ref 专用：报告异步渲染，useEffect 会错过挂载时机） */
+  const attachClick = useImageClick(openImage);
+  /** 回调 ref：既挂点击监听，又把节点存进 state（供收集图片用） */
+  const reportRefCb = useCallback(
+    (node: HTMLDivElement | null) => {
+      setReportNode(node);
+      attachClick(node);
+    },
+    [attachClick],
+  );
 
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/ct` : "/ct";
 
@@ -161,11 +192,20 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
             {/* 报告正文：自带样式已作用域化到 .ct-report，整份报告融进本页 */}
             <div className="glass rounded-3xl shadow-card">
               <style>{embedded.css}</style>
+              {/* 放大提示：报告自带 CSS 不含交互，这里补一条（只加手势，不改排版） */}
+              <style>{`.${CT_REPORT_SCOPE} img { cursor: zoom-in; }`}</style>
               <div
+                ref={reportRefCb}
                 className={CT_REPORT_SCOPE}
                 dangerouslySetInnerHTML={{ __html: embedded.body }}
               />
             </div>
+
+            {images.length > 0 && (
+              <p className="text-[11px] text-paper-500">
+                提示：点击报告里的照片可放大查看（← → 切换，Esc 关闭）。
+              </p>
+            )}
 
             <p className="text-[11px] leading-relaxed text-paper-500">
               分享方式：把站点地址连同分享口令发给对方，对方打开后输入口令即可看到上面的报告原文。
@@ -174,6 +214,18 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
           </>
         )}
       </div>
+
+      {/* 报告图片灯箱（点报告里的照片放大） */}
+      <ExitPresence open={lightIndex >= 0}>
+        {lightIndex >= 0 && (
+          <Lightbox
+            images={images}
+            index={lightIndex}
+            onIndexChange={setLightIndex}
+            onClose={() => setLightIndex(-1)}
+          />
+        )}
+      </ExitPresence>
     </div>
   );
 }
