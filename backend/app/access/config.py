@@ -80,6 +80,7 @@ PAGE_FEATURES = (
     ("/algorithms", "lottery"),
     ("/trigger", "trigger"),
     ("/access", "access"),
+    ("/ct-admin", "ct"),
     ("/ct", "ct"),
 )
 
@@ -123,12 +124,13 @@ PRIVATE_PREFIXES = (
     "/story-admin",
     "/babysong-admin",
     "/access",
+    "/ct-admin",
     "/ct",
 )
 
 # 已知会话 cookie 名。**只记录「带了哪个 cookie 名」，绝不记值**（见 §5.1 隐私约定）
 SESSION_COOKIES = ("trigger_session", "story_session", "babysong_session", "access_session",
-                   "ct_session")
+                   "ct_session", "ct_admin_session")
 
 # query 脱敏：这些参数名的值一律替换为 ***
 SECRET_QUERY_KEYS = (

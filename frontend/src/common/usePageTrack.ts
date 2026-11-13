@@ -29,6 +29,7 @@ const TRACKED_PREFIXES = [
   "/trigger",
   "/access",
   "/ct",
+  "/ct-admin",
 ];
 
 function shouldTrack(pathname: string): boolean {

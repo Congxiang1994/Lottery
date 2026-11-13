@@ -1,37 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { ChevronLeft, ChevronRight, X, ZoomIn } from "lucide-react";
 
 import { AppModal } from "../common/AppModal";
-import { collectImages, imageIndexAt } from "./images";
 
 /**
  * 报告图片灯箱：点图放大 + 左右切换 + 键盘导航。
  *
- * 为什么单独做
- * ------------
- * 报告里的 4 张报告照是 **base64 内嵌的 `<img>`**（报告 HTML 自带），
- * 没有稳定的 id / src 可供「点谁开谁」——所以做法是：
- * 1. 渲染完报告后扫描容器，取出所有 `<img>` 的 src（顺序 = 报告里的顺序）；
- * 2. 给每张图挂一个点击手势（事件委托，**不改报告 HTML**）；
- * 3. 点第 n 张 → 打开灯箱，从第 n 张开始，支持左右切换。
- *
- * ⚠️ **不改报告 HTML** 是硬约束：报告要「原样呈现」，注入属性/包裹元素都会
- * 改变它的 DOM 结构。事件委托 + 外部状态是唯一不碰原文的做法。
- *
- * 纯逻辑（collectImages / imageIndexAt）在 `images.ts` —— 不依赖 React，
- * 可在 Node 里直接跑测试（见 `scripts/test-ct-lightbox.mjs`）。
+ * 图片由页面按检查记录传入（``LightboxImage[]``，含 url 与副标题），
+ * 点第 n 张 → 从第 n 张开始，支持左右箭头 / 方向键 / 底部缩略图切换。
  */
 
+/** 灯箱里的一张图 */
+export interface LightboxImage {
+  url: string;
+  /** 顶部副标题（如「第 2 次检查 · 2023-12-22」） */
+  caption?: string;
+}
+
 export interface LightboxProps {
-  /** 全部图片（base64 data URL） */
-  images: string[];
+  /** 全部图片 */
+  images: LightboxImage[];
   /** 当前查看的下标；-1 表示未打开 */
   index: number;
-  /** 切换到某一张（传 -1 关闭） */
+  /** 切换到某一张 */
   onIndexChange: (index: number) => void;
   /** 关闭 */
   onClose: () => void;
-  /** 每张图片的副标题（如「第 2 次检查 · 2026-01-21」），可省略 */
+  /** 兼容旧调用：额外的副标题数组（优先级低于 images[].caption） */
   labels?: string[];
 }
 
@@ -58,7 +53,8 @@ export function Lightbox({ images, index, onIndexChange, onClose, labels = [] }:
   }, [open, prev, next]);
 
   if (!open) return null;
-  const src = images[index];
+  const src = images[index].url;
+  const caption = images[index].caption || labels[index] || "";
 
   return (
     <AppModal
@@ -78,8 +74,8 @@ export function Lightbox({ images, index, onIndexChange, onClose, labels = [] }:
               <ZoomIn size={13} />
               {index + 1} / {images.length}
             </span>
-            {labels[index] && (
-              <span className="text-xs font-medium text-white/70">{labels[index]}</span>
+            {caption && (
+              <span className="text-xs font-medium text-white/70">{caption}</span>
             )}
           </div>
           <button
@@ -137,7 +133,7 @@ export function Lightbox({ images, index, onIndexChange, onClose, labels = [] }:
               className="flex shrink-0 flex-wrap items-center justify-center gap-2 px-1 pt-3"
               onClick={(e) => e.stopPropagation()}
             >
-              {images.map((s, i) => (
+              {images.map((img, i) => (
                 <button
                   key={i}
                   type="button"
@@ -150,7 +146,7 @@ export function Lightbox({ images, index, onIndexChange, onClose, labels = [] }:
                       : "border-white/25 opacity-55 hover:opacity-90"
                   }`}
                 >
-                  <img src={s} alt="" className="h-full w-full object-cover" />
+                  <img src={img.url} alt="" className="h-full w-full object-cover" />
                 </button>
               ))}
             </div>
@@ -159,62 +155,4 @@ export function Lightbox({ images, index, onIndexChange, onClose, labels = [] }:
       </div>
     </AppModal>
   );
-}
-
-/**
- * 给报告容器挂「点图放大」手势（事件委托）。
- *
- * 用 `useEffect` 在容器上监听 click：命中 `<img>` 时算出它的序号并回调。
- * 判定「点在图上」用 `event.target` 的最近 `<img>` 祖先 —— 点图片本身
- * （而非图片周围的空白）才算打开。
- */
-/**
- * 给报告容器挂「点图放大」手势（事件委托）。
- *
- * ⚠️ 必须用 **callback ref** 而不是 `useRef` + `useEffect`：
- * 报告正文是异步取回后才渲染的（`dangerouslySetInnerHTML`），
- * 若在 mount 时挂监听，那时 `containerRef.current` 还是 `null` → 监听器
- * **永远不会挂上**，症状是「点图完全没反应，页面也不报错」。
- *
- * 返回 `attach(node)`：调用方把它包进自己的 ref 回调里 —
- * **必须同时把 node 存进 state**（图片列表要靠它收集），
- * 只挂监听不存节点 → `images` 永远是空数组 → 灯箱打不开。
- */
-export function useImageClick(
-  onImageClick: (index: number) => void,
-): (node: HTMLElement | null) => void {
-  const handlerRef = useRef<((e: MouseEvent) => void) | null>(null);
-  const nodeRef = useRef<HTMLElement | null>(null);
-
-  return useCallback(
-    (node: HTMLElement | null) => {
-      // 卸载旧节点：先摘监听再换引用（避免重复挂载导致一次点击开两个灯箱）
-      const old = nodeRef.current;
-      if (old && handlerRef.current) {
-        old.removeEventListener("click", handlerRef.current);
-      }
-      nodeRef.current = node;
-      handlerRef.current = null;
-      if (!node) return;
-
-      const handler = (e: MouseEvent) => {
-        const idx = imageIndexAt(node, e.target);
-        if (idx >= 0) onImageClick(idx);
-      };
-      handlerRef.current = handler;
-      node.addEventListener("click", handler);
-    },
-    [onImageClick],
-  );
-}
-
-/** 报告图片的可读描述（给无障碍用）。 */
-export function useImageCount(containerRef: React.RefObject<HTMLElement | null>): number {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    setCount(collectImages(el).length);
-  }, [containerRef]);
-  return count;
 }

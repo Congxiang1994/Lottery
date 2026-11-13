@@ -59,8 +59,12 @@ function pickDetail(body: unknown): string {
 
 export interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-  /** 请求体，自动 JSON.stringify + 设 Content-Type。 */
+  /** 请求体，自动 JSON.stringify + 设 Content-Type。与 `body` 二选一。 */
   json?: unknown;
+  /** 原始请求体（如上传图片二进制）；调用方自己给 `headers` 的 Content-Type。 */
+  body?: BodyInit;
+  /** 自定义请求头（配合 `body` 使用；`json` 模式下无需设置 Content-Type）。 */
+  headers?: Record<string, string>;
   signal?: AbortSignal;
 }
 
@@ -71,15 +75,20 @@ export interface RequestOptions {
  * @param opts  见 :interface:`RequestOptions`
  */
 export async function request<T>(url: string, opts: RequestOptions = {}): Promise<T> {
-  const { method = "GET", json, signal } = opts;
+  const { method = "GET", json, body, headers: extraHeaders, signal } = opts;
   const init: RequestInit = {
     method,
     credentials: "same-origin",
     signal,
   };
   if (json !== undefined) {
-    init.headers = { "Content-Type": "application/json" };
+    init.headers = { "Content-Type": "application/json", ...(extraHeaders || {}) };
     init.body = JSON.stringify(json);
+  } else if (body !== undefined) {
+    init.headers = extraHeaders;
+    init.body = body;
+  } else if (extraHeaders) {
+    init.headers = extraHeaders;
   }
 
   let res: Response;

@@ -1,39 +1,82 @@
-import { createApi } from "../common/http";
+import { createApi, query, request } from "../common/http";
 
-/** CT 报告分享接口封装（`/api/ct/*`）。 */
+/** CT 检查记录接口封装（`/api/ct/*`）。 */
 const BASE = "/api/ct";
 
-/** ct 域请求统一走全站 http 客户端（401/错误体处理见 common/http.ts）。 */
 const api = createApi(BASE);
 
-export interface CtReportMeta {
+/** 一张报告照片 */
+export interface CtPhoto {
   id: number;
-  title: string;
-  bytes: number;
-  sha256: string;
-  updated_at: string;
+  caption: string;
+  sort_order: number;
+  url: string;
 }
 
-export interface CtReport {
-  title: string;
-  html: string;
-  bytes: number;
-  sha256: string;
+/** 一次检查（分享页 / 管理页共用） */
+export interface CtExam {
+  id: number;
+  exam_time: string;
+  project: string;
+  link_label: string;
+  link_url: string;
+  link_text: string;
+  note: string;
+  sort_order: number;
+  created_at: string;
   updated_at: string;
+  photos: CtPhoto[];
+  /** 管理页列表用（分享页接口不带这个字段） */
+  photo_count?: number;
 }
 
 export const ctApi = {
+  // ---------- 分享口令（只读会话） ----------
   session: () => api.get<{ valid: boolean }>("/session").then((d) => !!d?.valid),
-
   auth: (password: string) =>
     api.post<{ ok: boolean; message: string; ttl_hours: number }>("/auth", { password }),
-
   logout: () => api.post<{ ok: boolean }>("/logout"),
 
-  meta: () => api.get<{ exists: boolean; report: CtReportMeta | null }>("/meta"),
+  // ---------- 读取（分享页） ----------
+  exams: () => api.get<{ items: CtExam[]; total: number }>("/exams").then((d) => d.items),
+};
 
-  report: () => api.get<CtReport>("/report"),
+/* ------------------------------------------------------------------ *
+ * 管理端（独立 cookie，全站操作密码）
+ * ------------------------------------------------------------------ */
 
-  /** 原版 HTML 的直链（同源、带会话 cookie）—— 新窗口打开 / 打印用。 */
-  rawUrl: () => `${BASE}/report/raw`,
+export const ctAdminApi = {
+  session: () => api.get<{ valid: boolean }>("/admin/session").then((d) => !!d?.valid),
+  auth: (password: string) =>
+    api.post<{ ok: boolean; message: string; ttl_hours: number }>("/admin/auth", { password }),
+  logout: () => api.post<{ ok: boolean }>("/admin/logout"),
+
+  stats: () => api.get<{ exams: number; photos: number }>("/admin/stats"),
+
+  exams: () => api.get<{ items: CtExam[]; total: number }>("/admin/exams").then((d) => d.items),
+
+  createExam: (data: Partial<CtExam>) => api.post<CtExam>("/admin/exams", data),
+
+  updateExam: (id: number, data: Partial<CtExam>) =>
+    api.put<CtExam>(`/admin/exams/${id}`, data),
+
+  deleteExam: (id: number) => api.del<{ ok: boolean; removed: boolean }>(`/admin/exams/${id}`),
+
+  reorder: (ids: number[]) => api.post<{ items: CtExam[] }>("/admin/exams/reorder", { ids }),
+
+  photos: () => api.get<{ items: CtPhoto[] }>("/admin/photos").then((d) => d.items),
+
+  /** 上传照片：直接发二进制（不用 multipart，服务器没装 python-multipart） */
+  uploadPhoto: (examId: number, file: File, caption = "") =>
+    request<CtPhoto>(`${BASE}/admin/photo${query({ exam_id: examId, caption })}`, {
+      method: "POST",
+      body: file,
+      headers: { "Content-Type": file.type || "image/jpeg" },
+    }),
+
+  updatePhoto: (id: number, data: Partial<CtPhoto>) =>
+    api.put<CtPhoto>(`/admin/photo/${id}`, data),
+
+  deletePhoto: (id: number) =>
+    api.del<{ ok: boolean; removed: boolean }>(`/admin/photo/${id}`),
 };
