@@ -178,7 +178,9 @@ def main() -> int:
         for i in issues:
             print(" -", i)
         return 1
-    print("✅ README 一致性审计通过（9 个 README + 8 个归档文档 + 归档无损校验，0 问题）")
+    n_arch = len(list((ROOT / "docs/modules").glob("*.md")))
+    print(f"✅ README 一致性审计通过（{len(MODULE_FILES) + 1} 个 README + "
+          f"{n_arch} 个归档文档 + 归档无损校验，0 问题）")
     return 0
 
 

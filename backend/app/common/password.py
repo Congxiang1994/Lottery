@@ -21,7 +21,9 @@ import hmac
 import os
 import secrets
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 
 from app.common.db import get_conn
 from app.common.paths import db_path
@@ -45,8 +47,8 @@ CREATE TABLE IF NOT EXISTS password_store (
 """
 
 
-def _conn():
-    return get_conn(DB_PATH)
+def _conn(path: Path | None = None):
+    return get_conn(path or DB_PATH)
 
 
 # ------------------------------------------------------------ 哈希实现
@@ -153,3 +155,44 @@ def ensure_configured() -> None:
     env_pwd = os.environ.get("LOTTERY_RUN_PASSWORD")
     if env_pwd:
         set_password(env_pwd)
+
+
+# ------------------------------------------------------------ 独立口令（按库隔离）
+
+#: 「按库隔离」的口令接口：同一个 auth.db 表结构，但可以落在**另一个库文件**上。
+#: 用途：某些私有功能需要一把**独立**口令（如「把链接发给医生看」的分享口令）——
+#: 改了它不影响全站操作密码，反之亦然。
+#:
+#: ⚠️ 不要为了省事把独立口令也塞进 auth.db —— 那样改分享口令就得连全站一起改，
+#:    与「独立」的初衷相反。
+
+
+def set_password_in(path: Path, plain: str) -> None:
+    """把口令哈希写进**指定库文件**的 password_store 表（结构与 auth.db 一致）。"""
+    pwd_hash = _hash_scrypt(plain, secrets.token_bytes(16))
+    with _conn(path) as con:
+        con.execute(SCHEMA)
+        con.execute(
+            "INSERT OR REPLACE INTO password_store (id, pwd_hash, salt, updated_at) "
+            "VALUES (1,?,?,?)",
+            (pwd_hash, "", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+
+
+def verify_in(path: Path, plain: str) -> bool:
+    """校验**指定库文件**里的口令哈希。库未配置 → False。"""
+    with _conn(path) as con:
+        con.execute(SCHEMA)
+        row = con.execute("SELECT pwd_hash, salt FROM password_store WHERE id=1").fetchone()
+    if not row:
+        return False
+    pwd_hash, salt = row
+    return _verify_hash(plain, pwd_hash, salt or "")
+
+
+def is_configured_in(path: Path) -> bool:
+    """指定库里是否已配置口令。"""
+    with _conn(path) as con:
+        con.execute(SCHEMA)
+        row = con.execute("SELECT 1 FROM password_store WHERE id=1").fetchone()
+    return row is not None

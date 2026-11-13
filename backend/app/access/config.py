@@ -80,6 +80,7 @@ PAGE_FEATURES = (
     ("/algorithms", "lottery"),
     ("/trigger", "trigger"),
     ("/access", "access"),
+    ("/ct", "ct"),
 )
 
 # API 前缀 → 功能域（顺序敏感：/api/story/v1 必须在 /api/story 之前）
@@ -92,6 +93,7 @@ API_FEATURES = (
     ("/api/trigger", "trigger"),
     ("/api/stats", "stats"),
     ("/api/access", "access"),
+    ("/api/ct", "ct"),
     ("/api", "other"),
 )
 
@@ -105,6 +107,7 @@ FEATURE_LABELS = {
     "trigger": "API 触发器",
     "stats": "访问统计",
     "access": "访问管理",
+    "ct": "CT 报告",
     "other": "其他",
     "probe": "探测/扫描",
 }
@@ -115,14 +118,17 @@ PRIVATE_PREFIXES = (
     "/api/story/admin",
     "/api/babysong/admin",
     "/api/access",
+    "/api/ct",
     "/trigger",
     "/story-admin",
     "/babysong-admin",
     "/access",
+    "/ct",
 )
 
 # 已知会话 cookie 名。**只记录「带了哪个 cookie 名」，绝不记值**（见 §5.1 隐私约定）
-SESSION_COOKIES = ("trigger_session", "story_session", "babysong_session", "access_session")
+SESSION_COOKIES = ("trigger_session", "story_session", "babysong_session", "access_session",
+                   "ct_session")
 
 # query 脱敏：这些参数名的值一律替换为 ***
 SECRET_QUERY_KEYS = (

@@ -28,6 +28,7 @@ const TRACKED_PREFIXES = [
   "/story-admin",
   "/trigger",
   "/access",
+  "/ct",
 ];
 
 function shouldTrack(pathname: string): boolean {

@@ -23,11 +23,13 @@
 | 🛠 **实用小工具** `/tools` | 时间戳转换、JSON 源码与可折叠节点树、文本对比（行内细粒度双向推送）、Markdown 预览（含 \n 还原）、随手画板 | 门户内直达 |
 | ⚡ **API 用量触发器** `/trigger` 🔒 | 到点自动点亮大模型 **5 小时用量窗口** | [README_trigger.md](./README_trigger.md) |
 | 🔍 **访问管理** `/access` 🔒 | 全站访问审计：明细、IP / 访客聚合、地区解析、图表与 CSV 导出 | [README_access.md](./README_access.md) |
+| 🩻 **CT 检查结果** `/ct` 🔒 | CT 报告原文原样呈现，独立分享口令，可直接把链接发给医生看 | — |
 | 📥 **小鹅通下载器** | 视频课程批量下载（108 节动画课实测 108/108 成功，命令行工具） | [tools/xiaoe-downloader/README.md](./tools/xiaoe-downloader/README.md) |
 
-> 🔒 = 密码保护的私有功能（全站同一把操作密码）。管理入口：`/story-admin`、`/babysong-admin`、`/deals-admin`。
+> 🔒 = 密码保护的私有功能。除 `/ct`（**独立分享口令**）外，其余共用全站同一把操作密码。
+> 管理入口：`/story-admin`、`/babysong-admin`、`/deals-admin`。
 
-**数字一览**：11 个入口（6 公开 + 5 私有）· 89 算法 / 12 分类 · 518 首儿歌 · 108 节汉字课 · 2 彩种
+**数字一览**：12 个入口（6 公开 + 6 私有）· 89 算法 / 12 分类 · 518 首儿歌 · 108 节汉字课 · 2 彩种
 
 ---
 

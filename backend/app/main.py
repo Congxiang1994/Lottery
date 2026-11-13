@@ -23,6 +23,8 @@ from app.story.router import v1_call_logger
 from app.access import router as access_router
 from app.access import store as access_store
 from app.access.middleware import access_logger
+from app.ctshare import router as ctshare_router
+from app.ctshare import store as ctshare_store
 from app.babysong import downloads
 from app.smzdm import router as smzdm_router
 from app.smzdm import scheduler as smzdm_scheduler
@@ -48,6 +50,8 @@ async def lifespan(app: FastAPI):
     # 访问管理：建表（flock 串行化）+ 加载离线 IP 库 + 启动批量写入线程
     # ⚠️ 离线库缺失/损坏只 WARN，绝不让服务起不来（见 geo.load 的三层降级）
     access_store.init()
+    # CT 报告分享：建表（报告原文 + 独立分享口令 + 独立防爆破计数）
+    ctshare_store.init()
     # 触发器调度循环（SQLite 租约选派发者，多 worker 自愈；gunicorn 优雅重启安全）
     scheduler.start()
     # 什么值得买捡漏：建表 + 定时抓取循环（文件 flock 多 worker 互斥，单轮独立超时）
@@ -73,6 +77,7 @@ app.include_router(trigger_router.router)
 app.include_router(babysong_router.router)
 app.include_router(story_router.router)
 app.include_router(access_router.router)
+app.include_router(ctshare_router.router)
 app.include_router(smzdm_router.router)
 
 # 对外 API 调用明细日志：只处理 /api/story/v1/ 前缀，其他路由原样放行

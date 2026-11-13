@@ -52,7 +52,7 @@ def case_imports() -> None:
     import importlib
 
     for name in ("lottery", "hanzi", "babysong", "story", "trigger", "smzdm",
-                 "stats", "access"):
+                 "stats", "access", "ctshare"):
         importlib.import_module(f"app.{name}.router")
     importlib.import_module("app.main")
 
@@ -64,7 +64,7 @@ def case_routes_registered() -> None:
     required = {
         "/api/health", "/api/v1/lotteries", "/api/hanzi/list", "/api/babysong/list",
         "/api/story/list", "/api/trigger/tasks", "/api/deals/list", "/api/stats/visit",
-        "/api/access/summary",
+        "/api/access/summary", "/api/ct/report",
     }
     missing = required - paths
     assert not missing, f"路由丢失: {sorted(missing)}"
@@ -79,7 +79,7 @@ def case_guard_401() -> None:
     with TestClient(app) as c:
         for path in ("/api/trigger/tasks", "/api/story/admin/stories",
                      "/api/babysong/admin/downloads", "/api/access/summary",
-                     "/api/deals/admin/config"):
+                     "/api/deals/admin/config", "/api/ct/report"):
             r = c.get(path)
             assert r.status_code == 401, f"{path} 应 401，实际 {r.status_code}"
 
@@ -161,17 +161,79 @@ def case_password_lockout() -> None:
     assert ok and status == 200, f"解锁后正确密码应通过，实际 {status}"
 
 
+def case_ct_share_roundtrip() -> None:
+    """CT 分享：独立口令 + 报告原样入库 + 未登录 401 + 登录后可取原文。"""
+    from fastapi.testclient import TestClient
+
+    from app.common import password as password_store
+    from app.ctshare import config as ct_config
+    from app.ctshare import store as ct_store
+    from app.main import app
+
+    pw = "ct-selftest-pass"
+    ct_store.init()
+    password_store.set_password_in(ct_config.DB_PATH, pw)
+    ct_store.reset_failures()
+
+    html = "<!doctype html><html><body><h1>自检报告</h1><img src=\"data:image/jpeg;base64,AA==\"></body></html>"
+    ct_store.save_report(html, "自检报告")
+
+    with TestClient(app, base_url="https://selftest") as c:
+        # 未登录：报告接口必须 401
+        for path in ("/api/ct/report", "/api/ct/report/raw", "/api/ct/meta"):
+            r = c.get(path)
+            assert r.status_code == 401, f"{path} 应 401，实际 {r.status_code}"
+        # 错口令 401
+        r = c.post("/api/ct/auth", json={"password": "wrong"})
+        assert r.status_code == 401, f"错口令应 401，实际 {r.status_code}"
+        ct_store.reset_failures()
+        # 对口令 200 + 会话有效
+        r = c.post("/api/ct/auth", json={"password": pw})
+        assert r.status_code == 200, r.text
+        assert c.get("/api/ct/session").json()["valid"] is True
+        # 报告原样返回（逐字节相等）
+        raw = c.get("/api/ct/report/raw")
+        assert raw.status_code == 200
+        assert raw.headers["content-type"].startswith("text/html")
+        assert raw.content.decode("utf-8") == html, "报告原文被改写"
+        j = c.get("/api/ct/report").json()
+        assert j["html"] == html, "JSON 通道的报告原文被改写"
+        # 退出后会话失效
+        assert c.post("/api/ct/logout").status_code == 200
+        assert c.get("/api/ct/session").json()["valid"] is False
+
+
+def case_ct_password_isolated() -> None:
+    """CT 分享口令必须与全站操作密码**互相独立**（改一个不影响另一个）。"""
+    from app.common import password as password_store
+    from app.ctshare import config as ct_config
+    from app.ctshare import store as ct_store
+
+    site_pw = "selftest-site-pw"
+    ct_pw = "selftest-ct-pw"
+    password_store.set_password(site_pw)
+    password_store.set_password_in(ct_config.DB_PATH, ct_pw)
+
+    assert password_store.verify(site_pw), "全站口令应校验通过"
+    assert password_store.verify_in(ct_config.DB_PATH, ct_pw), "分享口令应校验通过"
+    assert not password_store.verify_in(ct_config.DB_PATH, site_pw), \
+        "分享口令库不应接受全站操作密码"
+    assert not password_store.verify(ct_pw), "全站口令库不应接受分享口令"
+
+
 def case_paths_single_source() -> None:
     """所有域库路径必须同源于 app.common.paths（LOTTERY_DB_DIR 覆盖生效）。"""
     from app.access import config as access_cfg
     from app.common.paths import DB_DIR
+    from app.ctshare import config as ct_cfg
     from app.lottery.services import results_store
     from app.smzdm import config as smzdm_cfg
     from app.story import config as story_cfg
     from app.trigger import config as trigger_cfg
 
     for mod, name in ((access_cfg, "access"), (story_cfg, "story"),
-                      (smzdm_cfg, "smzdm"), (trigger_cfg, "trigger")):
+                      (smzdm_cfg, "smzdm"), (trigger_cfg, "trigger"),
+                      (ct_cfg, "ctshare")):
         p = mod.DB_PATH
         assert p.parent == DB_DIR, f"{name}.DB_PATH 不在 DB_DIR 下: {p}"
         assert p.name == f"{name}.db", f"{name}.DB_PATH 文件名不对: {p.name}"
@@ -186,6 +248,8 @@ CASES = [
     ("smzdm 单轮抓取", case_smzdm_round),
     ("访问统计口径", case_stats_visit),
     ("密码失败锁定", case_password_lockout),
+    ("CT 分享口令与报告往返", case_ct_share_roundtrip),
+    ("CT 分享口令与全站口令隔离", case_ct_password_isolated),
     ("库路径单一真源", case_paths_single_source),
 ]
 
