@@ -6,6 +6,17 @@ export default defineConfig({
   // 必须用绝对路径：相对 base 会让 /hanzi/1 等二级路由把 assets 解析成 /hanzi/assets/...
   // 导致 JS 加载失败（nginx 回退成 HTML）→ 播放页空白。已踩坑（2026-08-25）
   base: "/",
+  resolve: {
+    /**
+     * CodeMirror 6 的各个 @codemirror/* 包之间靠 instanceof 判断协作
+     * （例如 EditorState 的扩展校验）。若同一个 @codemirror/state 被打成两份
+     * 实例，运行时会抛：
+     *   "Unrecognized extension value in extension set ... multiple instances
+     *    of @codemirror/state are loaded, breaking instanceof check"
+     * dedupe 强制它们都解析到同一份，开发与构建都生效。
+     */
+    dedupe: ["@codemirror/state", "@codemirror/view", "@codemirror/language"],
+  },
   server: {
     proxy: {
       "/api": {
@@ -48,6 +59,16 @@ export default defineConfig({
             )
           ) {
             return "vendor-chart";
+          }
+
+          /**
+           * CodeMirror 6：只有 /tools 的 JSON 编辑器会用。
+           * 不单独拆的话它会被并进 Tools 主包（实测让 Tools 从 100KB 涨到 474KB），
+           * 而它是内容稳定、体积大的一块 —— 单独成块后业务迭代不会换 hash，
+           * 用户第二次访问走缓存。
+           */
+          if (/node_modules\/(codemirror|@codemirror|@lezer)\//.test(id)) {
+            return "vendor-cm";
           }
 
           // Markdown 栈：只有 /tools 会用到（remark/rehype 的转译链很长，单独成块）

@@ -25,6 +25,7 @@ import { moveSibling } from "./json/views/treeModel.ts";
 import Tip from "./Tip";
 
 const SourceView = lazy(() => import("./json/views/SourceView.tsx"));
+const JsonEditor = lazy(() => import("./json/views/JsonEditor.tsx"));
 const TreeView = lazy(() => import("./json/views/TreeView.tsx"));
 
 const STORAGE_KEY = "tools_json_v2";
@@ -96,6 +97,13 @@ export default function JsonTool() {
   const [highlight, setHighlight] = useState<[number, number] | null>(null);
   /** 拖拽中的「预演值」：非 null 时两栏都按它渲染，实现拖动即实时预览 */
   const [previewValue, setPreviewValue] = useState<{ value: unknown; path: string } | null>(null);
+  /**
+   * 左栏模式：edit = CodeMirror 自由编辑；view = 行模型只读（行行对齐右栏）。
+   *
+   * 为什么要有两档：行行对齐要求源码是可控行序列（只读渲染），
+   * 但用户日常还需要直接改 JSON。默认「编辑」，切到「查看」才牺牲编辑换对齐。
+   */
+  const [editable, setEditable] = useState(true);
   const [toast, setToast] = useState("");
 
   useEffect(() => {
@@ -350,7 +358,26 @@ export default function JsonTool() {
           </Tip>
         </div>
 
-        {/* ③ 工具动作 */}
+        {/* ③ 左栏模式：编辑 / 查看（查看时行行对齐右栏） */}
+        <div className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 p-1 text-sm font-medium">
+          <span className="pl-1.5 pr-0.5 text-[11px] text-paper-500">源码</span>
+          <Tip text="直接编辑 JSON（CodeMirror）">
+            <button onClick={() => setEditable(true)} className={`rounded-lg px-2.5 py-1.5 transition ${
+              editable ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+            }`}>
+              编辑
+            </button>
+          </Tip>
+          <Tip text="只读查看，与右侧节点树行行对齐">
+            <button onClick={() => setEditable(false)} className={`rounded-lg px-2.5 py-1.5 transition ${
+              !editable ? "bg-white text-paper-900 shadow-sm" : "text-paper-600 hover:text-paper-900"
+            }`}>
+              查看
+            </button>
+          </Tip>
+        </div>
+
+        {/* ④ 工具动作 */}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <Tip text="整段转义成带引号的 JSON 字符串字面量">
             <button onClick={doEscape} disabled={!text} className="flex items-center gap-1 rounded-xl border border-paper-200 bg-paper-100 px-2.5 py-1.5 text-xs text-paper-700 transition hover:bg-paper-200 disabled:opacity-40">
@@ -395,15 +422,30 @@ export default function JsonTool() {
           - 两框各自 h-full，网格 items-stretch 保证同高；
           - min-h 兜住矮视口，超出时整页滚动而不是把状态行裁掉。 */}
       <div className="grid min-h-[340px] flex-1 grid-cols-1 items-stretch gap-4 lg:grid-cols-2" style={{ minHeight: "max(340px, calc(100vh - 400px))" }}>
-        {/* 左栏：按行模型渲染的源码（与右栏行行对齐） */}
+        {/* 左栏：编辑模式 = CodeMirror 自由编辑；查看模式 = 行模型只读（行行对齐） */}
         <div className="h-full min-h-0">
           <Suspense fallback={<BoxSkeleton label="加载源码…" />}>
-            <SourceView
-              lines={lines}
-              highlight={highlight}
-              onExpand={(p) => setExpanded((prev) => new Set(prev).add(p))}
-              onReplace={(t) => setWithUndo(t, "已粘贴内容")}
-            />
+            {editable ? (
+              <JsonEditor
+                value={text}
+                onChange={(v) => setText(v)}
+                status={{
+                  tone: result.ok ? "ok" : "error",
+                  text: result.ok
+                    ? `${KIND_LABEL[result.kind]} · ${result.stats.keys} 键 · 深度 ${result.stats.depth}`
+                    : (result.errors[0]
+                        ? `${result.errors[0].line > 0 ? `第 ${result.errors[0].line} 行第 ${result.errors[0].col} 列：` : ""}${result.errors[0].message}`
+                        : "格式无效"),
+                }}
+              />
+            ) : (
+              <SourceView
+                lines={lines}
+                highlight={highlight}
+                onExpand={(p) => setExpanded((prev) => new Set(prev).add(p))}
+                onReplace={(t) => setWithUndo(t, "已粘贴内容")}
+              />
+            )}
           </Suspense>
         </div>
 
