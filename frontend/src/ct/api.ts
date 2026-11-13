@@ -8,6 +8,8 @@ const api = createApi(BASE);
 /** 一张报告照片 */
 export interface CtPhoto {
   id: number;
+  /** 所属检查记录 id（管理页/运维核对归属用，别删） */
+  exam_id: number;
   caption: string;
   sort_order: number;
   url: string;

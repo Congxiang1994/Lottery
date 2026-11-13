@@ -90,8 +90,15 @@ def admin_logout(response: Response):
 
 
 def _photo_public(p: dict) -> dict:
+    """对外照片信息。
+
+    ⚠️ 保留 ``exam_id``：管理页/运维脚本要靠它核对「这张照片属于第几次检查」。
+    曾经有个清理脚本因为拿不到归属、按「数组最后一项」删，结果误删了第 4 次
+    检查的真实照片 —— 有 exam_id 就能按归属精确操作，不靠数组位置猜。
+    """
     return {
         "id": p["id"],
+        "exam_id": p["exam_id"],
         "caption": p["caption"],
         "sort_order": p["sort_order"],
         "url": f"/api/ct/photo/{p['filename']}",

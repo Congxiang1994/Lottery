@@ -209,6 +209,10 @@ def case_ct_share_roundtrip() -> None:
         assert item["project"] == "自检 CT" and item["note"] == "自检备注", item
         assert item["link_url"] == "https://example.com/x", item
         assert item["photos"][0]["caption"] == "自检照片", item
+        # ⚠️ 照片归属必须显式带 exam_id：曾经清理脚本拿不到归属、按数组位置删，
+        #    误删了另一次检查的真实照片。有这个字段才能精确按归属操作。
+        assert item["photos"][0]["exam_id"] == exam["id"], \
+            f"照片 exam_id 丢失或错配：{item['photos'][0]}"
         pr = c.get(item["photos"][0]["url"])
         assert pr.status_code == 200 and pr.content == photo_bytes, "照片字节不一致"
 
@@ -253,7 +257,7 @@ def case_ct_password_isolated() -> None:
 
 
 def case_ct_photo_upload() -> None:
-    """照片上传：MIME 白名单 / 体积上限 / raw body 落盘 / 路径穿越防护。"""
+    """照片上传：MIME 白名单 / 体积上限 / raw body 落盘 / 路径穿越防护 / 归属不错位。"""
     from fastapi.testclient import TestClient
 
     from app.common import password as password_store, security
@@ -288,6 +292,21 @@ def case_ct_photo_upload() -> None:
         pid = r.json()["id"]
         assert c.delete(f"/api/ct/admin/photo/{pid}").json()["removed"] is True
         assert c.get(url).status_code == 404, "删后仍能取到照片"
+
+        # ⚠️ 归属不错位：新建第 2 次检查并传一张图，删掉它不能碰到第 1 次检查的图
+        ex2 = ct_store.create_exam({"exam_time": "2026-02-02", "project": "归属自检"})
+        r2 = c.post(f"/api/ct/admin/photo?exam_id={ex2['id']}",
+                    content=body, headers={"Content-Type": "image/png"})
+        assert r2.status_code == 200, r2.text
+        listed = c.get("/api/ct/admin/photos").json()["items"]
+        by_exam = {}
+        for p in listed:
+            by_exam.setdefault(p["exam_id"], []).append(p)
+        assert len(by_exam.get(ex2["id"], [])) == 1, f"第 2 次检查照片归属错：{listed}"
+        assert r2.json()["exam_id"] == ex2["id"], "上传响应缺 exam_id"
+        assert c.delete(f"/api/ct/admin/photo/{r2.json()['id']}").json()["removed"] is True
+        after = c.get("/api/ct/admin/photos").json()["items"]
+        assert all(p["exam_id"] != ex2["id"] for p in after), "删第 2 次的图影响了其他记录"
 
 
 def case_paths_single_source() -> None:
