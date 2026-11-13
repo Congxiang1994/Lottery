@@ -300,20 +300,25 @@ summary:active {
    任意值 + `!` 前缀要写成 `!bg-[#14100c]`，Vite/Tailwind 3.4 的转义容易踩空
    （实测该类根本没生成，页面仍是浅色遮罩）。自定义 class 稳定且可读。 */
 .ct-lightbox-overlay {
-  background: rgba(20, 16, 12, 0.92);
-  padding: 0.5rem;
-  backdrop-filter: blur(8px);
-  /* ⚠️ 整层遮罩都要禁用浏览器默认手势：手指落在顶部栏/底部缩略图之间的
-     空隙时，浏览器仍会把它当成整页 pinch-zoom。只给 .ct-zoom-stage 加不够。 */
+  background: #14100c;
+  padding: 0;
+  /* ⚠️ 整层遮罩都要禁用浏览器默认手势：手指落在任何位置，浏览器仍会把它
+     当成整页 pinch-zoom。只给 .ct-zoom-stage 加不够。 */
   touch-action: none;
   overscroll-behavior: contain;
 }
+
+/* 全屏：照片铺满整个视口，没有「框」的感觉 */
 .ct-lightbox-panel {
-  max-width: min(1400px, 96vw);
+  max-width: none;
+  width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
   background: transparent;
   border: none;
   box-shadow: none;
   backdrop-filter: none;
+  border-radius: 0;
 }
 
 /* ---------- 灯箱照片缩放（只缩放照片，不缩放整页）----------

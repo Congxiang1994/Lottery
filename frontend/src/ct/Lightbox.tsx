@@ -16,12 +16,12 @@ import {
 } from "./zoom";
 
 /**
- * 报告照片预览（单张）—— 跟手机相册一样：点开一张，双指缩放，轻点关闭。
+ * 报告照片预览 —— **全屏一张图**，没有任何文字/标题/按钮，跟相册一样。
  *
- * 刻意保持简单（2026-11-13 按需求简化）：
- * - **不做**左右切换 / 缩略图条 / 缩放按钮组 —— 一次只看一张照片；
- * - 双指捏合放大**照片本身**（浏览器默认会缩放整个网页，这里接管）；
- * - 双击 1x / 2.5x 切换；放大后单指拖动；轻点或 × 关闭。
+ * 交互（全部围绕这一张图）：
+ * - 双指捏合放大照片本身（浏览器默认会缩放整个网页，这里接管）；
+ * - 双击 1x / 2.5x 切换；放大后单指拖动；轻点任意处或右上角 × 关闭；
+ * - 返回键 / 侧滑只关预览不离开页面（CT.tsx 的 useModalHistory）。
  *
  * ⚠️ 不能只靠 meta viewport 的 ``user-scalable=no``：iOS Safari 10+ 直接忽略它，
  * 而且会全局禁用整站缩放（无障碍倒退）。所以只在灯箱这一层用
@@ -30,8 +30,6 @@ import {
 
 export interface LightboxImage {
   url: string;
-  /** 顶部副标题（如「第 2 次检查 · 2023-12-22」） */
-  caption?: string;
 }
 
 export interface LightboxProps {
@@ -66,7 +64,7 @@ export function Lightbox({ image, onClose }: LightboxProps) {
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
 
-  /** 关闭/换图时复位缩放 */
+  /** 关闭时复位缩放 */
   useEffect(() => {
     setZoom(IDENTITY);
     gesture.current = { ...INITIAL_GESTURE };
@@ -237,8 +235,6 @@ export function Lightbox({ image, onClose }: LightboxProps) {
   }, [open, measure]);
 
   if (!open || !image) return null;
-  const caption = image.caption || "";
-  const isZoomed = zoom.scale > MIN_SCALE + 0.01;
 
   return (
     <AppModal
@@ -250,60 +246,42 @@ export function Lightbox({ image, onClose }: LightboxProps) {
       ariaLabel="报告照片查看"
       className="ct-lightbox-panel"
     >
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        {/* 顶部：说明 + 关闭 */}
-        <div className="flex shrink-0 items-center justify-between gap-3 px-1 pb-2 text-white/80">
-          {caption ? (
-            <span className="text-xs font-medium text-white/70">{caption}</span>
-          ) : (
-            <span />
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            title="关闭"
-            aria-label="关闭"
-            className="press grid h-9 w-9 place-items-center rounded-full border border-white/25 text-white/85 transition hover:bg-white/15 hover:text-white"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* 照片舞台：touch-action:none + preventDefault 接管手势，只缩放照片不缩放网页 */}
-        <div ref={stageRef} className="ct-zoom-stage relative min-h-0 flex-1 overflow-hidden">
-          <div
-            className="flex h-full w-full items-center justify-center"
-            onDoubleClick={(e) => doubleTapAt(e.clientX, e.clientY)}
-            onWheel={(e) => {
-              e.preventDefault();
-              const { w, h, cw, ch } = measure();
-              const f = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-              setZoom((z) => zoomAtPoint(z, z.scale * f, 0, 0, w, h, cw, ch));
+      {/* 全屏舞台：只有照片和右上角 ×，没有任何文字 */}
+      <div ref={stageRef} className="ct-zoom-stage relative h-full w-full overflow-hidden">
+        <div
+          className="flex h-full w-full items-center justify-center"
+          onDoubleClick={(e) => doubleTapAt(e.clientX, e.clientY)}
+          onWheel={(e) => {
+            e.preventDefault();
+            const { w, h, cw, ch } = measure();
+            const f = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            setZoom((z) => zoomAtPoint(z, z.scale * f, 0, 0, w, h, cw, ch));
+          }}
+        >
+          <img
+            ref={imgRef}
+            src={image.url}
+            alt="报告照片"
+            draggable={false}
+            className="ct-zoom-img block max-h-full max-w-full select-none object-contain"
+            style={{ transform: transformOf(zoom) }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              doubleTapAt(e.clientX, e.clientY);
             }}
-          >
-            <img
-              ref={imgRef}
-              src={image.url}
-              alt={caption || "报告照片"}
-              draggable={false}
-              className="ct-zoom-img block max-h-full max-w-full select-none rounded-lg object-contain shadow-2xl"
-              style={{ transform: transformOf(zoom) }}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                doubleTapAt(e.clientX, e.clientY);
-              }}
-            />
-          </div>
-          {isZoomed && (
-            <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-2.5 py-1 text-[10px] text-white/80">
-              单指拖动查看 · 双击复位
-            </span>
-          )}
+          />
         </div>
 
-        <p className="shrink-0 pt-2 text-center text-[10px] text-white/55">
-          双指捏合放大 · 双击放大/复位 · 轻点关闭
-        </p>
+        {/* 右上角关闭：全屏模式下唯一常驻元素 */}
+        <button
+          type="button"
+          onClick={onClose}
+          title="关闭"
+          aria-label="关闭"
+          className="press absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-full border border-white/30 bg-black/45 text-white/90 transition hover:bg-black/65"
+        >
+          <X size={18} />
+        </button>
       </div>
     </AppModal>
   );

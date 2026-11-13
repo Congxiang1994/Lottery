@@ -102,16 +102,12 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
     lightHistory.pop();
   }, [lightHistory]);
 
-  /** 点某次检查里的第 k 张照片 → 开单张预览 */
+  /** 点某次检查里的第 k 张照片 → 开全屏单张预览（无文字，纯图） */
   const openPhoto = useCallback(
     (examIndex: number, photoIndex: number) => {
-      const e = exams[examIndex];
-      const p = e?.photos[photoIndex];
+      const p = exams[examIndex]?.photos[photoIndex];
       if (!p) return;
-      setPreview({
-        url: p.url,
-        caption: p.caption || `第 ${examIndex + 1} 次检查 · ${shortDate(e.exam_time)}`,
-      });
+      setPreview({ url: p.url });
       lightHistory.push();
     },
     [exams, lightHistory],
@@ -337,7 +333,7 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
 
             {exams.some((e) => e.photos.length > 0) && (
               <p className="text-[11px] text-paper-500">
-                提示：点击报告照片可放大查看（双指缩放，Esc 或返回键关闭）。
+                提示：点击报告照片可全屏查看（双指缩放）。
               </p>
             )}
           </>
