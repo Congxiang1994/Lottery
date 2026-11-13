@@ -104,7 +104,13 @@ export function Lightbox({ image, onClose }: LightboxProps) {
     const points = (t: TouchList) =>
       Array.from(t).map((p) => ({ x: p.clientX, y: p.clientY }));
 
+    // ⚠️ 按钮/链接上的触摸必须放行：preventDefault 会抑制合成 click，
+    //    右上角 × 就会「点了没反应」。交给浏览器走原生 click → onClose。
+    const isControl = (target: EventTarget | null) =>
+      target instanceof Element && !!target.closest("button, a, input");
+
     const onStart = (e: TouchEvent) => {
+      if (isControl(e.target)) return; // 交互元素：不做手势，让 click 正常合成
       const g = gesture.current;
       if (e.touches.length === 2) {
         const [a, b] = points(e.touches);
@@ -136,6 +142,7 @@ export function Lightbox({ image, onClose }: LightboxProps) {
     };
 
     const onMove = (e: TouchEvent) => {
+      if (isControl(e.target)) return; // 交互元素：不参与手势
       e.preventDefault(); // 掐掉浏览器默认 pinch-zoom / 页面滚动
       const g = gesture.current;
       if (e.touches.length === 2 && g.mode === "pinch") {
@@ -163,6 +170,7 @@ export function Lightbox({ image, onClose }: LightboxProps) {
     };
 
     const onEnd = (e: TouchEvent) => {
+      if (isControl(e.target)) return; // 交互元素：交给原生 click 处理
       const g = gesture.current;
       if (e.touches.length === 1) {
         // 双指结束若还剩一根手指，切换成 pan 模式，避免继续捏合
@@ -194,11 +202,8 @@ export function Lightbox({ image, onClose }: LightboxProps) {
 
     // 遮罩层其余区域也要掐掉浏览器默认 pinch-zoom。从 Portal 宿主
     // （Modal.tsx 挂到 body 的那层）找遮罩根，不写死遮罩类名。
-    // ⚠️ 只拦「非交互元素」上的触摸：若对按钮也 preventDefault，
-    //    iOS 上按钮的 click 不会合成 → 关闭按钮点不动。
+    // 交互元素的判断复用上面的 isControl。
     const overlay = stage.closest(".modal-host")?.firstElementChild as HTMLElement | null;
-    const isControl = (target: EventTarget | null) =>
-      target instanceof Element && !!target.closest("button, a, input");
     const stopBrowserZoom = (e: TouchEvent) => {
       if (!isControl(e.target)) e.preventDefault();
     };
