@@ -5,6 +5,14 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Lottery · 数据工具与智能应用聚合站" />
+    <!-- 影像链接预建连：/ct 页的影像报告托管在这两个医院平台（yxpt=江苏健康通，
+         app.ftimage=瑞慈云影像）。提前完成 DNS+TCP+TLS，点开影像链接时省
+         0.5~1.5s 的建连时间。⚠️ 只对当前已知域名；新增其他平台的链接时，
+         CT.tsx 会在数据加载后按 origin 动态注入（见 hintOrigins）。 -->
+    <link rel="preconnect" href="https://yxpt.jsehealth.cn" />
+    <link rel="dns-prefetch" href="https://yxpt.jsehealth.cn" />
+    <link rel="preconnect" href="https://app.ftimage.cn" />
+    <link rel="dns-prefetch" href="https://app.ftimage.cn" />
     <!-- 字体：使用系统字体栈（PingFang SC / Segoe UI / Microsoft YaHei 等）。
          原先引用的 fonts.googleapis.com 在中国大陆会阻塞首屏渲染 1-2 秒，故移除。 -->
     <title>Lottery · 产品矩阵</title>

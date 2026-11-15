@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Copy,
   ExternalLink,
   FileScan,
   FileText,
@@ -18,6 +20,7 @@ import { PageHeader, PrivateBadge } from "../common/PageHeader";
 import { Empty, ErrorBlock, Loading } from "../common/State";
 import { ExitPresence } from "../common/Modal";
 import { useModalHistory } from "../common/useModalHistory";
+import { copyText } from "../common/http";
 import { ctApi, type CtExam } from "./api";
 import { Lightbox, type LightboxImage } from "./Lightbox";
 import { shortDate } from "./logic";
@@ -88,6 +91,33 @@ function CTPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   useEffect(load, [load]);
 
   const hasExams = exams.length > 0;
+
+  /**
+   * 影像平台预建连（数据驱动）：管理页以后添加新平台的影像链接时，
+   * 按 origin 动态注入 preconnect —— 提前完成 DNS+TCP+TLS，
+   * 点开链接时省 0.5~1.5s 建连时间。已知平台已写在 index.html（更早生效），
+   * 这里只补 index.html 里没有的。
+   */
+  useEffect(() => {
+    const known = new Set(["https://yxpt.jsehealth.cn", "https://app.ftimage.cn"]);
+    const origins = new Set<string>();
+    exams.forEach((e) => {
+      if (!e.link_url) return;
+      try {
+        const o = new URL(e.link_url).origin;
+        if (o.startsWith("https://") && !known.has(o)) origins.add(o);
+      } catch {
+        /* 非法 URL 跳过 */
+      }
+    });
+    origins.forEach((origin) => {
+      if (document.querySelector(`link[rel="preconnect"][href="${origin}"]`)) return;
+      const link = document.createElement("link");
+      link.rel = "preconnect";
+      link.href = origin;
+      document.head.appendChild(link);
+    });
+  }, [exams]);
 
   /* ---------------- 返回键：灯箱压历史栈，侧滑只关灯箱 ---------------- */
 
@@ -362,6 +392,21 @@ function ExamCard({
   setRef: (el: HTMLDivElement | null) => void;
 }) {
   const hasLink = !!(exam.link_url || exam.link_text);
+  /** 复制状态：'' 空闲 / 'ok' 已复制 / 'fail' 复制失败（提示手动长按） */
+  const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
+  /** 复制影像链接：微信等内置浏览器没有「复制」菜单时，这是换浏览器打开的通道 */
+  const copyLink = () => {
+    if (!exam.link_url) return;
+    copyText(exam.link_url)
+      .then((ok) => {
+        setCopyState(ok ? "ok" : "fail");
+        setTimeout(() => setCopyState(""), 2500);
+      })
+      .catch(() => {
+        setCopyState("fail");
+        setTimeout(() => setCopyState(""), 2500);
+      });
+  };
   return (
     <div ref={setRef} className="glass scroll-mt-40 overflow-hidden rounded-3xl shadow-card">
       {/* 卡片头：第几次 + 日期 */}
@@ -387,18 +432,40 @@ function ExamCard({
         <FieldRow icon={Link2} label="影像链接">
           {hasLink ? (
             <div className="min-w-0">
-              {exam.link_url ? (
-                <a
-                  href={exam.link_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
-                >
-                  <span className="truncate">{exam.link_label || "打开影像"}</span>
-                  <ExternalLink size={13} className="shrink-0" />
-                </a>
-              ) : (
-                <span className="text-sm text-paper-700">—</span>
+              {exam.link_url && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <a
+                    href={exam.link_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1 text-sm font-medium text-brand-blue underline decoration-brand-blue/40 underline-offset-2 hover:decoration-brand-blue"
+                  >
+                    <span className="truncate">{exam.link_label || "打开影像"}</span>
+                    <ExternalLink size={13} className="shrink-0" />
+                  </a>
+                  {/* 复制链接：微信内置浏览器里换系统浏览器打开的通道 */}
+                  <button
+                    type="button"
+                    onClick={copyLink}
+                    title="复制链接，可粘贴到系统浏览器打开"
+                    className={`press inline-flex shrink-0 items-center gap-1 rounded-lg border px-2 py-1 text-[11px] transition ${
+                      copyState === "ok"
+                        ? "border-emerald-300 text-emerald-700"
+                        : copyState === "fail"
+                          ? "border-amber-300 text-amber-700"
+                          : "border-paper-200 text-paper-600 hover:border-brand-gold/50 hover:text-paper-900"
+                    }`}
+                  >
+                    {copyState === "ok" ? (
+                      <Check size={12} />
+                    ) : copyState === "fail" ? (
+                      <Info size={12} />
+                    ) : (
+                      <Copy size={12} />
+                    )}
+                    {copyState === "ok" ? "已复制" : copyState === "fail" ? "请长按链接复制" : "复制"}
+                  </button>
+                </div>
               )}
               {exam.link_text && (
                 <div className="mt-1 break-all text-xs leading-relaxed text-paper-600">
