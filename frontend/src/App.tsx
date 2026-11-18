@@ -36,6 +36,7 @@ const History = lazy(() => import("./lottery/pages/History"));
 const Predict = lazy(() => import("./lottery/pages/Predict"));
 const Algorithms = lazy(() => import("./lottery/pages/Algorithms"));
 const HanziPlayer = lazy(() => import("./hanzi/HanziPlayer"));
+const PinziPlayer = lazy(() => import("./pinzi/PinziPlayer"));
 const Trigger = lazy(() => import("./trigger/Trigger"));
 const BabySong = lazy(() => import("./babysong/BabySong"));
 const BabySongAdmin = lazy(() => import("./babysong/BabySongAdmin"));
@@ -86,6 +87,7 @@ export default function App() {
                   <Route path="/predict" element={<Predict />} />
                   <Route path="/algorithms" element={<Algorithms />} />
                   <Route path="/hanzi" element={<HanziPlayer />} />
+                  <Route path="/pinzi" element={<PinziPlayer />} />
                   <Route path="/trigger" element={<Trigger />} />
                   <Route path="/babysong" element={<BabySong />} />
                   <Route path="/babysong-admin" element={<BabySongAdmin />} />

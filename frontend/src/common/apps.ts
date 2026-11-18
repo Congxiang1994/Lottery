@@ -9,6 +9,7 @@ import {
   Music,
   Radar,
   SlidersHorizontal,
+  Sparkles,
   Wrench,
   Zap,
   type LucideIcon,
@@ -47,6 +48,16 @@ export interface AppEntry {
 }
 
 export const APPS: AppEntry[] = [
+  {
+    id: "pinzi",
+    title: "汉字是拼出来的",
+    desc: "18 节汉字故事课（单集约 22 分钟，共 6.5 小时）：森林历险串起汉字源流，支持倍速、断点续播与选集。",
+    icon: Sparkles,
+    tags: ["视频点播", "儿童教育"],
+    href: "/pinzi",
+    status: "live",
+    tint: "amber",
+  },
   {
     id: "hanzi",
     title: "汉字是画出来的",

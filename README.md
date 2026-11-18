@@ -17,6 +17,7 @@
 |---|---|---|
 | 🎲 **Lottery 彩票数据站** `/lottery` | 双色球 / 大乐透全量统计、**89 算法 / 12 分类**驱动的算法广场与智能推荐 | [README_lottery.md](./README_lottery.md) |
 | 🖍 **汉字是画出来的** `/hanzi` | 108 节动画课点播：检索、竖屏友好、全屏播放器（±5s / 上下集） | [README_hanzi.md](./README_hanzi.md) |
+| 🧩 **汉字是拼出来的** `/pinzi` | 18 节汉字故事课（单集约 22 分钟 / 共 6.5 小时）：倍速、断点续播、选集 | [README_pinzi.md](./README_pinzi.md) |
 | 🎵 **Super Simple Songs 儿歌** `/babysong` | 518 首英文儿歌，B 站 / YouTube / 本地视频三通道播放 | [README_babysong.md](./README_babysong.md) |
 | 📖 **每日儿童睡前故事** `/story` | 按日期倒序阅读 + 密码管理页 + `X-API-Key` 对外写入接口 | [README_story.md](./README_story.md) |
 | 💰 **捡漏** `/deals` | 自动盯「什么值得买」标签流，按折扣深度筛数码垂类真漏 | [README_deals.md](./README_deals.md) |
@@ -89,6 +90,7 @@ sudo systemctl restart lottery            # 后端改动时
 |---|---|---|
 | 彩票 | [docs/modules/lottery.md](./docs/modules/lottery.md) | — |
 | 汉字课 | [docs/modules/hanzi.md](./docs/modules/hanzi.md) | — |
+| 汉字拼读课 | [docs/modules/pinzi.md](./docs/modules/pinzi.md) | — |
 | 儿歌 | [docs/modules/babysong.md](./docs/modules/babysong.md) | — |
 | 睡前故事 | [docs/modules/story.md](./docs/modules/story.md) | [功能设计](./docs/story-feature-design.md) · [UI 评审](./docs/story-ui-review.md) |
 | 捡漏 | [docs/modules/deals.md](./docs/modules/deals.md) | [数码判据规格](./docs/deals-digital-spec.md) · [选品调研](./docs/deals-sourcing-research.md) |

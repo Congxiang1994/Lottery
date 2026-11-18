@@ -81,6 +81,7 @@ COPYFILE_DISABLE=1 tar czf - \
 |---|---|---|
 | `/data/lottery/*.db` | 各域 SQLite（算法结果 / 故事 / 触发器 / 访问审计 / 下载任务） | ✅ 保留（独立于部署目录） |
 | `/data/hanzi/` | 汉字课视频（108 个 mp4） | ✅ 保留 |
+| `/data/pinzi/` | 汉字拼读课视频（18 个 mp4 + covers + meta.json） | ✅ 保留 |
 | `/data/song/` | 儿歌本地视频（yt-dlp 下载产物） | ✅ 保留 |
 | `/data/lottery/geo/` | ip2region 离线库（由 `tools/geo_update.py` 下载，不进仓库） | ✅ 保留 |
 | `/opt/lottery/` | 代码 + 前端 dist | 🔄 整体覆盖 |

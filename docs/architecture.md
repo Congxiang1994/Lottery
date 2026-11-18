@@ -68,7 +68,7 @@ backend/app/
 │   ├── store.py             #   SQLite 读写（可选；无持久化的域不要建文件）
 │   ├── scheduler.py         #   后台循环（可选；必须多 worker 安全）
 │   └── services/            #   纯业务逻辑（可选；lottery 用）
-├── lottery/  hanzi/  babysong/  story/  trigger/  smzdm/  stats/  access/
+├── lottery/  hanzi/  pinzi/  babysong/  story/  trigger/  smzdm/  stats/  access/
 └── scripts/                 # 爬取 / 定时跑批脚本（不进 FastAPI 进程）
 ```
 
@@ -236,6 +236,7 @@ frontend/src/
 │   │   ├── common/          # 公共基础设施（见上）
 │   │   ├── lottery/         # 彩票数据服务（/api/v1）
 │   │   ├── hanzi/           # 汉字课视频列表（/api/hanzi）
+│   │   ├── pinzi/           # 汉字拼读课视频列表（/api/pinzi）
 │   │   ├── babysong/        # 儿歌列表 + 本地下载管理（/api/babysong）
 │   │   ├── story/           # 睡前故事（/api/story，含对外 API）
 │   │   ├── trigger/         # API 用量触发器（/api/trigger）
@@ -253,7 +254,7 @@ frontend/src/
 └── docs/                    # 设计文档（本文 + 部署 + 前端规范 + 各功能设计稿）
 ```
 
-> 视频文件不在仓库内：`/data/hanzi/`、`/data/song/` 独立于部署目录，rsync 重部署不会触碰。
+> 视频文件不在仓库内：`/data/hanzi/`、`/data/pinzi/`、`/data/song/` 独立于部署目录，rsync 重部署不会触碰。
 
 ---
 

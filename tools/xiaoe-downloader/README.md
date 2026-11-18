@@ -32,4 +32,19 @@
 ## 深入阅读
 
 - [工作原理与踩坑记录（完整版）](../../docs/modules/xiaoe-downloader.md) —— 目录结构、Cookie 获取、链路细节、实测参数
-- [视频点播模块](../../README_hanzi.md)（下载产物服务于该功能）· [全站文档导航](../../README.md)
+- [视频点播模块](../../README_hanzi.md)（《汉字是画出来的》产物服务于该功能）· [汉字拼读课](../../README_pinzi.md)（《汉字是拼出来的》产物）· [全站文档导航](../../README.md)
+
+## 多课程
+
+| 课程 | 脚本 | 产物目录 | 说明 |
+|---|---|---|---|
+| 《汉字是画出来的》 | `download.py` | `/data/hanzi` | 108 节短动画（每集约 30 秒） |
+| 《汉字是拼出来的》 | `download_pinzi.py` | `/data/pinzi` | 18 节长视频（每集约 22 分钟），额外抓封面 + 生成 `meta.json` |
+
+```bash
+# 《汉字是拼出来的》：需先准备 600 权限的 cookie 文件
+python3 download_pinzi.py --cookie-file /tmp/xiaoe_cookies.txt --outdir /data/pinzi
+```
+
+⚠️ `download_pinzi.py` 用 `course_order()` 重排课程顺序 —— 该接口传 `sort=asc` 实际返回**倒序**，
+直接按接口顺序编号会把「总结篇」编成 001。

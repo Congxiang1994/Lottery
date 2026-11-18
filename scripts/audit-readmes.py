@@ -41,7 +41,7 @@ BASELINE_MD5 = {
 }
 
 MODULE_FILES = [
-    "README_lottery.md", "README_hanzi.md", "README_babysong.md",
+    "README_lottery.md", "README_hanzi.md", "README_pinzi.md", "README_babysong.md",
     "README_story.md", "README_deals.md", "README_trigger.md", "README_access.md",
 ]
 TOOLS_FILE = "tools/xiaoe-downloader/README.md"
@@ -137,6 +137,10 @@ def main() -> int:
             fail(name, f"缺归档文件 docs/modules/{stem}.md")
         elif "保留历史全文" not in archived.read_text(encoding="utf-8")[:300]:
             fail(name, f"docs/modules/{stem}.md 首部缺归档说明")
+        elif name not in BASELINE_MD5:
+            # 新增模块（如 README_pinzi.md）：文档标准化后才有，无「拆分前原版」可对照，
+            # 跳过无损校验，但仍要求存在且带归档头（上面的分支已查）。
+            pass
         else:
             # 归档无损：正文（去掉 3 行归档头）还原回指链接后，与原版 md5 比对
             body = "\n".join(archived.read_text(encoding="utf-8").splitlines()[3:]) + "\n"

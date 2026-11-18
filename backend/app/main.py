@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from app.lottery import router as lottery_router
 from app.lottery.services import results_store
 from app.hanzi import router as hanzi_router
+from app.pinzi import router as pinzi_router
 from app.stats import router as stats_router
 from app.stats import store as stats_store
 from app.trigger import router as trigger_router
@@ -72,6 +73,7 @@ app = FastAPI(title="Lottery · 彩票数据服务", version="1.0.0", lifespan=l
 
 app.include_router(lottery_router.router)
 app.include_router(hanzi_router.router)
+app.include_router(pinzi_router.router)
 app.include_router(stats_router.router)
 app.include_router(trigger_router.router)
 app.include_router(babysong_router.router)
