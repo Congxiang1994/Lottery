@@ -416,7 +416,9 @@ export default function PinziPlayer() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          /* 两列：标题动辄 14~18 个汉字（「第15讲 热闹的集市上，贝壳当钱用」），
+             三列会挤成 3~4 行、卡片高度参差，两列刚好 2 行内读完 */
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {filtered.map((v) => {
               const p = progress[String(v.seq)];
               const pct = Math.round(watchedRatio(p) * 100);
@@ -424,10 +426,12 @@ export default function PinziPlayer() {
                 <button
                   key={v.url}
                   onClick={() => openModal(v.seq)}
-                  className="group relative flex items-stretch gap-3 overflow-hidden rounded-xl border border-[#d4c4a8]/60 bg-paper-50 p-2.5 text-left transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg"
+                  className="group relative flex items-center gap-3 overflow-hidden rounded-xl border border-[#d4c4a8]/60 bg-paper-50 p-2.5 text-left transition hover:-translate-y-0.5 hover:border-[#b93a3a]/40 hover:bg-white hover:shadow-lg"
                 >
                   {/* 封面 */}
-                  <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-lg bg-[#e8dfd0] sm:w-32">
+                  {/* ⚠️ self-start 必需：卡片是 items-stretch，封面会被拉到与文字同高，
+                      而 aspect-video 算出的高度更小 → object-cover 只填一部分，右侧/底部留白 */}
+                  <div className="relative aspect-video w-32 shrink-0 self-start overflow-hidden rounded-lg bg-[#e8dfd0] sm:w-40">
                     {v.cover ? (
                       <img
                         src={v.cover}
@@ -449,7 +453,7 @@ export default function PinziPlayer() {
                       </span>
                     </span>
                     {v.duration > 0 && (
-                      <span className="absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white">
+                      <span className="absolute bottom-1.5 right-1.5 rounded-md bg-[#1c140e]/80 px-1.5 py-[3px] text-[10px] font-semibold tabular-nums leading-none text-white shadow-sm">
                         {fmt(v.duration)}
                       </span>
                     )}
@@ -482,7 +486,7 @@ export default function PinziPlayer() {
                         </span>
                       )}
                     </div>
-                    <p className="mt-0.5 line-clamp-2 text-[13px] font-medium leading-snug text-[#3d2b1f]">
+                    <p className="mt-0.5 line-clamp-2 text-[13.5px] font-medium leading-snug text-[#3d2b1f]">
                       {v.title}
                     </p>
                   </div>
@@ -514,7 +518,8 @@ export default function PinziPlayer() {
             size="lg"
             bare
             escapeClose={false}
-            className="rounded-2xl border-[#d4c4a8] bg-white"
+            overlayClassName="pinzi-player-overlay"
+            className="pinzi-player-panel"
           >
             <>
               {!current ? (

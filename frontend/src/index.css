@@ -1132,3 +1132,27 @@ html.theme-anim ::-webkit-scrollbar-thumb {
 /* 差异行的行号槽标记：用品牌色系，不用 merge 默认的红绿 */
 .diff-host .cm-changedLineGutter { background: var(--cmp-del-line, rgba(225,29,72,0.55)); }
 .diff-host .cm-merge-b .cm-changedLineGutter { background: var(--cmp-ins, rgba(5,150,105,0.75)); }
+
+/* ============================================================================
+   汉字拼读课 · 播放器弹窗（.pinzi-player-panel）
+   全站弹窗默认是暖棕半透明遮罩 + .glass 毛玻璃面板 —— 那是给「表单/详情弹窗」
+   用的。视频播放器必须**实底**：毛玻璃会把下半透明到能在面板上看到背后的页面
+   内容，播放器边框和控件对比度全掉，看着「发灰」。
+
+   ⚠️ 用独立 class 而非在 className 里堆 `bg-white`：AppModal 的 panelSkin 固定
+   拼了 `.glass`（backdrop-filter + 半透明背景），Tailwind 的 `bg-white` 只改
+   background-color，改不掉 backdrop-filter 与半透明分层，实测仍然发灰。 */
+.pinzi-player-panel {
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid #d4c4a8;
+  border-radius: 1rem;
+  box-shadow: 0 24px 60px -12px rgba(61, 43, 31, 0.45);
+}
+/* 播放器遮罩加深：视频画面亮，浅遮罩会干扰注意力 */
+.pinzi-player-overlay {
+  /* ⚠️ !important 必需：AppModal 同时拼了 Tailwind 的 bg-[#3d2b1f]/60，
+     两者权重相同（0,1,0），谁生效取决于产物里的 CSS 顺序 —— 不可依赖。 */
+  background: rgba(28, 20, 14, 0.82) !important;
+}
