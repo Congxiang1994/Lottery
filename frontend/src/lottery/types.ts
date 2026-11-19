@@ -168,6 +168,8 @@ export interface BacktestAlgo {
   id: string;
   name: string;
   category: string;
+  /** 分类显示名（后端 CATEGORIES 唯一真源，前端不要自己维护映射表） */
+  category_name: string;
   folds: number;
   red_avg: number;
   blue_avg: number;
@@ -175,6 +177,14 @@ export interface BacktestAlgo {
   blue_expected: number;
   red_lift: number;
   blue_lift: number;
+  /** lift 的 95% 置信区间；跨过 1.00 即与随机无差别 */
+  red_ci: [number, number];
+  blue_ci: [number, number];
+  /** 单侧 p 值（H0：该算法无预测力） */
+  red_p: number;
+  blue_p: number;
+  /** 经 Benjamini-Hochberg 多重比较校正后是否仍显著 */
+  passes_fdr: boolean;
   score: number;
   elapsed_ms: number;
 }
@@ -186,6 +196,12 @@ export interface BacktestResult {
   red_expected_per_draw: number;
   blue_expected_per_draw: number;
   algos: BacktestAlgo[];
+  /** 零假设基线：每折抽 null_tickets_per_fold 组真随机号码的 lift */
+  null_red_lift: number;
+  null_blue_lift: number;
+  null_tickets_per_fold: number;
+  /** 通过 FDR 校正的算法数；0 表示没有任何算法能与随机区分 */
+  passes_fdr_count: number;
   note: string;
 }
 

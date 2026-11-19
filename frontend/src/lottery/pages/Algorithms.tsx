@@ -72,7 +72,7 @@ export default function Algorithms() {
     setBtLoading(true);
     setBt(null);
     // 统一全量回测（85 个算法 × 5 期），结果走 sqlite 缓存秒开
-    api.backtest(key, 5, 4).then(setBt).catch((e) => setErr(String(e)))
+    api.backtest(key).then(setBt).catch((e) => setErr(String(e)))
       .finally(() => setBtLoading(false));
   };
 
@@ -581,19 +581,37 @@ function BacktestView({
         </div>
 
         <p className="mt-2 text-[11px] text-paper-600">
-          全量回测：85 个非集成算法 × {bt?.folds ?? 5} 期留一预测；结果每日定时任务预计算并缓存，通常秒开
+          {bt?.algos.length ?? 85} 个非集成算法 × {bt?.folds ?? 200} 期留一预测；结果每日定时任务预计算并缓存，通常秒开
         </p>
+
+        {bt && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-paper-200 bg-paper-100 px-3 py-2 text-[11px]">
+            <span className="font-medium text-paper-800">零假设基线</span>
+            <span className="text-paper-600">
+              每折抽 {bt.null_tickets_per_fold} 组真随机号码 · 红球 lift {bt.null_red_lift.toFixed(3)} · 蓝球 lift {bt.null_blue_lift.toFixed(3)}
+            </span>
+            <span className={`ml-auto rounded-lg px-2 py-0.5 font-medium ${
+              bt.passes_fdr_count > 0
+                ? "bg-emerald-600/15 text-emerald-700"
+                : "bg-brand-gold/15 text-brand-gold"
+            }`}>
+              {bt.passes_fdr_count === 0
+                ? `0 / ${bt.algos.length} 个算法通过 FDR 校正 → 全部与随机无差别`
+                : `${bt.passes_fdr_count} / ${bt.algos.length} 个算法通过 FDR 校正`}
+            </span>
+          </div>
+        )}
 
         {loading ? (
           <div className="py-10 text-center text-sm text-paper-600">
             {runAllRunning
               ? "全量运行进行中（预测 + 回测），回测结果将在完成后自动显示…"
-              : "回测计算中（首次约 1~2 分钟，之后走缓存）…"}
+              : "回测计算中（首次约 10 分钟/彩种，之后走缓存）…"}
           </div>
         ) : bt ? (
           <>
             <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left text-xs">
+              <table className="w-full min-w-[820px] text-left text-xs">
                 <thead>
                   <tr className="border-b border-paper-200 text-[10px] uppercase tracking-wider text-paper-600">
                     <th className="py-2 pr-2">#</th>
@@ -601,30 +619,52 @@ function BacktestView({
                     <th className="py-2 pr-2">分类</th>
                     <th className="py-2 pr-2 text-right">红球均命中</th>
                     <th className="py-2 pr-2 text-right">蓝球均命中</th>
-                    <th className="py-2 pr-2 text-right">红球 lift</th>
-                    <th className="py-2 pr-2 text-right">蓝球 lift</th>
-                    <th className="py-2 text-right">综合分</th>
+                    <th className="py-2 pr-2 text-right">红球 lift [95%CI]</th>
+                    <th className="py-2 pr-2 text-right">蓝球 lift [95%CI]</th>
+                    <th className="py-2 pr-2 text-right">p 值</th>
+                    <th className="py-2 text-right">显著性</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {bt.algos.map((a, i) => (
-                    <tr key={a.id} className={`border-b border-paper-100 ${i === 0 ? "bg-brand-gold/5" : ""}`}>
-                      <td className="py-2 pr-2 text-paper-600">{i + 1}</td>
-                      <td className="py-2 pr-2 font-medium text-paper-900">{a.name}</td>
-                      <td className="py-2 pr-2 text-paper-700">{a.category}</td>
-                      <td className="py-2 pr-2 text-right text-paper-800">{a.red_avg}</td>
-                      <td className="py-2 pr-2 text-right text-paper-800">{a.blue_avg}</td>
-                      <td className={`py-2 pr-2 text-right font-semibold ${a.red_lift >= 1 ? "text-emerald-700" : "text-paper-700"}`}>
-                        {a.red_lift.toFixed(2)}
-                      </td>
-                      <td className={`py-2 pr-2 text-right font-semibold ${a.blue_lift >= 1 ? "text-emerald-700" : "text-paper-700"}`}>
-                        {a.blue_lift.toFixed(2)}
-                      </td>
-                      <td className={`py-2 text-right font-bold ${i === 0 ? "text-brand-gold" : "text-paper-900"}`}>
-                        {a.score.toFixed(3)}
-                      </td>
-                    </tr>
-                  ))}
+                  {bt.algos.map((a, i) => {
+                    const sig = a.passes_fdr;
+                    return (
+                      <tr
+                        key={a.id}
+                        className={`border-b border-paper-100 ${
+                          sig ? "bg-emerald-600/5" : i === 0 ? "bg-brand-gold/5" : ""
+                        }`}
+                      >
+                        <td className="py-2 pr-2 text-paper-600">{i + 1}</td>
+                        <td className="py-2 pr-2 font-medium text-paper-900">{a.name}</td>
+                        <td className="py-2 pr-2 text-paper-700">{a.category_name ?? a.category}</td>
+                        <td className="py-2 pr-2 text-right text-paper-800">{a.red_avg}</td>
+                        <td className="py-2 pr-2 text-right text-paper-800">{a.blue_avg}</td>
+                        <td className="py-2 pr-2 text-right font-semibold text-paper-800">
+                          {a.red_lift.toFixed(2)}
+                          <span className="ml-1 font-normal text-paper-500">
+                            [{a.red_ci[0].toFixed(2)}, {a.red_ci[1].toFixed(2)}]
+                          </span>
+                        </td>
+                        <td className="py-2 pr-2 text-right font-semibold text-paper-800">
+                          {a.blue_lift.toFixed(2)}
+                          <span className="ml-1 font-normal text-paper-500">
+                            [{a.blue_ci[0].toFixed(2)}, {a.blue_ci[1].toFixed(2)}]
+                          </span>
+                        </td>
+                        <td className="py-2 pr-2 text-right text-paper-700">{a.red_p.toFixed(3)}</td>
+                        <td className="py-2 text-right">
+                          <span className={`rounded-lg px-2 py-0.5 text-[10px] font-medium ${
+                            sig
+                              ? "bg-emerald-600/15 text-emerald-700"
+                              : "bg-paper-200 text-paper-600"
+                          }`}>
+                            {sig ? "显著" : "与随机无差别"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

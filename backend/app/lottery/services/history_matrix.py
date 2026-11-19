@@ -32,10 +32,20 @@ def page_slice(draws: list[dict], page: int, page_size: int) -> tuple[list[dict]
     """取某一页开奖（最新在前）。返回 ``(page_draws, total)``。
 
     分页方向与 ``/history`` 完全一致：第 1 页是最新的一批。
+
+    ⚠️ 页码超出末页时必须返回空列表，不能靠 Python 的负索引「绕回来」：
+    旧实现 ``end = total - (page-1)*page_size`` 在页码过大时会变负数，
+    ``draws[start:end]`` 于是返回**几乎全部**数据（大乐透第 200 页曾返回 2903 条）。
     """
     total = len(draws)
-    start = max(0, total - page * page_size)
+    start = total - page * page_size
     end = total - (page - 1) * page_size
+    if end <= 0:            # 页码超出末页
+        return [], total
+    start = max(0, start)
+    end = min(end, total)
+    if start >= end:
+        return [], total
     return draws[start:end][::-1], total
 
 
@@ -63,11 +73,9 @@ def build_history_matrix(
             wanted_dates.add(d["_run_date"])
         items.append(d)
 
-    if not wanted_dates:
-        return {"lottery": lottery, "page": page, "page_size": page_size,
-                "total": total, "items": []}
-
-    # 2) 批量取整批算法结果（一次 SQL，避免逐期查询）
+    # 🔴 不要在这里提前 return：跑批只覆盖最近的日期，历史期匹配不到批次时
+    # ``wanted_dates`` 为空，早退会让整页返回 ``items: []``（线上第 4 页起全空白，
+    # total 仍是 3529）。正确行为是照常返回开奖明细，逐期置 ``predictions: None``。
     batches = results_store.batch_by_dates(lottery, sorted(wanted_dates))
 
     # 3) 组装：共识列 + 算法列 + 命中/奖级
@@ -88,17 +96,10 @@ def build_history_matrix(
         seed_base += 1
         seed = int(str(base["issue"])[-6:] or seed_base)
 
-        red_votes = np.zeros(meta["red_max"])
-        blue_votes = np.zeros(meta["blue_max"])
-        for r in batch:
-            for n in r["red"]:
-                red_votes[int(n) - 1] += 1.0
-            for n in r["blue"]:
-                blue_votes[int(n) - 1] += 1.0
-
-        cons_red = pick_top(red_votes, meta["red_count"], meta["red_max"], tiebreak=seed)
-        cons_blue = pick_top(blue_votes, meta["blue_count"], meta["blue_max"],
-                             tiebreak=seed + 999)
+        # 共识列：走全站唯一口径 aggregate_consensus（号码计票）
+        agg = aggregate_consensus(batch, meta, seed)
+        cons_red = agg["red"]
+        cons_blue = agg["blue"]
         hit_red = len(actual_red & set(cons_red))
         hit_blue = len(actual_blue & set(cons_blue))
         consensus = {
@@ -128,36 +129,80 @@ def build_history_matrix(
             "total": total, "items": items}
 
 
+def aggregate_consensus(
+    results: list[dict],
+    meta: dict,
+    seed: int,
+) -> dict:
+    """把一批算法结果聚合成「全算法共识」号码。
+
+    🔴 口径真源。``build_history_matrix``（历史对照页）与
+    ``combine_latest_batch``（首页/智能推荐页）必须都走这里，否则同一个站的
+    两个页面会给出两组不同的号码 —— 这正是 2026-11 之前的线上状态：
+
+    - 历史对照页用**号码计票**（正确）；
+    - 智能推荐页把 ``red_conf``（长度 = red_count，只有被选中的号）直接喂给
+      ``pick_top``，触发 ``np.resize`` 循环平铺，产出等间距格点号码。
+
+    两种口径在 38 期 OOS 上号码重合率只有 11.8%，命中率 1.211 vs 1.053。
+
+    聚合方式：**号码出现次数计票**（每票权重 1）。不用 ``red_conf`` —— 它只覆盖
+    被选中的号码，天然缺号，平铺后必然退化成格点；也不用 ``red_scores`` 平均
+    （虽然新库已有该列），因为实测其 OOS 表现与计票无显著差异（见
+    ``docs/lottery-hit-rate-analysis.md``），而计票口径更直观、且不依赖回填。
+    """
+    red_votes = np.zeros(meta["red_max"])
+    blue_votes = np.zeros(meta["blue_max"])
+    for r in results:
+        for n in r["red"]:
+            red_votes[int(n) - 1] += 1.0
+        for n in r["blue"]:
+            blue_votes[int(n) - 1] += 1.0
+
+    red = pick_top(red_votes, meta["red_count"], meta["red_max"], tiebreak=seed)
+    blue = pick_top(blue_votes, meta["blue_count"], meta["blue_max"],
+                    tiebreak=seed + 999)
+    return {
+        "red": red,
+        "blue": blue,
+        "red_votes": [int(v) for v in red_votes],
+        "blue_votes": [int(v) for v in blue_votes],
+        "red_conf": [round(float(v), 4) for v in normalize(red_votes)],
+        "blue_conf": [round(float(v), 4) for v in normalize(blue_votes)],
+    }
+
+
 def combine_latest_batch(lottery: str, meta: dict) -> dict:
-    """对最新一批跑批缓存的全部算法打分做等权平均（纯缓存，不实时计算）。
+    """对最新一批跑批缓存做全算法共识融合（纯缓存，不实时计算）。
 
     与「算法广场批量跑快算法」独立：这里永远消费每日跑批结果。
-    找不到批次时返回 ``None``（路由层翻译成 404）。口径与前端展示的
-    「融合 N 个算法 · 等权平均」一致：confidence 先按算法等权平均，再取 top-k。
+    找不到批次时返回 ``None``（路由层翻译成 404）。
+
+    聚合口径统一走 ``aggregate_consensus``（号码计票），与历史对照页同源。
     """
     res = results_store.latest(lottery)
     if not res:
         return None
 
-    red_mean = np.mean([r["red_conf"] for r in res["results"]], axis=0)
-    blue_mean = np.mean([r["blue_conf"] for r in res["results"]], axis=0)
     seed = int(res["issue_base"] or 0)
-    red = pick_top(red_mean, meta["red_count"], meta["red_max"], tiebreak=seed)
-    blue = pick_top(blue_mean, meta["blue_count"], meta["blue_max"], tiebreak=seed + 999)
+    agg = aggregate_consensus(res["results"], meta, seed)
 
     return {
         "lottery": lottery,
         "run_date": res["run_date"],
         "issue_base": res["issue_base"],
         "count": res["count"],
-        "red": red,
-        "blue": blue,
-        # ⚠️ 与改造前逐位一致：原来用 base.normalize（min-max 到 [0,1]），
-        # 不是「除以最大值」。换归一化方式会改变前端热力图的相对亮度。
-        "red_conf": [round(float(v), 4) for v in normalize(red_mean)],
-        "blue_conf": [round(float(v), 4) for v in normalize(blue_mean)],
+        "red": agg["red"],
+        "blue": agg["blue"],
+        # ⚠️ 这里给的是**全号码池**长度的计票归一化值（min-max），
+        # 不是「选中号码的置信度」。前端目前没有消费这两个字段，
+        # 但语义必须是全池，否则又会被误当成 top-k 的依据。
+        "red_conf": agg["red_conf"],
+        "blue_conf": agg["blue_conf"],
+        "red_votes": agg["red_votes"],
+        "blue_votes": agg["blue_votes"],
         "detail": {
-            "原理": "对每日跑批缓存的全部算法打分等权平均（非实时计算）",
+            "原理": "对每日跑批缓存的全部算法推荐号码做出现次数计票，取 top-k",
             "参与算法数": res["count"],
             "run_date": res["run_date"],
             "issue_base": res["issue_base"],

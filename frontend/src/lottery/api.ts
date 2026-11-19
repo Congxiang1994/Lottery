@@ -44,8 +44,11 @@ export const api = {
     get<BatchAlgoResponse>(`/${k}/algorithms`, { max_cost: maxCost, ids }),
   combined: (k: string, maxCost = 2) =>
     get<CombinedResult>(`/${k}/combined`, { max_cost: maxCost }),
-  backtest: (k: string, folds = 5, maxCost = 1) =>
-    get<BacktestResult>(`/${k}/backtest`, { folds, max_cost: maxCost }),
+  backtest: (k: string, folds?: number, maxCost?: number) =>
+    get<BacktestResult>(`/${k}/backtest`, {
+      ...(folds !== undefined ? { folds } : {}),
+      ...(maxCost !== undefined ? { max_cost: maxCost } : {}),
+    }),
   // ---- 定时入库结果（纯缓存展示，不触发实时计算）
   algoSummary: () => get<AlgoSummary[]>("/algo-summary"),
   savedLatest: (k: string) =>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLottery } from "../context";
 import { api } from "../api";
 import { BacktestResult, SavedAlgorithmsLatest, SavedCombined } from "../types";
@@ -35,17 +35,8 @@ export default function Predict() {
     api.savedLatest(key).catch((e) => { setErr(errText(e)); return null; }).then(setSaved);
     api.savedCombined(key).catch(() => null).then(setCombined);
     // 回测榜（全量，sqlite 缓存秒开）
-    api.backtest(key, 5, 4).catch(() => null).then(setBacktest);
+    api.backtest(key).catch(() => null).then(setBacktest);
   }, [key, tick]);
-
-  // 回测 Top10：榜上前 10 的算法 → 从跑批缓存取推荐号码
-  const top10 = useMemo(() => {
-    if (!backtest || !saved) return [];
-    const byId = new Map(saved.results.map((r) => [r.id, r]));
-    return backtest.algos.slice(0, 10)
-      .map((a) => ({ ...a, ...(byId.get(a.id) ?? { red: [], blue: [] }) }))
-      .filter((t) => t.red.length > 0);
-  }, [backtest, saved]);
 
   return (
     <div className="pt-8">
@@ -82,7 +73,7 @@ export default function Predict() {
                 <Sparkles size={16} /> 全算法共识推荐
               </span>
               <span className="rounded-full bg-paper-100 px-2 py-0.5 text-[10px] text-paper-700">
-                {combined ? `融合 ${combined.count} 个算法 · 等权平均（${combined.run_date}）` : "暂无跑批数据 · 请到算法广场运行全部算法"}
+                {combined ? `红球：${combined.count} 个算法计票 top-${combined.red.length}（${combined.run_date}）` : "暂无跑批数据 · 请到算法广场运行全部算法"}
               </span>
             </div>
             <div className="mt-3 flex flex-wrap items-center">
@@ -94,58 +85,101 @@ export default function Predict() {
                 </>
               ) : (<span className="text-xs text-paper-600">暂无数据</span>)}
             </div>
+            {combined && (
+              <p className="mt-3 text-[10px] leading-relaxed text-paper-600">
+                红球按号码得票数排序。蓝球/后区<b>不参与算法计票</b> ——
+                实测蓝球 lift 与随机无差别（0.99 / 0.96），此处展示的是
+                各算法蓝球选择的计票结果，同样不具备预测力。所有号码仅供娱乐参考。
+              </p>
+            )}
           </div>
         </div>
       </Reveal>
 
-      {/* 回测 Top10 推荐（取最新跑批回测榜前 10 的算法推荐号码） */}
+      {/* 回测表现（纯统计，不再展示号码） */}
       <Reveal className="mt-5">
         <div className="glass rounded-3xl p-6 shadow-card">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="flex items-center gap-2 text-base font-bold text-paper-900">
-              <Trophy size={16} className="text-brand-gold" /> 回测 Top10 推荐
+              <Trophy size={16} className="text-brand-gold" /> 回测表现
             </h2>
-            {top10.length > 0 ? (
+            {backtest ? (
               <span className="text-[11px] text-paper-700">
-                基于最近 5 期留一预测回测排行榜（lift = 实际命中 / 随机期望）
+                最近 {backtest.folds} 期留一预测 · 红球随机期望 {backtest.red_expected_per_draw}
+                {" · "}
+                <b className={backtest.passes_fdr_count > 0 ? "text-emerald-700" : "text-brand-gold"}>
+                  {backtest.passes_fdr_count === 0
+                    ? "0 个算法通过显著性校正"
+                    : `${backtest.passes_fdr_count} 个算法通过显著性校正`}
+                </b>
               </span>
             ) : (
-              <span className="text-[11px] text-paper-600">回测数据未生成 · 请到算法广场运行全部算法（含回测）</span>
+              <span className="text-[11px] text-paper-600">回测数据未生成</span>
             )}
           </div>
 
-          {top10.length > 0 ? (
+          {backtest && backtest.algos.length > 0 ? (
             <div className="mt-4 space-y-2">
-              {top10.map((t, i) => (
-                <div key={t.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-paper-100 bg-paper-50 px-3 py-2 transition hover:border-paper-300">
-                  <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sm font-bold ${
-                    i === 0 ? "bg-brand-gold/20 text-brand-gold" : i < 3 ? "bg-paper-200 text-paper-900" : "bg-paper-100 text-paper-700"
-                  }`}>{i + 1}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-paper-900">{t.name}</div>
-                    <div className="text-[10px] text-paper-600">
-                      综合分 {t.score.toFixed(3)} · 红球 lift {t.red_lift.toFixed(2)} · 蓝球 lift {t.blue_lift.toFixed(2)}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center">
-                    {(t.red ?? []).map((n, j) => (
-                      <Ball key={`r${j}`} n={n} kind="red" size={26} delay={j * 20} />
-                    ))}
-                    <span className="mx-0.5 text-xs text-paper-400">+</span>
-                    {(t.blue ?? []).map((n, j) => (
-                      <Ball key={`b${j}`} n={n} kind="blue" size={26} delay={80 + j * 20} />
-                    ))}
+              {/* 零假设基线：真随机号码打出来的 lift */}
+              <div className="flex items-center gap-3 rounded-xl border border-paper-200 bg-paper-100 px-3 py-2">
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-paper-200 text-[10px] font-bold text-paper-700">基</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-paper-900">真随机号码基线</div>
+                  <div className="text-[10px] text-paper-600">
+                    每折抽 {backtest.null_tickets_per_fold} 组随机号码 · 红球 lift {backtest.null_red_lift.toFixed(3)} · 蓝球 lift {backtest.null_blue_lift.toFixed(3)}
                   </div>
                 </div>
-              ))}
+                <span className="shrink-0 rounded-lg bg-paper-200 px-2 py-1 text-[10px] text-paper-700">
+                  无预测力时应≈1.00
+                </span>
+              </div>
+
+              {backtest.algos.slice(0, 10).map((t, i) => {
+                const significant = t.passes_fdr;
+                return (
+                  <div
+                    key={t.id}
+                    className={`flex flex-wrap items-center gap-3 rounded-xl border px-3 py-2 transition ${
+                      significant
+                        ? "border-emerald-600/30 bg-emerald-50"
+                        : "border-paper-100 bg-paper-50 hover:border-paper-300"
+                    }`}
+                  >
+                    <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sm font-bold ${
+                      i === 0 ? "bg-brand-gold/20 text-brand-gold" : i < 3 ? "bg-paper-200 text-paper-900" : "bg-paper-100 text-paper-700"
+                    }`}>{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-paper-900">{t.name}</div>
+                      <div className="text-[10px] text-paper-600">
+                        红球 lift {t.red_lift.toFixed(2)}{" "}
+                        <span className="text-paper-500">
+                          [{t.red_ci[0].toFixed(2)}, {t.red_ci[1].toFixed(2)}]
+                        </span>
+                        {" · "}蓝球 lift {t.blue_lift.toFixed(2)}{" "}
+                        <span className="text-paper-500">
+                          [{t.blue_ci[0].toFixed(2)}, {t.blue_ci[1].toFixed(2)}]
+                        </span>
+                      </div>
+                    </div>
+                    <span className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium ${
+                      significant
+                        ? "bg-emerald-600/15 text-emerald-700"
+                        : "bg-paper-200 text-paper-600"
+                    }`}>
+                      {significant ? "显著" : `与随机无差别 p=${t.red_p.toFixed(2)}`}
+                    </span>
+                  </div>
+                );
+              })}
               <p className="pt-1 text-[10px] text-paper-500">
-                注：回测 lift 在小样本上噪声较大，长期回归 1.0；本榜单仅作历史表现参考，不构成预测依据
+                约 95% 置信区间跨过 1.00，或未通过 Benjamini-Hochberg 多重比较校正（p 值已按 {backtest.algos.length} 个算法校正），
+                即无法排除「纯噪声」。榜单只描述历史表现，<b>不构成任何选号依据</b>。
               </p>
             </div>
           ) : (
             <div className="mt-4 rounded-xl border border-dashed border-paper-200 p-4 text-center text-xs text-paper-600">
-              回测数据未生成。到「算法广场」点击「运行全部」即可生成（含预测 + 回测，
-              双色球约 4 分钟，大乐透约 12 分钟），完成后刷新本页自动展示 Top10。
+              回测数据未生成。到「算法广场」点击「运行全部」即可生成（folds=200，
+              双色球 + 大乐透各约 10 分钟）。
             </div>
           )}
         </div>

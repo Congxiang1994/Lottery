@@ -5,7 +5,7 @@
 执行顺序（与「全局定时任务」语义一致）：
 1. **爬取**：从 500彩票网 抓取 ssq/dlt 最新历史数据并落盘（失败沿用本地）
 2. **预测**：跑完一个彩种的所有非集成类算法（含 cost=3,4 慢算法），结果整批入库
-3. **回测**：全量 85 算法 × 5 期留一预测，lift 排行榜写入 backtest_cache 表，
+3. **回测**：全量算法 × 200 期留一预测（folds 见 runner.FOLDS），lift 排行榜写入 backtest_cache 表，
    算法广场「回测 → 全部」首次打开即可秒读缓存
 
 集成类（cost=4 的 vote/cat_fusion/borda/meta_stack）跳过：它们的输出是
@@ -25,9 +25,10 @@ from app.lottery.algorithms import REGISTRY, engine_context, run_batch  # noqa: 
 from app.lottery.algorithms.backtest import evaluate as backtest_evaluate  # noqa: E402
 from app.lottery.config import ALGORITHM_COST_SECONDS, LOTTERIES  # noqa: E402
 from app.lottery.services import results_store, scraper  # noqa: E402
-
-FOLDS = 5
-BACKTEST_MAX_COST = 4  # 全部算法（不区分快慢）
+from app.lottery.services.runner import (  # noqa: E402
+    BACKTEST_MAX_COST,
+    FOLDS,
+)
 
 
 def _algo_pool() -> list:
@@ -94,7 +95,7 @@ def _backtest_one(lottery: str, data: dict, folds: int = FOLDS) -> int:
     ctx = engine_context(lottery, data["draws"], meta)
     print(f"  · {lottery}: 全量回测（全部算法 × {folds} 期留一预测）…")
     pool = _algo_pool()
-    _progress_update(lottery, len(pool), "回测阶段（85 算法 × 5 期留一预测）…",
+    _progress_update(lottery, len(pool), f"回测阶段（{len(pool)} 算法 × {folds} 期留一预测）…",
                      0.0, 0.0, phase="backtest")
     t0 = time.perf_counter()
     res = backtest_evaluate(ctx, folds=folds, max_cost=BACKTEST_MAX_COST,

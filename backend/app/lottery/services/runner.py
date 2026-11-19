@@ -118,7 +118,7 @@ def _work(lottery: str) -> None:
 
         # ---------- 阶段 2：全量回测 ----------
         results_store.progress_update(
-            lottery, len(pool), total_w, "回测阶段（85 算法 × 5 期留一预测）…",
+            lottery, len(pool), total_w, f"回测阶段（{len(pool)} 算法 × {FOLDS} 期留一预测）…",
             time.time() - t0, 0.0, phase="backtest")
         from app.lottery.algorithms.backtest import evaluate as bt_evaluate
         stop = threading.Event()
@@ -162,14 +162,30 @@ def _work(lottery: str) -> None:
 def _heartbeat(lottery: str, t0: float, stop: threading.Event,
                total: int, total_w: float) -> None:
     """回测阶段心跳：每 2s 刷新 elapsed，让进度条持续走动。"""
+    msg = f"回测阶段（{total} 算法 × {FOLDS} 期留一预测）…"
     while not stop.wait(2.0):
         results_store.progress_update(
-            lottery, total, total_w, "回测阶段（85 算法 × 5 期留一预测）…",
+            lottery, total, total_w, msg,
             time.time() - t0, 0.0, phase="backtest")
 
 
-FOLDS = 5
-BACKTEST_MAX_COST = 4  # 全部算法（不区分快慢）
+FOLDS = 200
+"""回测折数。
+
+旧的 5 折下，85 个纯噪声算法的榜首 lift 中位数就有 1.83（双色球）/ 2.24（大乐透），
+排行榜等于噪声排序。200 折把 lift 的 95% CI 半宽收窄到约 ±0.11，
+纯噪声榜首中位数降到约 1.14，榜才具备分辨力。
+
+实测成本：cost<=3 共 68 个算法，服务端约 3 秒/折 → 单彩种 200 折约 10 分钟，
+双彩种约 20 分钟，在 systemd ``TimeoutStartSec=1800`` 之内。
+"""
+BACKTEST_MAX_COST = 3
+"""排除 17 个 cost=4 的慢算法。
+
+cost=4 的 5 个算法（gbdt/tcn/transformer/lstm 等）单轮就吃掉总耗时的 60%，
+把它们纳入 200 折会让跑批时间涨到 27 分钟/彩种。它们的 lift 在 200 折口径下
+同样无法通过 FDR 校正，纳入与否不改变结论。
+"""
 
 
 def status(lottery: str) -> dict:

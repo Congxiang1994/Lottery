@@ -81,9 +81,27 @@ class AlgoOutput:
 
 - **`combine()`**：多算法等权/加权融合——各算法打分向量 `normalize` 后加权平均 → 取 top-k。
   默认排除集成类（ensemble）算法，避免重复计票。
-- **滚动回测 `backtest.py`**：对最近 N 期做「留一预测」（只用当期之前的数据），
+- **共识口径（唯一真源 `history_matrix.aggregate_consensus`）**：首页 / 智能推荐页
+  （`saved-combined`）与历史对照页（`history-predictions`）**必须共用同一个聚合函数**，
+  按**号码出现次数计票**取 top-k。
+  > 🔴 2026-11 之前的 `combine_latest_batch` 把 `red_conf`（长度 = 选中的 6/5 个号）
+  > 直接喂给 `pick_top`，触发 `np.resize` 循环平铺 → 产出等间距格点号码
+  > （双色球 88%、大乐透 100% 落在同一个模 p 余数类），样本外红球 lift 只有 0.96/0.93，
+  > 比随机号码还差。`pick_top` 现在长度不符会抛 `ScoreShapeError`，不再静默修补。
+- **滚动回测 `backtest.py`**：对最近 `folds` 期做「留一预测」（只用当期之前的数据），
   统计各算法实际命中 vs 随机期望，得到 **lift 排行榜**。
+  - 默认 `folds=200`、`max_cost=3`（见 `runner.FOLDS`）。5 折时 85 个纯噪声算法的
+    榜首 lift 中位数就有 1.83 / 2.24，排行榜等于噪声排序；200 折把 CI 半宽压到 ±0.11，
+    纯噪声榜首中位数降到约 1.14。
+  - 每个算法输出 `red_ci`/`blue_ci`（lift 的 95% CI，超几何方差解析计算）、
+    `red_p`/`blue_p`（单侧 p 值）、`passes_fdr`（Benjamini-Hochberg 校正）。
+  - 每折额外抽 `NULL_TICKETS=200` 组真随机号码作为零假设基线
+    （`null_red_lift`/`null_blue_lift`），供前端画对照。
   > 长期回测中所有算法 lift 应回归 1.0——这正是彩票随机性的客观证据。
+  > 当前线上 68 个算法**无一通过 FDR 校正**，这是预期结果，不是 bug。
+
+**验收脚本**：`backend/scripts/verify_lottery_metrics.py`（34 条断言，失败非 0 退出；
+`--inject-pick-top` 复现旧实现，确认断言能失败）。
 
 ## 3. 全量运行链路（算法广场 → SQLite 一致性）
 
@@ -114,6 +132,7 @@ save_batch 落库 → 首页 saved-combined / saved-algorithms/latest 自动读�
 | 密码存储 | scrypt（N=2^15, r=8, p=1, 随机 salt）落库 `auth.db`；历史 SHA-256 记录在校验成功后自动升级 |
 | 互斥锁 | SQLite 全局锁防「运行全部」并发；`backtest_lock` TTL=1800s（防 SIGTERM 残留锁、防长回测抢占） |
 | 回测缓存 | `backtest_cache` 表按 `(lottery, folds, max_cost, issue_base)` 失效 |
+| 期号校验 | `save_batch` 前强制校验 `issue_base`：必须 5 位数字且存在于开奖数据。曾写入过 `20263435` 这类脏期号，导致历史对照整期错位 |
 | 数据完整性 | `save_lottery` 原子写（临时文件 + `os.replace`）；`load_lottery` 遇损坏 JSON 返回 None 而非抛异常 |
 
 ## 5. API 全表（前缀 `/api/v1`，共 23 条路由，见 `router.py`）

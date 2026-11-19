@@ -36,10 +36,12 @@ CREATE TABLE IF NOT EXISTS algo_results (
     category    TEXT    NOT NULL,
     run_date    TEXT    NOT NULL,    -- YYYY-MM-DD
     issue_base  TEXT    NOT NULL,
-    red         TEXT    NOT NULL,    -- JSON
+    red         TEXT    NOT NULL,    -- JSON: 选中的号码
     blue        TEXT    NOT NULL,    -- JSON
-    red_conf    TEXT    NOT NULL,    -- JSON
-    blue_conf   TEXT    NOT NULL,    -- JSON
+    red_conf    TEXT    NOT NULL,    -- JSON: 选中号码的置信度（长度 = red_count）
+    blue_conf   TEXT    NOT NULL,    -- JSON: 选中号码的置信度（长度 = blue_count）
+    red_scores  TEXT,                -- JSON: 全号码池打分（长度 = red_max）⚠️ 旧行可能为 NULL
+    blue_scores TEXT,                -- JSON: 全号码池打分（长度 = blue_max）
     detail      TEXT    NOT NULL,    -- JSON
     elapsed_ms  REAL    NOT NULL,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -116,6 +118,8 @@ _MIGRATIONS = (
     "ALTER TABLE run_progress ADD COLUMN phase TEXT NOT NULL DEFAULT 'predict'",
     "ALTER TABLE security_lock ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE security_lock ADD COLUMN locked_until REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE algo_results ADD COLUMN red_scores TEXT",
+    "ALTER TABLE algo_results ADD COLUMN blue_scores TEXT",
 )
 
 
@@ -124,15 +128,57 @@ def init() -> None:
     init_schema(DB_PATH, SCHEMA, migrations=_MIGRATIONS)
 
 
+def _validate_issue_bases(results: list[dict], lottery: str) -> None:
+    """落库前校验 issue_base 必须是真实存在的期号。
+
+    2026-08-27 曾写入一条 ``issue_base='20263435'`` 的脏批次（87 个字符的期号，
+    开奖数据里根本不存在）。``runs_before`` 会把它当成合法批次选中，导致
+    历史对照页那一期的「算法对照」整体错位，且没有任何告警。
+
+    校验规则：必须是 5 位数字，且能在该彩种的开奖数据里找到。
+    """
+    bases = {str(r.get("issue_base", "")) for r in results}
+    bad_shape = {b for b in bases if not (len(b) == 5 and b.isdigit())}
+    if bad_shape:
+        raise ValueError(
+            f"{lottery}: 期号格式非法 {sorted(bad_shape)}（应为 5 位数字）；"
+            "疑似抓取/解析污染，拒绝落库")
+
+    # 与真实开奖数据比对（导入放函数内：避免 results_store ↔ scraper 循环导入）
+    from app.lottery.services import scraper
+    try:
+        data = scraper.load_lottery(lottery)
+    except Exception:  # noqa: BLE001
+        return  # 读不到数据时跳过存在性校验，至少格式已校验
+    known = {str(d["issue"]) for d in (data or {}).get("draws", [])}
+    if not known:
+        return
+    unknown = {b for b in bases if b not in known}
+    if unknown:
+        raise ValueError(
+            f"{lottery}: 期号 {sorted(unknown)} 不在开奖数据中"
+            f"（现有最新 {max(known)}）；拒绝写入脏批次")
+
+
 def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = None) -> int:
     """一次性写一批算法结果；upsert 行为：同日重跑会覆盖。
 
-    每条 dict 需包含: id, name, category, red, blue, red_conf, blue_conf, detail, elapsed_ms
+    每条 dict 需包含: id, name, category, red, blue, red_conf, blue_conf,
+    red_scores, blue_scores, detail, elapsed_ms
+
+    ``red_scores``/``blue_scores`` 是**全号码池**打分（长度 = red_max/blue_max），
+    与 ``red_conf``（长度 = red_count，只有被选中的号）不是一回事。
+    共识融合必须用前者，否则会退化。
+
+    落库前会校验 ``issue_base`` 是真实期号（见 ``_validate_issue_bases``）。
     """
     if run_date is None:
         run_date = datetime.now().strftime("%Y-%m-%d")
     rows = []
-    for r in results:
+    packed = list(results)
+    if packed:
+        _validate_issue_bases(packed, lottery)
+    for r in packed:
         rows.append((
             lottery, r["id"], r["name"], r["category"],
             run_date, r.get("issue_base", ""),
@@ -140,6 +186,8 @@ def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = Non
             json.dumps(r["blue"], ensure_ascii=False),
             json.dumps(r.get("red_conf", []), ensure_ascii=False),
             json.dumps(r.get("blue_conf", []), ensure_ascii=False),
+            json.dumps(r.get("red_scores", []), ensure_ascii=False),
+            json.dumps(r.get("blue_scores", []), ensure_ascii=False),
             json.dumps(r.get("detail", {}), ensure_ascii=False, default=str),
             float(r.get("elapsed_ms", 0.0)),
         ))
@@ -149,11 +197,23 @@ def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = Non
         con.executemany(
             """INSERT OR REPLACE INTO algo_results
                (lottery, algo_id, algo_name, category, run_date, issue_base,
-                red, blue, red_conf, blue_conf, detail, elapsed_ms)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                red, blue, red_conf, blue_conf, red_scores, blue_scores,
+                detail, elapsed_ms)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
     return len(rows)
+
+
+def _scores_or_none(raw: str | None) -> list[float] | None:
+    """旧行没有全量打分（列为 NULL / 空数组）→ 返回 None，调用方需降级。"""
+    if not raw:
+        return None
+    try:
+        arr = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return arr or None
 
 
 def latest(lottery: str) -> dict | None:
@@ -175,19 +235,22 @@ def latest(lottery: str) -> dict | None:
         run_date, issue_base = head
         cur = con.execute(
             """SELECT algo_id, algo_name, category, red, blue,
-                      red_conf, blue_conf, detail, elapsed_ms
+                      red_conf, blue_conf, red_scores, blue_scores,
+                      detail, elapsed_ms
                FROM algo_results
                WHERE lottery = ? AND run_date = ?
                ORDER BY category, algo_id""",
             (lottery, run_date),
         )
         results = []
-        for (aid, name, cat, red, blue, rc, bc, det, ms) in cur.fetchall():
+        for (aid, name, cat, red, blue, rc, bc, rs, bs, det, ms) in cur.fetchall():
             results.append({
                 "id": aid, "name": name, "category": cat,
                 "category_name": CATEGORIES.get(cat, {}).get("name", cat),
                 "red": json.loads(red), "blue": json.loads(blue),
                 "red_conf": json.loads(rc), "blue_conf": json.loads(bc),
+                "red_scores": _scores_or_none(rs),
+                "blue_scores": _scores_or_none(bs),
                 "detail": json.loads(det), "elapsed_ms": ms,
             })
     return {"run_date": run_date, "issue_base": issue_base,
@@ -275,7 +338,8 @@ def by_date(lottery: str, run_date: str) -> dict | None:
         issue_base = head[0]
         cur = con.execute(
             """SELECT algo_id, algo_name, category, red, blue,
-                      red_conf, blue_conf, detail, elapsed_ms
+                      red_conf, blue_conf, red_scores, blue_scores,
+                      detail, elapsed_ms
                FROM algo_results
                WHERE lottery = ? AND run_date = ?
                ORDER BY category, algo_id""",
@@ -286,8 +350,9 @@ def by_date(lottery: str, run_date: str) -> dict | None:
              "category_name": CATEGORIES.get(cat, {}).get("name", cat),
              "red": json.loads(red), "blue": json.loads(blue),
              "red_conf": json.loads(rc), "blue_conf": json.loads(bc),
+             "red_scores": _scores_or_none(rs), "blue_scores": _scores_or_none(bs),
              "detail": json.loads(det), "elapsed_ms": ms}
-            for (aid, name, cat, red, blue, rc, bc, det, ms) in cur.fetchall()
+            for (aid, name, cat, red, blue, rc, bc, rs, bs, det, ms) in cur.fetchall()
         ]
     return {"run_date": run_date, "issue_base": issue_base,
             "lottery": lottery, "count": len(results), "results": results}

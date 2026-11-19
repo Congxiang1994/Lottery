@@ -266,11 +266,28 @@ def softmax(x: np.ndarray, temp: float = 1.0) -> np.ndarray:
     return e / tot if tot > 1e-12 else np.full_like(e, 1.0 / len(e))
 
 
+class ScoreShapeError(ValueError):
+    """打分向量长度与号码池不匹配。
+
+    历史上这里用 ``np.resize`` 静默修补——而 numpy 的 resize 是**循环平铺**：
+    长度 6 的向量平铺到 33 会变成 ``[a,b,c,d,e,f,a,b,c,...]``，argmax 必然落在
+    同一个模 6 同余类，于是「共识号码」实际是等间距格点（线上 dlt 曾经 100%
+    落在同一余数类）。宁可炸掉也不许再静默平铺。
+    """
+
+
 def pick_top(scores: np.ndarray, count: int, max_n: int, tiebreak: int = 0) -> list[int]:
-    """按分数取 top-N 号码（1-based）。并列时用确定性 tiebreak 打散。"""
+    """按分数取 top-N 号码（1-based）。并列时用确定性 tiebreak 打散。
+
+    ``scores`` 形状必须是 ``(max_n,)``——长度不符直接抛 ``ScoreShapeError``，
+    不再静默平铺（否则会产出等间距伪号码，见 ``ScoreShapeError`` 说明）。
+    """
     s = np.asarray(scores, dtype=np.float64).ravel()
     if s.shape[0] != max_n:
-        s = np.resize(s, max_n)
+        raise ScoreShapeError(
+            f"打分向量长度 {s.shape[0]} ≠ 号码池 {max_n}；"
+            "请传长度等于号码池的分数向量（不要传「选中号码的置信度」）"
+        )
     s = np.nan_to_num(s, nan=0.0, posinf=0.0, neginf=0.0)
     # 确定性微扰：避免全等时总是取 1,2,3...
     rng = np.random.default_rng(abs(int(tiebreak)) % (2**31) + 7)
@@ -355,17 +372,23 @@ def lagged_windows(H: np.ndarray, win: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def safe_run(meta: AlgoMeta, ctx: AlgoContext) -> AlgoOutput:
-    """执行算法，异常时降级为均匀分布并记录错误。"""
+    """执行算法，异常时降级为均匀分布并记录错误。
+
+    打分向量长度必须等于号码池：不符直接抛错走降级分支（``detail.error`` 可见），
+    不再 ``np.resize`` 静默平铺 —— 平铺出来的等间距号码会被当成真实推荐。
+    """
     try:
         out = meta.fn(ctx)
         red = np.nan_to_num(np.asarray(out.red, dtype=np.float64).ravel(), nan=0.0,
                             posinf=0.0, neginf=0.0)
         blue = np.nan_to_num(np.asarray(out.blue, dtype=np.float64).ravel(), nan=0.0,
-                             posinf=0.0, neginf=0.0)
+                             neginf=0.0, posinf=0.0)
         if red.shape[0] != ctx.red_max:
-            red = np.resize(red, ctx.red_max)
+            raise ScoreShapeError(
+                f"{meta.id}: red 打分长度 {red.shape[0]} ≠ {ctx.red_max}")
         if blue.shape[0] != ctx.blue_max:
-            blue = np.resize(blue, ctx.blue_max)
+            raise ScoreShapeError(
+                f"{meta.id}: blue 打分长度 {blue.shape[0]} ≠ {ctx.blue_max}")
         return AlgoOutput(red=red, blue=blue, detail=out.detail or {})
     except Exception as exc:  # noqa: BLE001
         return AlgoOutput(

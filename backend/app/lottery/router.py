@@ -153,10 +153,15 @@ def algorithms_combined(
 @router.get("/{lottery}/backtest")
 def algorithms_backtest(
     lottery: str,
-    folds: int = Query(5, ge=1, le=30, description="回测期数（滚动留一预测）"),
-    max_cost: int = Query(1, ge=1, le=4),
+    folds: int = Query(runner.FOLDS, ge=1, le=500,
+                       description="回测期数（滚动留一预测）；默认与每日跑批一致"),
+    max_cost: int = Query(runner.BACKTEST_MAX_COST, ge=1, le=4),
 ):
-    """滚动回测排行榜（只读缓存）：lift = 实际命中 / 随机期望，长期应回归 1.0。
+    """滚动回测排行榜（只读缓存）：lift = 实际命中 / 随机期望。
+
+    返回里每个算法带 ``red_ci``/``blue_ci``（95% 置信区间）、``red_p``/``blue_p``
+    与 ``passes_fdr``（BH 多重比较校正后是否仍显著），另有 ``null_red_lift``
+    等零假设基线，便于前端画对照图。**CI 跨 1.0 即与随机无差别。**
 
     缓存未命中直接 503，绝不触发计算——所有计算必须走「运行全部」入口。
     """
@@ -165,9 +170,9 @@ def algorithms_backtest(
     if res is None:
         raise HTTPException(
             status_code=503,
-            detail=f"{LOTTERIES[lottery]['name']} 回测数据未生成：请到「算法广场」"
-                   "点击「运行全部」生成（含预测+回测，约 15 分钟），"
-                   "或等待每日 0:00 定时任务完成后再刷新")
+            detail=f"{LOTTERIES[lottery]['name']} 回测数据未生成（folds={folds}, "
+                   f"max_cost={max_cost} 这一档没有缓存）：请到「算法广场」"
+                   "点击「运行全部」生成，或等待每日 0:00 定时任务完成后再刷新")
     return res
 
 
