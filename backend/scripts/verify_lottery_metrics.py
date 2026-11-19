@@ -243,6 +243,39 @@ def check_E_backtest_folds() -> None:
         print("  · 跳过缓存字段断言（该档回测尚未生成）")
 
 
+# ---------------------------------------------------------------- E2
+
+#: 线上服务器实测（4 核 AMD EPYC，单核跑满）每折耗时，秒。
+#: 数据取自 2026-11-19 在 124.222.39.15 上对 68 个 cost<=3 算法的实测。
+_SERVER_SEC_PER_FOLD = {1: 0.05, 2: 2.98, 3: 8.76}
+#: lottery-algos.service 的 TimeoutStartSec
+_SYSTEMD_TIMEOUT_SEC = 1800
+
+
+def check_E2_backtest_fits_timeout() -> None:
+    """E2：回测总耗时必须落在 systemd 超时之内，否则跑批永远完不成。
+
+    这是真实踩过的坑：最初把 ``BACKTEST_MAX_COST`` 设成 3，实测单彩种
+    200 折要 29 分钟，双彩种 58 分钟，超过 ``TimeoutStartSec=1800``，
+    systemd 会直接杀掉进程，缓存永远是空的。
+    """
+    print("[E2] 回测耗时在 systemd 超时内")
+    from app.lottery.services.runner import BACKTEST_MAX_COST, FOLDS
+
+    per_fold = _SERVER_SEC_PER_FOLD.get(BACKTEST_MAX_COST)
+    if per_fold is None:
+        check(f"max_cost={BACKTEST_MAX_COST} 有实测耗时基线", False,
+              "新增成本档位请先实测再上线")
+        return
+    total = per_fold * FOLDS * 2  # 双彩种
+    check(f"max_cost={BACKTEST_MAX_COST} × folds={FOLDS} × 2 彩种"
+          f"≈ {total / 60:.0f} 分钟 < {_SYSTEMD_TIMEOUT_SEC // 60} 分钟",
+          total < _SYSTEMD_TIMEOUT_SEC, f"{total:.0f}s")
+    # 留 20% 余量给预测阶段与爬取
+    check("回测耗时有 ≥20% 超时余量",
+          total < _SYSTEMD_TIMEOUT_SEC * 0.8, f"{total / _SYSTEMD_TIMEOUT_SEC * 100:.0f}%")
+
+
 # ---------------------------------------------------------------- F
 
 def check_F_history_paging() -> None:
@@ -379,6 +412,7 @@ def main() -> int:
         check_C_blue_not_issue_hash()
         check_D_scores_persisted()
         check_E_backtest_folds()
+        check_E2_backtest_fits_timeout()
         check_F_history_paging()
         check_G_issue_validation()
 

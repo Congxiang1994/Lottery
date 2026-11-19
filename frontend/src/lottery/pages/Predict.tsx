@@ -166,7 +166,7 @@ export default function Predict() {
                         ? "bg-emerald-600/15 text-emerald-700"
                         : "bg-paper-200 text-paper-600"
                     }`}>
-                      {significant ? "显著" : `与随机无差别 p=${t.red_p.toFixed(2)}`}
+                      {significant ? "显著" : `与随机无差别 p=${t.red_p.toFixed(3)}`}
                     </span>
                   </div>
                 );

@@ -280,13 +280,31 @@ P0 全部与 P1 的 1/2/3/5/6 已落地，验收脚本
 | P0-3 共识真投票 | ✅ | `history_matrix.aggregate_consensus()` 成为唯一口径，两个页面共用 | 同余占比 88%→33%（ssq）、100%→40%（dlt） |
 | P0-4 蓝球诚实标注 | ✅ | `Predict.tsx` 共识卡片下方明示「蓝球不参与算法计票」 | — |
 | P0-5 回测榜不做推荐 | ✅ | `Predict.tsx` 改为「回测表现」纯统计卡，删除号码展示与 `top10` memo | 页面无「据此选号」路径 |
-| P1-1 folds 200 | ✅ | `runner.FOLDS=200`、`BACKTEST_MAX_COST=3`；`scripts/run_all_algorithms.py` 改为从 runner 导入（原来两处各写一份 `FOLDS`） | 端点默认值 `folds=200, max_cost=3` |
+| P1-1 folds 200 | ✅ | `runner.FOLDS=200`、`BACKTEST_MAX_COST=2`；`scripts/run_all_algorithms.py` 改为从 runner 导入（原来两处各写一份 `FOLDS`） | 端点默认值 `folds=200, max_cost=2` |
 | P1-2 CI + p + FDR | ✅ | `backtest.py` 新增 `_hyper_var`/`_normal_sf`/`_bh_reject`，每算法输出 `red_ci`/`blue_ci`/`red_p`/`blue_p`/`passes_fdr` | 前 5 名 `red_ci` 均跨 1.0 |
 | P1-3 随机基线 | ✅ | 每折抽 `NULL_TICKETS=200` 组真随机号码，输出 `null_red_lift`/`null_blue_lift` | 基线 ≈1.000 |
 | P1-5 修空白页 | ✅ | 删掉 `history_matrix.py` 的 `if not wanted_dates: return []` 早退 | 末页非空、超界页返回空 |
 | P1-6 期号校验 | ✅ | `results_store._validate_issue_bases()`，`save_batch` 前强制校验格式 + 存在性 | 脏期号 `20263435` 被拒 |
 
 ### 实施中额外发现并修掉的 bug
+
+**回测折数撞上 systemd 超时**（差点让跑批永远完不成）。最初按文档 §4 的建议把
+`BACKTEST_MAX_COST` 设成 3，在服务器上实测才发现成本是非线性的：
+
+| cost 上限 | 算法数 | 1 折耗时（服务器实测） | 200 折 × 2 彩种 |
+|---|---|---|---|
+| <=1 | 24 | 0.05s | 0.2 分钟 |
+| <=2 | 56 | 2.98s | **20 分钟** ✅ |
+| <=3 | 68 | 8.76s | 58 分钟 ❌ |
+
+`lottery-algos.service` 的 `TimeoutStartSec=1800`（30 分钟）会直接杀掉 cost<=3 的方案。
+实测那次跑到 25 分钟 CPU 时间后被我们手动停掉，缓存始终为空 —— **跑批「成功」了但没有任何产出**，
+而且没有任何报错，这正是最容易瞒天过海的一类失败。
+
+修正为 `BACKTEST_MAX_COST=2`（56 个算法），双彩种约 20 分钟，留 33% 余量；
+并在验收脚本里加了 **E2 断言**：把「每折实测耗时 × folds × 彩种数」和 systemd 超时比，
+超过 80% 就非 0 退出，下次改参数会立刻被抓到。
+
 
 **分页负索引越界**（`history_matrix.page_slice`）：旧实现
 `start = max(0, total - page*page_size)`、`end = total - (page-1)*page_size`，
