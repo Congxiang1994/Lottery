@@ -11,13 +11,21 @@ import { CheckCircle2, Filter, XCircle } from "lucide-react";
  * 「每期一张卡片」**：表头是均匀网格，数据行是有分隔的卡片带，不再出现
  * 「表头高低不齐 / 共识列贯穿红框」这类破坏观感的问题。
  *
+ * 期号列已移除（2026-11-20）：开奖号码不再单独列一遍 —— 命中号码在格子里
+ * 本来就是实心高亮，靠底色已能看出「这期开了哪几个」，左列纯属冗余。
+ * 期号只在每行最左侧的窄条里显示，随横向滚动吸住。
+ *
+ * 「只看中奖」是**行级**过滤：只保留「当前页至少有一个中奖格子」的期，该期
+ * 内部的列仍完整显示（方便看该期各算法推荐了什么）。不做格子级隐藏 ——
+ * 那样会把行内留出大量空洞，行高参差，反而更难读。
+ *
  * 踩过的坑（改之前先读）：
  * - 表头各单元格必须**同一套盒模型**（同高、同 padding、同外包装）。之前
  *   算法列外面套了一层 `<div className="p-1">` 而共识列没有 → 表头高低不齐。
  * - 共识列**不要用 `ring-*`**：在单一滚动容器里它会被拉成贯穿整列的红色竖线，
- *   非常刺眼。改用极淡底色 + 左右 1px 分隔线表达「这一列特殊」。
- * - 算法名固定 `w-[108px] + line-clamp-2`：太窄会截成「VAE 变自分…」，
- *   太高会让表头随名字长短跳动。两行 + 固定行高两头都占住。
+ *   非常刺眼。改用极淡底色 + 右侧 1px 分隔线表达「这一列特殊」。
+ * - 算法名固定 `w-[108px] + line-clamp-3`：太窄会截成「VAE 变自分…」，
+ *   太高会让表头随名字长短跳动。三行 + 固定行高两头都占住。
  */
 
 const PRIZE_ORDER = ["一等奖", "二等奖", "三等奖", "四等奖", "五等奖", "六等奖",
@@ -25,9 +33,8 @@ const PRIZE_ORDER = ["一等奖", "二等奖", "三等奖", "四等奖", "五等
 
 /** 列宽常量：表头与数据行必须引用同一份，否则一定错位。 */
 const COL_W = "w-[108px]";
-const LEFT_W = "w-[178px]";
-/** 共识列 sticky 的 left 偏移 = 左侧期号列宽度。改 LEFT_W 必须同步这里。 */
-const CONSENSUS_LEFT = "left-[178px]";
+/** 共识列 sticky 吸在最左（左列移除后 left 偏移为 0）。 */
+const CONSENSUS_LEFT = "left-0";
 
 /* 分类显示名一律取后端下发的 category_name（CATEGORIES 是唯一真源）。
    这里**不再**维护手抄的 key→中文名映射表：曾经存在的那张表两边已经漂移过 ——
@@ -47,7 +54,7 @@ function MiniBall({
     : "bg-brand-blue text-white ring-2 ring-brand-blue/40 ring-offset-1";
   return (
     <span
-      className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold leading-none ${
+      className={`inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[9px] font-bold leading-none ${
         hit ? hitStyle : base
       }`}
     >
@@ -62,7 +69,7 @@ function PrizeTag({ prize }: { prize: string | null }) {
     const high = level >= 0 && level <= 2;
     return (
       <span
-        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+        className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0 text-[9px] font-semibold ${
           high
             ? "bg-amber-100 text-amber-700"
             : "bg-emerald-100 text-emerald-700"
@@ -74,7 +81,7 @@ function PrizeTag({ prize }: { prize: string | null }) {
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-paper-100 px-2 py-0.5 text-[10px] text-paper-500">
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-paper-100 px-1.5 py-0 text-[9px] text-paper-500">
       <XCircle size={10} />
       未中奖
     </span>
@@ -115,7 +122,7 @@ const Column = memo(function Column({
   const won = !!col.prize;
   return (
     <div
-      className={`flex h-full w-full flex-col items-center justify-center gap-1.5 rounded-lg border px-1 py-1.5 transition ${
+      className={`flex h-[74px] w-full flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border px-1 py-1 transition ${
         won
           /* ⚠️ 必须**不透明**底色：共识列 sticky，半透明底色会让后面的算法列
              横向滚动时从它里面透上来。 */
@@ -193,17 +200,30 @@ export default function PredictionMatrix({
   );
 
   /** 每期 → 算法 id → 列，供数据行按统一列集合取值。 */
-  const rows = useMemo(
-    () =>
-      items.map((it) => ({
+  /**
+   * 行集合。「只看中奖」时**整行都没有中奖格子**就跳过该期 —— 否则会留下
+   * 一条只有期号、右边全是空白的行（既浪费空间又让人以为数据丢了）。
+   * 判断口径与格子级渲染一致：在**当前可见列**里至少有一个带奖级的格子。
+   */
+  const rows = useMemo(() => {
+    const visibleKeys = new Set(columns.map(([k]) => k));
+    return items
+      .map((it) => ({
         draw: it,
         consensus: it.predictions?.consensus ?? null,
         algoMap: new Map(
           (it.predictions?.algos ?? []).map((a) => [a.id ?? a.name, a] as const)
         ),
-      })),
-    [items]
-  );
+      }))
+      .filter(({ draw, consensus, algoMap }) => {
+        if (!onlyWin) return true;
+        if (consensus && !!consensus.prize) return true;
+        for (const [k, a] of algoMap) {
+          if (visibleKeys.has(k) && !!a.prize) return true;
+        }
+        return false;
+      });
+  }, [items, columns, onlyWin]);
 
   const noData = items.every((it) => !it.predictions);
 
@@ -266,16 +286,20 @@ export default function PredictionMatrix({
             className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/40"
           >
             <div className="w-max min-w-full">
-              {/* ---------- 表头：所有单元格同一套盒模型 + 固定高度 ---------- */}
+              {/* ---------- 表头：只在「全部显示」时出现 ----------
+                  「只看中奖」下数据行只渲染中奖格子，行与行的列自然错开，
+                  表头无法对齐任何一行，留着反而误导，故隐藏。 */}
+              {!onlyWin && (
               <div className="flex h-[52px] items-center border-b border-paper-200 bg-paper-50">
+                {/* 期号窄条（唯一保留的左列，只放期号，随滚动吸住） */}
                 <div
-                  className={`sticky left-0 z-20 flex h-full ${LEFT_W} shrink-0 items-center border-r border-paper-200 bg-paper-50 px-3 text-[11px] font-semibold text-paper-700`}
+                  className="sticky left-0 z-20 flex h-full w-[64px] shrink-0 items-center justify-center border-r border-paper-200 bg-paper-50 px-1 text-[10px] font-semibold text-paper-600"
                 >
-                  期号 / 开奖号码
+                  期号
                 </div>
-                {/* 共识列：极淡底色 + 左右细线，不用 ring（会被拉成贯穿红线） */}
+                {/* 共识列：极淡底色 + 右侧细线，不用 ring（会被拉成贯穿红线） */}
                 <div
-                  className={`sticky ${CONSENSUS_LEFT} z-20 flex h-full ${COL_W} shrink-0 items-center justify-center border-r border-paper-200 bg-brand-red/[0.035] px-1.5`}
+                  className={`sticky left-[64px] z-20 flex h-full ${COL_W} shrink-0 items-center justify-center border-r border-paper-200 bg-brand-red/[0.035] px-1.5`}
                 >
                   <span className="text-[10px] font-semibold text-brand-red">共识</span>
                 </div>
@@ -286,77 +310,62 @@ export default function PredictionMatrix({
                   <div className="px-3 text-[10px] text-paper-400">无算法列</div>
                 )}
               </div>
+              )}
 
-              {/* ---------- 数据行：卡片带（每期一条，hover 高亮） ---------- */}
+              {/* ---------- 数据行：每期一条 ---------- */}
               <div className="divide-y divide-paper-100">
                 {rows.map(({ draw, consensus, algoMap }) => (
                   <div
                     key={draw.issue}
-                    className="flex items-stretch transition hover:bg-paper-50/60"
+                    className="flex items-center transition hover:bg-paper-50/60"
                   >
-                    {/* 期号 + 开奖号码（紧凑两行：标题行 + 号码行） */}
+                    {/* 期号窄条（sticky，只有期号 + 日期） */}
                     <div
-                      className={`sticky left-0 z-10 ${LEFT_W} shrink-0 border-r border-paper-200 bg-white px-3 py-2`}
+                      className="sticky left-0 z-10 flex w-[64px] shrink-0 flex-col items-center justify-center gap-0.5 self-stretch border-r border-paper-200 bg-white px-1 py-2"
                     >
-                      <div className="flex items-baseline justify-between gap-1">
-                        <span className="whitespace-nowrap text-[13px] font-bold text-paper-900">
-                          第 {draw.issue} 期
-                        </span>
-                        <span className="whitespace-nowrap text-[10px] text-paper-500">
-                          {draw.date.slice(5)}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-0.5">
-                        <span className="mr-0.5 shrink-0 text-[9px] text-paper-400">
-                          {redLabel}
-                        </span>
-                        {draw.red.map((n) => (
-                          <MiniBall key={`dr${n}`} n={n} kind="red" hit={false} />
-                        ))}
-                        <span className="mx-0.5 shrink-0 text-[9px] text-paper-400">
-                          {blueLabel}
-                        </span>
-                        {draw.blue.map((n) => (
-                          <MiniBall key={`db${n}`} n={n} kind="blue" hit={false} />
-                        ))}
-                      </div>
-                      <div className="mt-1 whitespace-nowrap text-[10px] text-paper-400">
-                        {draw.predictions
-                          ? `${draw.predictions.count} 算法对照`
-                          : "无预测数据"}
-                      </div>
+                      <span className="whitespace-nowrap text-[11px] font-bold text-paper-900">
+                        {draw.issue}
+                      </span>
+                      <span className="whitespace-nowrap text-[9px] text-paper-400">
+                        {draw.date.slice(5)}
+                      </span>
                     </div>
 
-                    {/* 共识单元格（sticky） */}
-                    <div
-                      className={`sticky ${CONSENSUS_LEFT} z-10 ${COL_W} shrink-0 border-r border-paper-200 bg-brand-red/[0.035] px-1 py-1.5`}
-                    >
-                      {consensus ? (
+                    {/* 共识单元格（sticky）。只看中奖且共识未中奖时**整格不渲染**，
+                        否则会留下一条空的粉色底纹（视觉噪点）。 */}
+                    {consensus && (!onlyWin || consensus.prize) ? (
+                      <div
+                        className={`sticky left-[64px] z-10 ${COL_W} shrink-0 border-r border-paper-200 bg-brand-red/[0.035] px-1 py-1`}
+                      >
                         <Column col={consensus} draw={draw} />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-[10px] text-paper-300">
-                          —
-                        </div>
-                      )}
-                    </div>
+                      </div>
+                    ) : null}
 
-                    {/* 各算法单元格：按统一列集合取值，缺失留空占位保持对齐 */}
+                    {/* 各算法单元格。「只看中奖」时该行未中奖的算法**整格不渲染** ——
+                        只显示这一期真正中奖的算法，横向不会留下大片空白。
+                        表头仍按 columns 全量渲染（列定义要稳定），行与行之间
+                        因此不对齐，这正是「只看中奖」要的稀疏视图。 */}
                     {columns.map(([key]) => {
                       const a = algoMap.get(key);
+                      if (!a) return null;
+                      if (onlyWin && !a.prize) return null;
                       return (
-                        <div key={key} className={`${COL_W} shrink-0 px-1 py-1.5`}>
-                          {a ? (
-                            <Column col={a} draw={draw} />
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-[10px] text-paper-300">
-                              —
-                            </div>
-                          )}
+                        <div key={key} className={`${COL_W} shrink-0 px-1 py-1`}>
+                          <Column col={a} draw={draw} />
                         </div>
                       );
                     })}
                   </div>
                 ))}
+
+                {/* 过滤后一行不剩：给明确提示，别留一片空白 */}
+                {rows.length === 0 && (
+                  <div className="py-10 text-center text-xs text-paper-500">
+                    {onlyWin
+                      ? "当前页没有中奖的算法列，试试关掉「只看中奖」或换一页"
+                      : "当前过滤条件下无可显示的数据"}
+                  </div>
+                )}
               </div>
             </div>
           </div>
