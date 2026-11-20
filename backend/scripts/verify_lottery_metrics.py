@@ -287,13 +287,15 @@ def check_E_backtest_folds() -> None:
         return 1.96 * (var / FOLDS) ** 0.5 / exp
 
     # 用 runner 的默认值（部署后缓存是 folds=200/max_cost=2）查真实回测缓存。
+    # 🔴 不要拿 latest()["issue_base"] 去查：缓存的 issue_base 是**抓取时**的
+    # 最新期号，而 algo_results 的 latest 批次可能是另一期（例如缓存生成后又
+    # 抓到新一期但还没重跑），两者不一致会让「有缓存」被误判成缺失。
+    # 直接按 (lottery, folds, max_cost) 取表里最新一条即可（主键就是这三个字段）。
     cached: dict | None = None
     for lot in ("ssq", "dlt"):
         try:
-            latest = results_store.latest(lot)
-            issue = latest["issue_base"] if latest else ""
-            cached = results_store.backtest_get(lot, FOLDS, BACKTEST_MAX_COST, issue)
-        except Exception:  # noqa: BLE001
+            cached = results_store.backtest_get_any(lot, FOLDS, BACKTEST_MAX_COST)
+        except (AttributeError, Exception):  # noqa: BLE001
             cached = None
         # M15：缓存缺失必须断言失败，不能再静默跳过；同时始终执行同样条数的
         # 断言（条数不随库状态漂移）。无缓存时 CI 半宽用理论值兜底并明确标注。
@@ -312,7 +314,11 @@ def check_E_backtest_folds() -> None:
         check(f"{lot} 真实缓存 CI 半宽 < 0.15", half < 0.15, detail)
         for field in ("red_ci", "blue_ci", "red_p", "blue_p", "passes_fdr"):
             check(f"缓存算法带 {field}", field in a)
-        check("缓存带零假设基线", bool(cached) and "null_red_lift" in cached)
+        # 新口径必须有 200 组逐折随机基线分布（旧口径只有单点 null_red_lift），
+        # 这是判断缓存是否由修复后代码生成的关键标志。
+        n_null = len(cached.get("null_red_lifts") or []) if cached else 0
+        check("缓存带零假设分布 null_red_lifts（新口径）",
+              n_null >= 20, f"{n_null} 组（应为 200）")
 
 
 # ---------------------------------------------------------------- E2

@@ -534,6 +534,23 @@ def backtest_get(lottery: str, folds: int, max_cost: int, issue_base: str) -> di
     return json.loads(row[0])
 
 
+def backtest_get_any(lottery: str, folds: int, max_cost: int) -> dict | None:
+    """取该档任意一期号的回测缓存（不指定 issue_base）。
+
+    给验收脚本/诊断工具用：缓存的 issue_base 是生成时的抓取期号，可能与
+    ``algo_results.latest()`` 的期号不同（生成后又抓到新一期但尚未重跑）。
+    按主键三元组查最新一条即可，避免把「有缓存」误判成缺失。
+    """
+    with _conn() as con:
+        row = con.execute(
+            """SELECT payload FROM backtest_cache
+               WHERE lottery=? AND folds=? AND max_cost=?
+               ORDER BY run_date DESC LIMIT 1""",
+            (lottery, folds, max_cost),
+        ).fetchone()
+    return json.loads(row[0]) if row else None
+
+
 def backtest_put(lottery: str, folds: int, max_cost: int, issue_base: str,
                  payload: dict) -> None:
     with _conn() as con:

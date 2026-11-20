@@ -46,6 +46,12 @@ _TTL = 300.0
 #: 零假设基线：每折额外抽这么多组真随机号码，组成「无预测力时的 lift 分布」
 NULL_TICKETS = 200
 
+#: 回测口径版本。**只要改动会影响回测结果的算法逻辑或统计口径，就必须 +1**，
+#: 否则旧的 sqlite 缓存会被当成新结果直接返回（2026-11-20 实测踩坑：修完 KNN
+#: 标签错位后跑批「耗时 0.0s」，榜首还是旧算法的号码——正是命中了旧口径缓存）。
+#: 版本号写在 payload 里，读取时不一致即视为缓存未命中。
+BACKTEST_SCHEMA_VERSION = 2
+
 
 def sub_context(ctx: AlgoContext, cut: int) -> AlgoContext:
     """构造只包含前 cut 期数据的子上下文（用于无泄漏回测）。"""
@@ -136,7 +142,8 @@ def evaluate(
     persist = (step == 1)
     if ids is None and persist:
         cached = results_store.backtest_get(ctx.lottery, folds, max_cost, issue_base)
-        if cached is not None:
+        # 口径版本不一致 → 旧缓存作废（改算法/改统计口径后必须重算）
+        if cached is not None and cached.get("_schema_version") == BACKTEST_SCHEMA_VERSION:
             return cached
     key = (ctx.lottery, len(ctx.all_draws), folds, max_cost, step, tuple(ids or []))
     now = time.time()
@@ -312,6 +319,7 @@ def _compute(
         s["passes_fdr"] = bool(ok)
 
     result = {
+        "_schema_version": BACKTEST_SCHEMA_VERSION,
         "lottery": ctx.lottery,
         "folds": len(cuts),
         "issues": [str(ctx.all_draws[c].get("issue", c)) for c in cuts],

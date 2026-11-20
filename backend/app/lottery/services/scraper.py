@@ -194,9 +194,24 @@ def save_lottery(data: dict, path: Path | None = None) -> Path:
     """
     path = path or (ensure_data_dir() / f"{data['lottery']}.json")
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, path)
+    # 临时文件必须唯一：固定 ``.tmp`` 名字时，两个 gunicorn worker 同时
+    # /refresh 会写同一个文件，A 的 os.replace 成功后 B 再 replace 会 FileNotFoundError
+    # （或更糟：A 读到 B 写了一半的 JSON）。
+    import tempfile
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp",
+                                    dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        # replace 成功后 tmp_name 已不存在，unlink 无害；失败时清理半成品
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
     return path
 
 

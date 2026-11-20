@@ -156,6 +156,8 @@ def main() -> int:
     ap.add_argument("--date", default=None, help="run_date 覆盖（默认今天，格式 YYYY-MM-DD）")
     ap.add_argument("--no-backtest", action="store_true",
                     help="只跑预测，跳过全量回测（调试用）")
+    ap.add_argument("--reset-stale", action="store_true",
+                    help="启动前强制清理残留的 running 标志（上次跑批被 kill 后运维用）")
     args = ap.parse_args()
 
     # 🔴 A17/S17：参数校验必须在任何写操作（DELETE）之前完成。
@@ -166,6 +168,15 @@ def main() -> int:
         return 2
 
     results_store.init()
+    if args.reset_stale:
+        # 上次跑批被 kill（systemd 超时 / 手工 kill）时 daemon 线程的 finally
+        # 来不及跑，running=1 会残留；S3 的 10 分钟心跳抢占要等很久。
+        # 运维确认无其它跑批进程后可用本参数立即清理。
+        with results_store._conn() as con:
+            con.execute("UPDATE run_progress SET running=0 WHERE running=1")
+            con.execute("UPDATE global_run_lock SET running=0 WHERE id=1")
+            con.execute("DELETE FROM backtest_lock")
+        print("已清理残留 running / backtest 锁（--reset-stale）")
     if args.date:
         # 按日期删是设计意图（重跑某天）：只删本次要跑的彩种，避免误删其它彩种；
         # 而且下面 _run_one 会把结果写回同一 run_date，做到「删了再补回」。
