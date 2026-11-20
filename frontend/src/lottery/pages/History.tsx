@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLottery } from "../context";
 import { api } from "../api";
 import { Draw, HistoryPredictions } from "../types";
@@ -19,7 +19,21 @@ export default function History() {
   const [tab, setTab] = useState<ViewTab>("matrix");
   const [draws, setDraws] = useState<Draw[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  /**
+   * M7：把「彩种 + 页码」合并成一个状态，并在渲染阶段按 key 重置页码
+   * （React 官方的「根据 props 调整 state」派生模式）。这样切彩种时
+   * page 与 key 在同一次提交里一起变成 (新彩种, 1)，effect 只跑一次、只发
+   * 一次 page=1 请求 —— 不会再有「setPage(1) 与旧页码请求同批次」的多发。
+   */
+  const [pageState, setPageState] = useState({ key, page: 1 });
+  const [prevKey, setPrevKey] = useState(key);
+  if (prevKey !== key) {
+    setPrevKey(key);
+    setPageState({ key, page: 1 });
+  }
+  const page = pageState.page;
+  /** 请求序号：只有最新一次请求的结果允许写 state，旧请求返回直接丢弃 */
+  const seqRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [pred, setPred] = useState<HistoryPredictions | null>(null);
   const [predLoading, setPredLoading] = useState(false);
@@ -29,33 +43,52 @@ export default function History() {
   const [tick, setTick] = useState(0);
   const retry = () => setTick((t) => t + 1);
 
+  /**
+   * M7：两个请求合并进同一个 effect，共用 seq 守卫 + AbortController。
+   * - `seq` 递增：任何一次新请求（翻页/切彩种/重试）都会让旧请求的回调失效；
+   * - `AbortController`：effect cleanup 时中断在途请求，省流量也避免旧响应回来；
+   * - `.finally` 同样校验 seq，避免旧请求把新请求的 loading 标志改错。
+   */
   useEffect(() => {
-    setPage(1);
-  }, [key]);
-
-  useEffect(() => {
+    const seq = ++seqRef.current;
+    const ac = new AbortController();
     setLoading(true);
     setDrawsErr(null);
-    api
-      .history(key, page, PAGE_SIZE)
+    setPredLoading(true);
+    setPredErr(null);
+
+    api.history(key, page, PAGE_SIZE, ac.signal)
       .then((r) => {
+        if (seq !== seqRef.current) return;
         setDraws(r.draws);
         setTotal(r.total);
       })
-      .catch((e) => setDrawsErr(errText(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (seq !== seqRef.current || (e as Error)?.name === "AbortError") return;
+        setDrawsErr(errText(e));
+      })
+      .finally(() => {
+        if (seq === seqRef.current) setLoading(false);
+      });
+
+    api.historyPredictions(key, page, PAGE_SIZE, ac.signal)
+      .then((r) => {
+        if (seq !== seqRef.current) return;
+        setPred(r);
+      })
+      .catch((e) => {
+        if (seq !== seqRef.current || (e as Error)?.name === "AbortError") return;
+        setPredErr(errText(e));
+      })
+      .finally(() => {
+        if (seq === seqRef.current) setPredLoading(false);
+      });
+
+    return () => ac.abort();
   }, [key, page, tick]);
 
-  // 算法对照数据：翻页/换彩种时拉取（默认 tab 即 matrix）
-  useEffect(() => {
-    setPredLoading(true);
-    setPredErr(null);
-    api
-      .historyPredictions(key, page, PAGE_SIZE)
-      .then(setPred)
-      .catch((e) => setPredErr(errText(e)))
-      .finally(() => setPredLoading(false));
-  }, [key, page, tick]);
+  const setPage = (p: number | ((cur: number) => number)) =>
+    setPageState((s) => ({ ...s, page: typeof p === "function" ? p(s.page) : p }));
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const meta = lotteries.find((l) => l.key === key);
@@ -141,15 +174,15 @@ export default function History() {
                           <td className="px-5 py-3 text-paper-700">{d.date}</td>
                           <td className="px-5 py-3">
                             <div className="flex flex-wrap">
-                              {d.red.map((n, i) => (
-                                <Ball key={i} n={n} kind="red" size={30} />
+                              {d.red.map((n) => (
+                                <Ball key={`${d.issue}-r${n}`} n={n} kind="red" size={30} />
                               ))}
                             </div>
                           </td>
                           <td className="px-5 py-3">
                             <div className="flex flex-wrap">
-                              {d.blue.map((n, i) => (
-                                <Ball key={i} n={n} kind="blue" size={30} />
+                              {d.blue.map((n) => (
+                                <Ball key={`${d.issue}-b${n}`} n={n} kind="blue" size={30} />
                               ))}
                             </div>
                           </td>

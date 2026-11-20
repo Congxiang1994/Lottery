@@ -11,6 +11,7 @@ import {
 import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
 import { Reveal } from "../../common/Reveal";
+import { ErrorBlock, errText } from "../../common/State";
 import {
   Atom, Brain, Cpu, Dices, FunctionSquare, GitCompare, Layers, Orbit,
   Radar, RefreshCw, Search, Sigma, Sparkles, TrendingUp, Trophy, Waves,
@@ -53,32 +54,51 @@ export default function Algorithms() {
   const [tab, setTab] = useState<"plaza" | "backtest">("plaza");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
-  const expandedRef = useRef(expanded);
-  expandedRef.current = expanded;
+  /** 回测错误：区分 503（可操作空态）与其他故障（ErrorBlock） */
+  const [btErr, setBtErr] = useState<{ status: number; text: string } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tabRef = useRef(tab);
   tabRef.current = tab;
+  /** M5：interval 异步回调必须读最新 key，闭包捕获的 key 会过期 */
+  const keyRef = useRef(key);
+  keyRef.current = key;
 
   const loadCombined = () => {
     // 共识推荐永远读 sqlite 缓存（与首页/智能推荐页同一接口，保证一致）
-    api.savedCombined(key).then(setCombined).catch(() => setCombined(null));
+    // M5：带上发起时的 key，回来时校验是否仍是当前彩种，防止切彩种后旧响应覆盖
+    const reqKey = keyRef.current;
+    api.savedCombined(reqKey)
+      .then((c) => { if (keyRef.current === reqKey) setCombined(c); })
+      .catch(() => { if (keyRef.current === reqKey) setCombined(null); });
   };
 
   useEffect(() => {
-    api.algorithms().then(setCatalog).catch((e) => setErr(String(e)));
+    api.algorithms().then(setCatalog).catch((e) => setErr(errText(e)));
   }, []);
 
   const loadBacktest = () => {
+    const reqKey = keyRef.current;
     setBtLoading(true);
     setBt(null);
+    setBtErr(null);
     // 统一全量回测（85 个算法 × 5 期），结果走 sqlite 缓存秒开
-    api.backtest(key).then(setBt).catch((e) => setErr(String(e)))
-      .finally(() => setBtLoading(false));
+    // M10：503 是「数据未生成」的可操作提示，不是故障；其他错误才是 ErrorBlock
+    api.backtest(reqKey)
+      .then((r) => { if (keyRef.current === reqKey) setBt(r); })
+      .catch((e) => {
+        if (keyRef.current !== reqKey) return;
+        setBtErr({ status: (e as { status?: number })?.status ?? 0, text: errText(e) });
+      })
+      .finally(() => { if (keyRef.current === reqKey) setBtLoading(false); });
   };
 
   useEffect(() => {
     setResults({});
     setErr(null);
+    setBtErr(null);
+    // M5：切彩种立即清空上一彩种的共识/回测，避免旧数据在新彩种下闪现
+    setCombined(null);
+    setBt(null);
     loadCombined();
     // 回测 tab：若全量运行（预测+回测）正在跑，等它完成再加载（避免重复计算）
     if (tab === "backtest") {
@@ -103,10 +123,16 @@ export default function Algorithms() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
+  /** M9：轮询连续失败计数，达到阈值就停表并给用户出口，绝不能静默卡死 */
+  const POLL_MAX_FAILS = 3;
+  const pollFailsRef = useRef(0);
+
   const startPoll = () => {
     if (pollRef.current) clearInterval(pollRef.current);
+    pollFailsRef.current = 0;
     pollRef.current = setInterval(() => {
       api.runStatus().then((s) => {
+        pollFailsRef.current = 0; // 成功一次即清零，只有「连续」失败才计数
         setRunStatus(s);
         if (!s.running) {
           if (pollRef.current) clearInterval(pollRef.current);
@@ -114,7 +140,17 @@ export default function Algorithms() {
           loadCombined(); // 完成后刷新共识推荐
           if (tabRef.current === "backtest") loadBacktest(); // 回测榜走新缓存
         }
-      }).catch(() => {});
+      }).catch(() => {
+        pollFailsRef.current += 1;
+        if (pollFailsRef.current < POLL_MAX_FAILS) return;
+        // 连续 3 次失败：停表 + 报错 + 把按钮从「运行中…」恢复为可点击
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        setErr("状态查询失败，请刷新重试");
+        setRunStatus((prev) =>
+          prev ? { ...prev, running: false } : null
+        );
+      });
     }, 1500);
   };
 
@@ -150,6 +186,8 @@ export default function Algorithms() {
   // 密码弹框：直接由 run-all 做端到端校验（后端带失败锁定流控），
   // 不再先调 /verify-password —— 两次校验会在同一秒内互相触发限流。
   const submitPassword = () => {
+    // M15：连按 Enter / 重复点击时，第一次请求还没回来就直接返回，杜绝并发 run-all
+    if (pwdLoading) return;
     setPwdLoading(true);
     setPwdErr(null);
     runAll(pwd)
@@ -157,7 +195,7 @@ export default function Algorithms() {
         closePwd();
         setPwd("");
       })
-      .catch((e) => setPwdErr(String(e)))
+      .catch((e) => setPwdErr(errText(e)))
       .finally(() => setPwdLoading(false));
   };
 
@@ -183,7 +221,7 @@ export default function Algorithms() {
     setRunning((s) => new Set(s).add(id));
     api.runAlgo(key, id).then((r) => {
       setResults((m) => ({ ...m, [r.id]: r }));
-    }).catch((e) => setErr(String(e))).finally(() => {
+    }).catch((e) => setErr(errText(e))).finally(() => {
       setRunning((s) => { const n = new Set(s); n.delete(id); return n; });
     });
   };
@@ -198,6 +236,8 @@ export default function Algorithms() {
   };
 
   const meta = lotteries.find((l) => l.key === key);
+  /** M5：只有彩种匹配的共识数据才展示，切彩种瞬间的旧响应一律不显示 */
+  const shownCombined = combined && combined.lottery === key ? combined : null;
 
   return (
     <div className="pt-8">
@@ -243,7 +283,12 @@ export default function Algorithms() {
                   type="password"
                   value={pwd}
                   onChange={(e) => setPwd(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") submitPassword(); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !pwdLoading) {
+                      e.preventDefault();
+                      submitPassword();
+                    }
+                  }}
                   placeholder="请输入操作密码"
                   autoFocus
                   className="w-full rounded-xl border border-paper-200 bg-paper-100 px-3 py-2.5 text-sm text-paper-900 outline-none transition focus:border-brand-gold/50"
@@ -361,8 +406,8 @@ export default function Algorithms() {
                 <Sparkles size={16} /> 全算法共识推荐
               </span>
               <span className="rounded-full bg-paper-100 px-2 py-0.5 text-[10px] text-paper-700">
-                {combined
-                  ? `融合 ${combined.count} 个算法 · ${combined.run_date} 跑批`
+                {shownCombined
+                  ? `融合 ${shownCombined.count} 个算法 · ${shownCombined.run_date} 跑批`
                   : runStatus?.running ? "运行完成后自动更新…" : "等待跑批数据…"}
               </span>
               <button
@@ -373,13 +418,13 @@ export default function Algorithms() {
               </button>
             </div>
             <div className="mt-4 flex flex-wrap items-center">
-              {combined ? (
+              {shownCombined ? (
                 <>
-                  {combined.red.map((n, i) => (
+                  {shownCombined.red.map((n, i) => (
                     <Ball key={`r${i}`} n={n} kind="red" size={40} delay={i * 40} />
                   ))}
                   <span className="mx-1.5 text-xl text-paper-400">+</span>
-                  {combined.blue.map((n, i) => (
+                  {shownCombined.blue.map((n, i) => (
                     <Ball key={`b${i}`} n={n} kind="blue" size={40} delay={200 + i * 40} />
                   ))}
                 </>
@@ -424,6 +469,19 @@ export default function Algorithms() {
           </div>
 
           {/* 算法卡片 */}
+          {catalog === null ? (
+            /* M19(前端)：catalog 还在加载时显示骨架，别闪「没有匹配的算法」空态 */
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="glass rounded-2xl p-4 shadow-card">
+                  <div className="shimmer h-5 w-2/3 animate-shimmer rounded" />
+                  <div className="shimmer mt-2 h-3 w-full animate-shimmer rounded" />
+                  <div className="shimmer mt-1.5 h-3 w-4/5 animate-shimmer rounded" />
+                  <div className="shimmer mt-4 h-8 w-full animate-shimmer rounded-xl" />
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((a, i) => {
               const r = results[a.id];
@@ -481,7 +539,8 @@ export default function Algorithms() {
               );
             })}
           </div>
-          {filtered.length === 0 && (
+          )}
+          {catalog !== null && filtered.length === 0 && (
             <div className="mt-10 text-center text-sm text-paper-600">没有匹配的算法</div>
           )}
         </>
@@ -489,9 +548,11 @@ export default function Algorithms() {
         <BacktestView
           key={key}
           bt={bt}
+          btErr={btErr}
           meta={meta?.name}
           loading={btLoading}
           runAllRunning={runStatus?.running ?? false}
+          onRetry={loadBacktest}
         />
       )}
 
@@ -559,12 +620,14 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
 }
 
 function BacktestView({
-  bt, meta, loading, runAllRunning,
+  bt, btErr, meta, loading, runAllRunning, onRetry,
 }: {
   bt: BacktestResult | null;
+  btErr: { status: number; text: string } | null;
   meta?: string;
   loading: boolean;
   runAllRunning: boolean;
+  onRetry: () => void;
 }) {
   return (
     <div className="mt-4">
@@ -610,7 +673,12 @@ function BacktestView({
           </div>
         ) : bt ? (
           <>
-            <div className="mt-4 overflow-x-auto">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label="滚动回测排行榜，可横向滚动"
+              className="mt-4 overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/40"
+            >
               <table className="w-full min-w-[820px] text-left text-xs">
                 <thead>
                   <tr className="border-b border-paper-200 text-[10px] uppercase tracking-wider text-paper-600">
@@ -670,6 +738,16 @@ function BacktestView({
             </div>
             <p className="mt-3 rounded-lg bg-paper-100 p-2.5 text-[11px] leading-relaxed text-paper-600">{bt.note}</p>
           </>
+        ) : btErr && btErr.status === 503 ? (
+          /* M10：503 = 缓存未生成，给可操作空态，别用红块吓人、也别整块空白 */
+          <div className="mt-4 rounded-xl border border-dashed border-paper-200 bg-paper-50 px-4 py-6 text-center">
+            <p className="text-sm font-medium text-paper-700">回测数据尚未生成，请点击运行全部</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-paper-500">{btErr.text}</p>
+          </div>
+        ) : btErr ? (
+          <div className="mt-4">
+            <ErrorBlock message={`回测数据加载失败：${btErr.text}`} onRetry={onRetry} />
+          </div>
         ) : null}
       </div>
     </div>

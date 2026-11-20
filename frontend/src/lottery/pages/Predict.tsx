@@ -5,7 +5,7 @@ import { BacktestResult, SavedAlgorithmsLatest, SavedCombined } from "../types";
 import Ball from "../components/Ball";
 import LotteryTabs from "../components/LotteryTabs";
 import { Reveal } from "../../common/Reveal";
-import { ErrorBlock, errText } from "../../common/State";
+import { ErrorBlock, errText, isNotFound } from "../../common/State";
 import { PageHeader } from "../../common/PageHeader";
 import { Sparkles, ShieldAlert, Calendar, ChevronDown, ChevronUp, Trophy } from "lucide-react";
 
@@ -27,15 +27,32 @@ export default function Predict() {
   /* 失败态：原先三个请求都 catch 成 null，于是「失败」与「暂无数据」不可区分 ——
      saved 为 null 时页面**永远停在骨架屏**上。现在单独记失败原因并给重试出口。 */
   const [err, setErr] = useState<string | null>(null);
+  /** M12：404 = 还没跑批（空态），不是故障；只有 5xx/网络错误才进 err */
+  const [savedNotFound, setSavedNotFound] = useState(false);
   const [tick, setTick] = useState(0);
   const retry = () => setTick((t) => t + 1);
 
   useEffect(() => {
-    setSaved(null); setCombined(null); setBacktest(null); setOpenId(null); setErr(null);
-    api.savedLatest(key).catch((e) => { setErr(errText(e)); return null; }).then(setSaved);
+    setSaved(null); setCombined(null); setBacktest(null); setOpenId(null);
+    setErr(null); setSavedNotFound(false);
+    api.savedLatest(key)
+      .catch((e) => {
+        if (isNotFound(e)) {
+          setSavedNotFound(true); // 404 走空态，不报红块
+          return null;
+        }
+        setErr(errText(e));
+        return null;
+      })
+      .then(setSaved);
     api.savedCombined(key).catch(() => null).then(setCombined);
-    // 回测榜（全量，sqlite 缓存秒开）
-    api.backtest(key).catch(() => null).then(setBacktest);
+    // 回测榜（全量，sqlite 缓存秒开）：与 savedLatest 同样区分 404
+    api.backtest(key)
+      .catch((e) => {
+        if (isNotFound(e)) return null;
+        return null; // 回测榜未生成属正常（后端 503），静默走「未生成」空态
+      })
+      .then(setBacktest);
   }, [key, tick]);
 
   return (
@@ -79,9 +96,9 @@ export default function Predict() {
             <div className="mt-3 flex flex-wrap items-center">
               {combined ? (
                 <>
-                  {combined.red.map((n, i) => (<Ball key={i} n={n} kind="red" size={42} delay={i * 50} />))}
+                  {combined.red.map((n, i) => (<Ball key={`cr${n}`} n={n} kind="red" size={42} delay={i * 50} />))}
                   <span className="mx-1.5 text-xl text-paper-400">+</span>
-                  {combined.blue.map((n, i) => (<Ball key={i} n={n} kind="blue" size={42} delay={250 + i * 50} />))}
+                  {combined.blue.map((n, i) => (<Ball key={`cb${n}`} n={n} kind="blue" size={42} delay={250 + i * 50} />))}
                 </>
               ) : (<span className="text-xs text-paper-600">暂无数据</span>)}
             </div>
@@ -211,12 +228,15 @@ export default function Predict() {
                         </div>
                         <div className="text-[10px] text-paper-600">{CAT_NAMES[a.category] ?? a.category}</div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          {a.red.map((n, i) => (<Ball key={i} n={n} kind="red" size={22} delay={i * 20} />))}
+                          {a.red.map((n, i) => (<Ball key={`${a.id}-r${n}`} n={n} kind="red" size={22} delay={i * 20} />))}
                           <span className="mx-0.5 text-xs text-paper-400">+</span>
-                          {a.blue.map((n, i) => (<Ball key={i} n={n} kind="blue" size={22} delay={80 + i * 20} />))}
+                          {a.blue.map((n, i) => (<Ball key={`${a.id}-b${n}`} n={n} kind="blue" size={22} delay={80 + i * 20} />))}
                         </div>
                       </div>
-                      <button onClick={() => setOpenId(open ? null : a.id)}
+                      <button
+                        onClick={() => setOpenId(open ? null : a.id)}
+                        aria-expanded={open}
+                        aria-label={open ? `收起 ${a.name} 推演细节` : `展开 ${a.name} 推演细节`}
                         className="shrink-0 rounded-lg border border-paper-200 bg-paper-100 p-1.5 text-paper-700 hover:bg-paper-200 hover:text-paper-900">
                         {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </button>
@@ -236,6 +256,10 @@ export default function Predict() {
                   </div>
                 );
               })}
+            </div>
+          ) : savedNotFound ? (
+            <div className="mt-6 rounded-xl border border-dashed border-paper-200 py-10 text-center text-sm text-paper-500">
+              暂无推荐数据，等待每日跑批
             </div>
           ) : err ? null : (
             <div className="mt-6 space-y-2">

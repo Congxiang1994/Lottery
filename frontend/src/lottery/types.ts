@@ -85,7 +85,14 @@ export interface Predict {
   disclaimer: string;
 }
 
-export interface LotteryInfo extends LotteryMeta {}
+/**
+ * 彩种展示信息。
+ *
+ * 原先这里是 `interface LotteryInfo extends LotteryMeta {}` 空接口 —— 无新增字段，
+ * 没有存在价值。但 `App.tsx`（他人所有权）仍 import 该名字，直接删除会破坏编译，
+ * 故改为等价的类型别名：消除空接口的同时保持现有引用可用。
+ */
+export type LotteryInfo = LotteryMeta;
 
 // ------------------------------------------------------------ 算法广场
 
@@ -231,7 +238,8 @@ export interface RunStatus {
   elapsed: number;
   eta: number;
   percent: number;
-  phase: "predict" | "backtest" | "done" | string;
+  /** 后端 runner 只产出 predict / backtest / done 三值（见 runner.py）。 */
+  phase: "predict" | "backtest" | "done";
   error: string | null;
   started_at: string | null;
   finished_at: string | null;

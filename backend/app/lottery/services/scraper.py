@@ -51,15 +51,27 @@ def _parse_rows(html: str, lottery: str) -> list[dict]:
     red_cls, blue_cls = _RED_BLUE_CLASS[lottery]
     rows = re.findall(r'<tr class="t_tr1">(.*?)</tr>', html, re.S)
     draws: list[dict] = []
+    meta = LOTTERIES[lottery]
+    red_max, blue_max = meta["red_max"], meta["blue_max"]
+    invalid = 0
     for row in rows:
         issue_m = re.search(r"<td[^>]*>(\d{5})</td>", row)
         date_m = re.search(r"(\d{4}-\d{2}-\d{2})", row)
         if not issue_m or not date_m:
             continue
-        red = [int(x) for x in re.findall(rf'class="{red_cls}">(\d{{1,2}})</td>', row)]
-        blue = [int(x) for x in re.findall(rf'class="{blue_cls}">(\d{{1,2}})</td>', row)]
-        meta = LOTTERIES[lottery]
+        try:
+            red = [int(x) for x in re.findall(rf'class="{red_cls}">(\d{{1,2}})</td>', row)]
+            blue = [int(x) for x in re.findall(rf'class="{blue_cls}">(\d{{1,2}})</td>', row)]
+        except ValueError:
+            invalid += 1
+            continue
         if len(red) != meta["red_count"] or len(blue) != meta["blue_count"]:
+            invalid += 1
+            continue
+        # S5：号码必须在合法范围内（1..red_max / 1..blue_max），越界行整行丢弃。
+        if not (all(1 <= n <= red_max for n in red)
+                and all(1 <= n <= blue_max for n in blue)):
+            invalid += 1
             continue
         draws.append(
             {
@@ -69,6 +81,8 @@ def _parse_rows(html: str, lottery: str) -> list[dict]:
                 "blue": blue,
             }
         )
+    if invalid:
+        log.warning("%s 解析时丢弃 %d 条号码越界/畸形行", lottery, invalid)
     return draws
 
 
@@ -105,14 +119,25 @@ def _parse_seed(lottery: str) -> list[dict]:
     return draws
 
 
+def _data_file(lottery: str) -> Path:
+    return DATA_DIR / f"{lottery}.json"
+
+
 def fetch_lottery(lottery: str, use_seed_fallback: bool = True) -> dict:
-    """抓取指定彩种全量历史，返回标准数据结构。失败时回退到仓库种子数据。"""
+    """抓取指定彩种全量历史，返回标准数据结构。
+
+    S4：返回值带 ``source`` 字段（``"live"`` / ``"seed"``）。
+    种子数据**只在目标数据文件完全不存在时用于首启**；若已有真实数据且抓取失败，
+    仍返回种子数据的 ``source="seed"``，但调用方（router / runner）**不得**用它
+    覆盖已有文件——避免真实开奖数据被几千期占位种子反向覆盖。
+    """
     meta = LOTTERIES[lottery]
     url = (
         f"https://datachart.500.com/{lottery}/history/newinc/history.php"
         f"?start={START_ISSUE[lottery]}&end={_END_ISSUE}"
     )
     draws: list[dict] = []
+    source = "live"
     try:
         resp = requests.get(url, headers=SCRAPE_HEADERS, timeout=60)
         resp.encoding = "utf-8"
@@ -121,9 +146,17 @@ def fetch_lottery(lottery: str, use_seed_fallback: bool = True) -> dict:
         log.warning("%s 抓取失败: %s", lottery, exc)
 
     if not draws and use_seed_fallback:
-        draws = _parse_seed(lottery)
-        if draws:
-            log.info("%s 使用仓库种子数据（%d 期）", lottery, len(draws))
+        seed_draws = _parse_seed(lottery)
+        if seed_draws:
+            if _data_file(lottery).exists():
+                log.warning(
+                    "%s 抓取失败但已有真实数据文件，返回 source=seed 仅供读取，禁止覆盖",
+                    lottery)
+            else:
+                log.info("%s 目标文件不存在，首启可使用仓库种子数据（%d 期）",
+                         lottery, len(seed_draws))
+            draws = seed_draws
+        source = "seed"
 
     # 去重（按期号）+ 按日期升序
     uniq: dict[str, dict] = {}
@@ -144,6 +177,7 @@ def fetch_lottery(lottery: str, use_seed_fallback: bool = True) -> dict:
         "updated_at": _now(),
         "count": len(draws),
         "draws": draws,
+        "source": source,
     }
 
 

@@ -169,7 +169,7 @@ def _mod_scores(max_n: int, mod: int, table: dict[int, float]) -> np.ndarray:
 
 def _jitter(max_n: int, seed: int) -> np.ndarray:
     rng = np.random.default_rng(abs(seed) % (2 ** 31))
-    return rng.random(max_n) * 1e-3
+    return rng.random(max_n) * 1e-9
 
 
 def _mix(max_n: int, parts: list[tuple[np.ndarray, float]], seed: int) -> np.ndarray:
@@ -681,7 +681,9 @@ def jieqi_nayin(ctx: AlgoContext) -> AlgoOutput:
              "立秋", "处暑", "白露", "秋分", "寒露", "霜降", "立冬", "小雪", "大雪",
              "冬至", "小寒", "大寒", "立春", "雨水", "惊蛰"]
     jq = names[p.jieqi_idx]
-    season = ["春", "夏", "秋", "冬"][((p.jieqi_idx + 22) % 24) // 6]
+    # 节气索引以春分(idx0)起算，四时以立春(idx21)/立夏(idx3)/立秋(idx9)/立冬(idx15)为界。
+    # (idx+3)%24 把立春移到 0，故 //6 得到正确时令；旧的 +22 使 03/25 判成冬。
+    season = ["春", "夏", "秋", "冬"][((p.jieqi_idx + 3) % 24) // 6]
     # 四时五行状态：旺/相/休/囚/死
     state = {
         "春": {"木": "旺", "火": "相", "水": "休", "金": "囚", "土": "死"},

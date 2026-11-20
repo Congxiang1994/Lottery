@@ -36,8 +36,8 @@ def _run_pool(ctx: AlgoContext, max_cost: int = BASE_COST):
             if m.category == CAT or m.cost > max_cost:
                 continue
             out = safe_run(m, ctx)
-            res[m.id] = (m, normalize(out.red), normalize(out.blue),
-                         "error" not in (out.detail or {}))
+            # 用 out.ok 标记过滤 safe_run 降级（失败）的算法，不再靠检查 detail.error
+            res[m.id] = (m, normalize(out.red), normalize(out.blue), out.ok)
         return res
 
     return ctx.cache(key, build)
@@ -118,21 +118,32 @@ def borda_rank(ctx: AlgoContext) -> AlgoOutput:
     def borda(vecs: list[np.ndarray], m: int) -> np.ndarray:
         acc = np.zeros(m)
         for v in vecs:
-            order = np.argsort(-v, kind="stable")
-            pts = np.empty(m)
-            pts[order] = np.arange(m - 1, -1, -1)
+            # M-4：并列值必须均分名次，不能按 stable 顺序强行排名——
+            # 失败算法（全 0.5）会把小号系统性排前，造成伪共识。
+            # 用"严格优于它的不同分值个数"作为 0-based 名次：并列项同分。
+            uniq = np.unique(v)
+            rank = np.searchsorted(uniq, v, side="left")  # 0..(#distinct-1)
+            pts = (len(uniq) - 1 - rank).astype(np.float64)
+            # 归一到与 (m-1)..0 同尺度，保持满分基准语义
+            if len(uniq) > 1:
+                pts = pts * (m - 1) / (len(uniq) - 1)
+            else:
+                pts = np.full(m, (m - 1) / 2.0)
             acc += pts
         return acc
 
-    R = borda([v[1] for v in pool.values()], ctx.red_max)
-    B = borda([v[2] for v in pool.values()], ctx.blue_max)
-    n = len(pool)
+    ok_pool = [v for v in pool.values() if v[3]]
+    used = ok_pool if ok_pool else list(pool.values())
+    R = borda([v[1] for v in used], ctx.red_max)
+    B = borda([v[2] for v in used], ctx.blue_max)
+    n = len(used)
     top = np.argsort(-R)[: ctx.red_count]
     return AlgoOutput(red=R, blue=B, detail={
         "参与算法数": n,
+        "过滤失败算法数": len(pool) - len(used),
         "满分基准": (ctx.red_max - 1) * n,
-        "红球得分": {str(int(i) + 1): int(R[i]) for i in top},
-        "原理": "Borda(x) = Σᵢ (m - rankᵢ(x))，仅用序，不用分值",
+        "红球得分": {str(int(i) + 1): round(float(R[i]), 1) for i in top},
+        "原理": "Borda(x) = Σᵢ (m - 并列均分名次)，仅用序，不用分值",
     })
 
 
@@ -146,9 +157,17 @@ def borda_rank(ctx: AlgoContext) -> AlgoOutput:
 def meta_stack(ctx: AlgoContext) -> AlgoOutput:
     w = meta_weights(ctx, folds=4, max_cost=1)
     pool = _run_pool(ctx, max_cost=1)
-    if not pool or not w:
-        return AlgoOutput(red=np.full(ctx.red_max, 0.5),
-                          blue=np.full(ctx.blue_max, 0.5), detail={})
+    if not w:
+        # S-2：权重为空时给出明确 error 与降级说明，绝不让 detail 为空
+        return AlgoOutput(
+            red=np.full(ctx.red_max, 0.5), blue=np.full(ctx.blue_max, 0.5),
+            detail={"error": "meta_weights 无有效回测权重（数据不足或回测计算失败）",
+                    "降级": "均匀分数 0.5，未加权任何基学习器",
+                    "回测折数": 4, "权重数": 0})
+    if not pool:
+        return AlgoOutput(
+            red=np.full(ctx.red_max, 0.5), blue=np.full(ctx.blue_max, 0.5),
+            detail={"error": "没有可用的低成本基学习器", "权重数": len(w)})
     R = np.zeros(ctx.red_max)
     B = np.zeros(ctx.blue_max)
     tot = 0.0

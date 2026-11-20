@@ -25,6 +25,8 @@ export default function Heatmap({ items, kind = "red", title }: HeatmapProps) {
           return (
             <div key={it.number} className="group relative">
               <div
+                role="img"
+                aria-label={`号码 ${it.number}，出现 ${it.count} 次`}
                 className="grid aspect-square place-items-center rounded-lg text-sm font-bold text-white"
                 style={{ background: bg }}
                 title={`${it.number} · 出现 ${it.count} 次`}

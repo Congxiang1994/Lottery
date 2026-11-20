@@ -262,14 +262,21 @@ def bollinger(ctx: AlgoContext) -> AlgoOutput:
     win = 30
 
     def side(H, max_n):
+        # 修复：ma 与 cur 原本都是 H[-win:].mean(axis=0)（同一个量），
+        # 导致 %B 恒等于 0.5，所有号码同分。现改为用滚动均值的历史分布
+        # 做标准化：以最近 60 期滚动均值的均值/标准差构造上下轨，
+        # 度量当前出现率相对自身历史的偏离（z-score）。
         roll = np.array([H[max(0, t - win + 1):t + 1].mean(axis=0) for t in range(ctx.n)])
-        ma = roll[-1]
-        sd = roll[-min(60, ctx.n):].std(axis=0) + 1e-9
-        cur = H[-win:].mean(axis=0)
-        # %B 指标：(price - lower) / (upper - lower)
-        upper, lower = ma + 2 * sd, ma - 2 * sd
-        pctb = (cur - lower) / (upper - lower + 1e-9)
-        return 1.0 - pctb  # 越靠下轨越"超卖"，得分越高
+        hist = roll[-min(60, ctx.n):]
+        ma = hist.mean(axis=0)
+        sd = hist.std(axis=0)
+        cur = roll[-1]
+        if float(sd.max()) < 1e-9:
+            # 历史波动极小 → 无区分信息，返回均匀分数（normalize 后会变成 0.5）
+            return np.full(max_n, 0.5)
+        # z-score 标准化后映射到 [0,1]：z 越小（越低于历史均值）得分越高（超卖优先）
+        z = (cur - ma) / (sd + 1e-12)
+        return normalize(-z)
     return AlgoOutput(
         red=side(ctx.RH, ctx.red_max), blue=side(ctx.BH, ctx.blue_max),
         detail={"原理": "%B = (x - 下轨)/(上轨 - 下轨)，取 1-%B（超卖优先）",

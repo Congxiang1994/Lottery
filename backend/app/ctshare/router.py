@@ -36,8 +36,12 @@ _MEDIA_BY_EXT = {
 
 
 def _require_view(ct_session: str | None, ct_admin_session: str | None) -> None:
-    """查看权限：分享会话或管理会话，任一有效即可。"""
-    if admin.verify_session(ct_session) or admin.verify_session(ct_admin_session):
+    """查看权限：分享会话（scope=ct_share）或管理会话（scope=admin），任一有效即可。
+
+    🔴 两种会话**作用域隔离**：分享口令签发的 token 只能看，不能当
+    ``ct_admin_session`` / ``trigger_session`` 等管理会话使用（2026-11 修复越权）。
+    """
+    if admin.verify_session(ct_session, scope="ct_share") or admin.verify_session(ct_admin_session):
         return
     raise HTTPException(status_code=401, detail="会话无效或已过期，请重新输入密码")
 
@@ -53,13 +57,15 @@ def auth(payload: dict, response: Response):
         raise HTTPException(status_code=429, detail=msg)
     if not ok:
         raise HTTPException(status_code=401, detail=msg)
-    admin.set_session_cookie(response, config.COOKIE_NAME, config.SESSION_TTL_SECONDS)
+    # 分享会话限定 scope=ct_share：不能越权当成任意管理会话（见 _require_view 说明）
+    admin.set_session_cookie(response, config.COOKIE_NAME, config.SESSION_TTL_SECONDS,
+                             scope="ct_share")
     return {"ok": True, "message": "验证通过", "ttl_hours": config.SESSION_TTL_SECONDS // 3600}
 
 
 @router.get("/session")
 def session_status(ct_session: str | None = Cookie(default=None)):
-    return admin.session_state(ct_session)
+    return admin.session_state(ct_session, scope="ct_share")
 
 
 @router.post("/logout")

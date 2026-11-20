@@ -18,7 +18,9 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -26,8 +28,14 @@ from pathlib import Path
 # 允许 `python scripts/selftest.py` 直接跑（把 backend/ 放进 sys.path）
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# 强制隔离到临时库目录：绝不碰 /data/lottery
-os.environ.setdefault("LOTTERY_DB_DIR", tempfile.mkdtemp(prefix="lottery-selftest-"))
+# 🔴 强制隔离到**每次运行都全新**的临时库目录：绝不碰 /data/lottery。
+# 旧实现用 setdefault —— 若环境里已有 LOTTERY_DB_DIR=/data/lottery，就不覆盖，
+# selftest 会直接改生产口令/写生产库，是致命误操作。
+# 这里无条件覆盖，并注册 atexit 清理，保证「每次进程运行 = 全新空库 + 跑完即删」，
+# 从根本上解决连跑两次状态残留导致的不幂等。
+_SELFTEST_DB_DIR = tempfile.mkdtemp(prefix="lottery-selftest-")
+os.environ["LOTTERY_DB_DIR"] = _SELFTEST_DB_DIR
+atexit.register(lambda: shutil.rmtree(_SELFTEST_DB_DIR, ignore_errors=True))
 
 FAILED: list[str] = []
 PASSED: list[str] = []

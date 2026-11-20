@@ -131,19 +131,30 @@ export function Empty({
 export function errText(e: unknown): string {
   const raw = (e instanceof Error ? e.message : String(e ?? "")).trim();
   if (!raw) return "未知错误";
-  // 服务端 5xx：不把内部细节甩给用户（detail 里可能是堆栈/英文异常）
   const status = (e as { status?: number })?.status;
-  if (typeof status === "number" && status >= 500) return `服务端异常，请稍后重试`;
-  if (e instanceof Error && e.name === "ApiError") return raw.slice(0, 80);
-  // 兜底：旧格式 `请求失败 500: {...}`
-  const detail = raw.match(/\{"detail"\s*:\s*"([^"]{1,80})"\}/);
+  // ⚠️ 502/503/504 的 detail 是**可操作文案**（如「回测数据未生成，请点击运行全部」），
+  // 必须原样保留给用户；其余 5xx 才统一兜底，避免把内部堆栈/英文异常甩出去。
+  const actionable5xx = status === 502 || status === 503 || status === 504;
+  if (typeof status === "number" && status >= 500 && !actionable5xx) {
+    return "服务端异常，请稍后重试";
+  }
+  if (e instanceof Error && e.name === "ApiError") return raw.slice(0, 120);
+  // 兜底：旧格式 `请求失败 500: {"detail": "..."}`
+  const detail = raw.match(/\{"detail"\s*:\s*"([^"]{1,120})"\}/);
   if (detail) return detail[1];
   if (/Failed to fetch|NetworkError|Load failed|Network request failed/i.test(raw)) {
     return "网络连接失败，请检查网络";
   }
   const code = raw.match(/请求失败\s+(\d{3})/);
   if (code) {
-    return Number(code[1]) >= 500 ? "服务端异常，请稍后重试" : `请求失败（${code[1]}）`;
+    const n = Number(code[1]);
+    if (n === 502 || n === 503 || n === 504) return raw.slice(0, 120);
+    return n >= 500 ? "服务端异常，请稍后重试" : `请求失败（${code[1]}）`;
   }
   return raw.slice(0, 60);
+}
+
+/** 判断异常是否为「资源不存在」（页面据此走空态而非故障块）。 */
+export function isNotFound(e: unknown): boolean {
+  return (e as { status?: number })?.status === 404;
 }

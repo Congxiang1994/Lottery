@@ -30,6 +30,9 @@ from app.common.paths import db_path
 
 DB_PATH = db_path("auth")
 
+#: 新设口令的最小长度。短口令（尤其空串）会让防爆破形同虚设。
+MIN_PASSWORD_LENGTH = 8
+
 # scrypt 参数：N=2^15 约 32MB 内存 / 次，单次校验 ~100ms（对本人无感，对爆破很贵）
 _SCRYPT_N = 2 ** 15
 _SCRYPT_R = 8
@@ -113,8 +116,15 @@ def is_configured() -> bool:
     return row is not None
 
 
+def _check_strength(plain: str) -> None:
+    if len(plain) < MIN_PASSWORD_LENGTH:
+        raise ValueError(
+            f"口令长度不足 {MIN_PASSWORD_LENGTH} 位（实际 {len(plain)} 位），拒绝写入")
+
+
 def set_password(plain: str) -> None:
     """写入密码哈希（覆盖式）。plain 为明文，仅调用方临时持有，不落库。"""
+    _check_strength(plain)
     pwd_hash = _hash_scrypt(plain, secrets.token_bytes(16))
     with _conn() as con:
         con.execute(SCHEMA)
@@ -169,6 +179,7 @@ def ensure_configured() -> None:
 
 def set_password_in(path: Path, plain: str) -> None:
     """把口令哈希写进**指定库文件**的 password_store 表（结构与 auth.db 一致）。"""
+    _check_strength(plain)
     pwd_hash = _hash_scrypt(plain, secrets.token_bytes(16))
     with _conn(path) as con:
         con.execute(SCHEMA)

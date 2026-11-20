@@ -17,8 +17,7 @@ def ensure_data_dir() -> Path:
 
 # 「运行全部算法」操作密码：不再硬编码于源码，统一由数据库（/data/lottery/auth.db）哈希存储，
 # 校验逻辑见 app.common.password。可通过环境变量 LOTTERY_RUN_PASSWORD 在首次部署时引导写入。
-# 密码校验流控：同一秒内全局仅允许 1 次
-VERIFY_RATE_LIMIT_PER_SECOND = 1
+# 密码校验流控见 app.common.security（失败递增锁定，早已替换「每秒 1 次」限频）。
 
 # cost -> 预估耗时（秒），用于进度条 ETA 的加权估算
 ALGORITHM_COST_SECONDS: dict[int, float] = {1: 0.15, 2: 0.6, 3: 2.0, 4: 4.5}

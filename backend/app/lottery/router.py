@@ -1,6 +1,8 @@
 """彩票 API 路由。"""
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.lottery.algorithms import (
@@ -19,6 +21,7 @@ from app.lottery.services import scraper, stats as stats_svc, predictor
 from app.lottery.services import history_matrix, results_store, runner
 
 router = APIRouter(prefix="/api/v1", tags=["lottery"])
+log = logging.getLogger("lottery.router")
 
 
 def _get(lottery: str) -> dict:
@@ -62,17 +65,15 @@ def history(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
+    """开奖历史分页（最新在前）。S9：复用 page_slice，页码越界返回 0 条而非回绕。"""
     data = _get(lottery)
-    draws = data["draws"]
-    total = len(draws)
-    start = max(0, total - page * page_size)
-    end = total - (page - 1) * page_size
+    draws, total = history_matrix.page_slice(data["draws"], page, page_size)
     return {
         "lottery": lottery,
         "page": page,
         "page_size": page_size,
         "total": total,
-        "draws": draws[start:end][::-1],  # 最新在前
+        "draws": draws,
     }
 
 
@@ -108,8 +109,16 @@ def algorithms_run(
     ids: str | None = Query(None, description="逗号分隔的算法 id，优先级最高"),
     category: str | None = Query(None, description="按分类批量执行"),
     max_cost: int = Query(2, ge=1, le=4, description="成本上限：1极快 2快 3中 4慢"),
+    password: str | None = Query(None, description="max_cost>=3 时的操作密码"),
 ):
-    """批量执行算法。默认只跑成本 ≤2 的快算法，重算法请显式指定 ids 或 max_cost。"""
+    """批量执行算法。默认只跑成本 ≤2 的快算法，重算法请显式指定 ids 或 max_cost。
+
+    M23：``max_cost>=3`` 的重算法消耗显著 CPU，要求操作密码；公开调用请保持
+    ``max_cost<=2``（当前前端默认即 2，不受影响）。密码走 query 参数 ``password``，
+    复用 ``_require_password`` 的统一流控（失败 401 / 锁定 429）。
+    """
+    if max_cost >= 3:
+        _require_password({"password": password or ""})
     ctx = _ctx(lottery)
     id_list = [s.strip() for s in ids.split(",") if s.strip()] if ids else None
     if id_list:
@@ -142,8 +151,15 @@ def algorithms_combined(
     lottery: str,
     max_cost: int = Query(2, ge=1, le=4),
     ids: str | None = Query(None),
+    password: str | None = Query(None, description="max_cost>=3 时的操作密码"),
 ):
-    """多算法等权融合的共识号码。"""
+    """多算法等权融合的共识号码。
+
+    M23：``max_cost>=3`` 要求操作密码（query 参数 ``password``），复用统一流控；
+    ``max_cost<=2`` 公开可用（前端默认值 2，不受影响）。
+    """
+    if max_cost >= 3:
+        _require_password({"password": password or ""})
     ctx = _ctx(lottery)
     id_list = [s.strip() for s in ids.split(",") if s.strip()] if ids else None
     return {"lottery": lottery, "issue_base": ctx.draws[-1]["issue"],
@@ -194,7 +210,8 @@ def algo_summary():
 @router.get("/{lottery}/saved-algorithms/latest")
 def saved_algorithms_latest(lottery: str):
     """读取 sqlite 中该彩种最新一批的全部算法结果，用于智能推荐页展示。"""
-    _get(lottery)
+    if lottery not in LOTTERIES:
+        raise HTTPException(status_code=404, detail=f"未知彩种: {lottery}")
     res = results_store.latest(lottery)
     if not res:
         raise HTTPException(status_code=404,
@@ -208,7 +225,8 @@ def saved_combined(lottery: str):
 
     口径与实现见 ``app.lottery.services.history_matrix.combine_latest_batch``。
     """
-    _get(lottery)
+    if lottery not in LOTTERIES:
+        raise HTTPException(status_code=404, detail=f"未知彩种: {lottery}")
     res = history_matrix.combine_latest_batch(lottery, LOTTERIES[lottery])
     if res is None:
         raise HTTPException(status_code=404,
@@ -219,14 +237,16 @@ def saved_combined(lottery: str):
 @router.get("/{lottery}/saved-algorithms/runs")
 def saved_algorithms_runs(lottery: str, limit: int = Query(14, ge=1, le=90)):
     """列出该彩种最近 N 天的 run_date。"""
-    _get(lottery)
+    if lottery not in LOTTERIES:
+        raise HTTPException(status_code=404, detail=f"未知彩种: {lottery}")
     return {"lottery": lottery, "dates": results_store.runs(lottery, limit)}
 
 
 @router.get("/{lottery}/saved-algorithms/{run_date}")
 def saved_algorithms_by_date(lottery: str, run_date: str):
     """按 run_date 取整批。"""
-    _get(lottery)
+    if lottery not in LOTTERIES:
+        raise HTTPException(status_code=404, detail=f"未知彩种: {lottery}")
     res = results_store.by_date(lottery, run_date)
     if not res:
         raise HTTPException(status_code=404, detail=f"无 {run_date} 的入库结果")
@@ -336,5 +356,13 @@ def refresh(lottery: str, payload: dict | None = None):
         raise HTTPException(status_code=404, detail=f"未知彩种: {lottery}")
     _require_password(payload)
     data = scraper.fetch_lottery(lottery)
-    scraper.save_lottery(data)
-    return {"lottery": lottery, "count": data["count"], "updated_at": data["updated_at"]}
+    source = data.get("source", "live")
+    target = scraper.DATA_DIR / f"{lottery}.json"
+    if source == "live" or not target.exists():
+        # 抓取成功 → 正常覆盖；首启且文件不存在 → 允许种子落盘。
+        # S4：抓取失败且已有真实数据时，source=seed，绝不覆盖原文件。
+        scraper.save_lottery(data)
+    else:
+        log.warning("%s 抓取失败（source=seed），保留现有数据文件不覆盖", lottery)
+    return {"lottery": lottery, "count": data["count"],
+            "updated_at": data["updated_at"], "source": source}

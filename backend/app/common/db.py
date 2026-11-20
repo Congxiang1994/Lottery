@@ -13,11 +13,14 @@
 from __future__ import annotations
 
 import fcntl
+import logging
 import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
+
+log = logging.getLogger("app.common.db")
 
 # 数据库文件权限：仅属主可读写。
 # 原因：trigger.db 里存有明文 Ark API key，SQLite 默认按 umask（通常 022）建文件
@@ -102,7 +105,7 @@ def init_schema(
     schema: str,
     *,
     migrations: Iterable[str] = (),
-    after: "callable | None" = None,
+    after: Callable[[sqlite3.Connection], None] | None = None,
 ) -> None:
     """幂等建表 + 兼容旧库的补列/补索引。**所有域统一走这里，不要再各写一遍 flock。**
 
@@ -129,7 +132,13 @@ def init_schema(
             for ddl in migrations:
                 try:
                     con.execute(ddl)
-                except sqlite3.OperationalError:
-                    pass  # 列/索引已存在
+                except sqlite3.OperationalError as exc:
+                    msg = str(exc).lower()
+                    # 只忽略「幂等重复」这两类；其余（语法错、错库、锁、磁盘满…）
+                    # 必须抛出并记录，否则旧库会带着缺失的列静默上线（线上 500）。
+                    if "duplicate column name" in msg or "already exists" in msg:
+                        continue
+                    log.warning("migration DDL 失败，已跳过: %s (%s)", ddl, exc)
+                    raise
             if after is not None:
                 after(con)

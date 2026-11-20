@@ -1,16 +1,12 @@
-import { query, request, type Query } from "../common/http";
+import { query, request, type Query, type RequestOptions } from "../common/http";
 import type {
   AlgoCatalog,
   AlgoResult,
-  AlgoSummary,
   AllRunStatus,
   BacktestResult,
-  BatchAlgoResponse,
-  CombinedResult,
   Draw,
   HistoryPredictions,
   LotteryInfo,
-  Predict,
   SavedAlgorithmsLatest,
   SavedCombined,
   Stats,
@@ -20,37 +16,31 @@ import type {
 const BASE = "/api/v1";
 
 /** 彩票站请求统一走全站 http 客户端（错误体/401/网络失败的处理见 common/http.ts）。 */
-const get = <T>(path: string, params?: Query): Promise<T> =>
-  request<T>(BASE + path + (params ? query(params) : ""));
+const get = <T>(path: string, params?: Query, opts?: RequestOptions): Promise<T> =>
+  request<T>(BASE + path + (params ? query(params) : ""), opts);
 
 export const api = {
   lotteries: () => get<LotteryInfo[]>("/lotteries"),
   summary: (k: string) => get<Summary>(`/${k}/summary`),
-  latest: (k: string) => get<Draw>(`/${k}/latest`),
   stats: (k: string) => get<Stats>(`/${k}/stats`),
-  history: (k: string, page: number, pageSize: number) =>
+  history: (k: string, page: number, pageSize: number, signal?: AbortSignal) =>
     get<{ lottery: string; page: number; page_size: number; total: number; draws: Draw[] }>(
       `/${k}/history`,
       { page, page_size: pageSize },
+      { signal },
     ),
-  historyPredictions: (k: string, page: number, pageSize: number) =>
-    get<HistoryPredictions>(`/${k}/history-predictions`, { page, page_size: pageSize }),
-  predict: (k: string) => get<Predict>(`/${k}/predict`),
+  historyPredictions: (k: string, page: number, pageSize: number, signal?: AbortSignal) =>
+    get<HistoryPredictions>(`/${k}/history-predictions`, { page, page_size: pageSize }, { signal }),
   // ---- 算法引擎
   algorithms: () => get<AlgoCatalog>("/algorithms"),
   runAlgo: (k: string, id: string) =>
     get<AlgoResult & { lottery: string; issue_base: string }>(`/${k}/algorithms/${id}`),
-  runBatch: (k: string, maxCost: number, ids?: string) =>
-    get<BatchAlgoResponse>(`/${k}/algorithms`, { max_cost: maxCost, ids }),
-  combined: (k: string, maxCost = 2) =>
-    get<CombinedResult>(`/${k}/combined`, { max_cost: maxCost }),
   backtest: (k: string, folds?: number, maxCost?: number) =>
     get<BacktestResult>(`/${k}/backtest`, {
       ...(folds !== undefined ? { folds } : {}),
       ...(maxCost !== undefined ? { max_cost: maxCost } : {}),
     }),
   // ---- 定时入库结果（纯缓存展示，不触发实时计算）
-  algoSummary: () => get<AlgoSummary[]>("/algo-summary"),
   savedLatest: (k: string) =>
     get<SavedAlgorithmsLatest>(`/${k}/saved-algorithms/latest`),
   savedCombined: (k: string) =>

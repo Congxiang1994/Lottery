@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import math
+import zlib
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -109,6 +110,8 @@ class AlgoOutput:
     red: np.ndarray  # shape (red_max,)
     blue: np.ndarray  # shape (blue_max,)
     detail: dict = field(default_factory=dict)
+    # safe_run 降级时置 False，供集成算法过滤失败基学习器（默认 True 不影响既有调用）
+    ok: bool = True
 
 
 @dataclass
@@ -215,14 +218,13 @@ class AlgoContext:
         return out
 
     def current_omission(self, side: str = "red") -> np.ndarray:
-        """当前每个号码的遗漏期数（距最近一次出现）。"""
-        H = self.RH if side == "red" else self.BH
-        m = H.shape[1]
-        out = np.zeros(m)
-        for j in range(m):
-            col = np.nonzero(H[:, j])[0]
-            out[j] = (self.n - 1 - col[-1]) if len(col) else self.n
-        return out
+        """当前每个号码的遗漏期数，直接取遗漏矩阵最后一行。
+
+        与 ``_omission`` 统一口径：某号最后一期出现则遗漏为 0；从未出现
+        则遗漏为 n。旧的独立循环实现与之差 1（把"当期出现"算成遗漏 1），
+        导致调用方口径不一致，故删除重复实现。
+        """
+        return (self.R_omit if side == "red" else self.B_omit)[-1]
 
     def freq(self, side: str = "red", window: int | None = None) -> np.ndarray:
         H = self.RH if side == "red" else self.BH
@@ -234,14 +236,6 @@ class AlgoContext:
         if key not in self._cache:
             self._cache[key] = builder()
         return self._cache[key]
-
-    @property
-    def max_of(self):
-        return {"red": self.red_max, "blue": self.blue_max}
-
-    @property
-    def count_of(self):
-        return {"red": self.red_count, "blue": self.blue_count}
 
 
 # ---------------------------------------------------------------- 打分工具
@@ -255,15 +249,6 @@ def normalize(scores: np.ndarray) -> np.ndarray:
     if hi - lo < 1e-12:
         return np.full_like(s, 0.5)
     return (s - lo) / (hi - lo)
-
-
-def softmax(x: np.ndarray, temp: float = 1.0) -> np.ndarray:
-    z = np.asarray(x, dtype=np.float64).ravel() / max(temp, 1e-6)
-    z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
-    z = z - z.max()
-    e = np.exp(z)
-    tot = e.sum()
-    return e / tot if tot > 1e-12 else np.full_like(e, 1.0 / len(e))
 
 
 class ScoreShapeError(ValueError):
@@ -389,38 +374,31 @@ def safe_run(meta: AlgoMeta, ctx: AlgoContext) -> AlgoOutput:
         if blue.shape[0] != ctx.blue_max:
             raise ScoreShapeError(
                 f"{meta.id}: blue 打分长度 {blue.shape[0]} ≠ {ctx.blue_max}")
-        return AlgoOutput(red=red, blue=blue, detail=out.detail or {})
+        return AlgoOutput(red=red, blue=blue, detail=out.detail or {}, ok=True)
     except Exception as exc:  # noqa: BLE001
         return AlgoOutput(
             red=np.full(ctx.red_max, 0.5),
             blue=np.full(ctx.blue_max, 0.5),
             detail={"error": f"{type(exc).__name__}: {exc}"},
+            ok=False,
         )
 
 
 # ---------------------------------------------------------------- 数论小工具
 
 
-def digit_seed(*parts: int) -> int:
-    """把若干整数混合成一个稳定的整数种子。"""
+def digit_seed(*parts: int | str) -> int:
+    """把若干整数或字符串混合成一个稳定的整数种子。
+
+    原实现只接受 int，混入算法 id（如 ``"dist_euclidean"``）会 ValueError；
+    现在字符串走 CRC32 转成整数，整数保持原逻辑，兼顾向后兼容与确定性。
+    """
     h = 1469598103934665603
     for p in parts:
-        h ^= int(p) & 0xFFFFFFFF
+        v = p if isinstance(p, str) else str(int(p))
+        h ^= zlib.crc32(v.encode("utf-8")) & 0xFFFFFFFF
         h = (h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
     return h & 0x7FFFFFFF
-
-
-def seed_scores(seed: int, max_n: int, sharpness: float = 1.0) -> np.ndarray:
-    """由整数种子确定性地生成号码打分（供玄学/种子类算法使用）。"""
-    rng = np.random.default_rng(abs(int(seed)) % (2**31))
-    base = rng.random(max_n)
-    return base**sharpness
-
-
-def cyclic_distance(a: np.ndarray, b: np.ndarray, mod: int) -> np.ndarray:
-    """环形取模空间距离（太乙神数积年取模用）。"""
-    d = np.abs(a - b) % mod
-    return np.minimum(d, mod - d)
 
 
 def wuxing_of(n: int) -> str:

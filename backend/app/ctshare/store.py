@@ -289,49 +289,21 @@ def photo_path(filename: str) -> Path | None:
 
 
 def verify_share_password(password: str) -> tuple[bool, str, int]:
-    """校验分享口令 + 防在线爆破。返回 ``(ok, message, http_status)``。"""
+    """校验分享口令 + 防在线爆破。返回 ``(ok, message, http_status)``。
+
+    2026-11 收敛到全站唯一的 ``security.verify_with_lock``：原处的逐字副本
+    有一个可被匿名者无限续锁的 DoS（锁定期内直接 429、连正确口令都验不了），
+    通用实现已修复（锁定期内仍验口令、到期衰减 fail_count），并且把 scrypt
+    移出写事务、避免阻塞同库的跑批进度写入。
+    """
     from app.common import password as _password
+    from app.common import security
 
-    init()
-    now = time.time()
-    lock_step = 0.0
-    fail_count = 0
-    with get_conn(config.DB_PATH) as con:
-        con.execute("BEGIN IMMEDIATE")
-        con.execute(
-            "INSERT OR IGNORE INTO security_lock (id, fail_count, locked_until) VALUES (1,0,0)")
-        row = con.execute(
-            "SELECT fail_count, locked_until FROM security_lock WHERE id=1").fetchone()
-        fail_count = int(row[0] or 0) if row else 0
-        locked_until = float(row[1] or 0) if row else 0.0
-
-        if locked_until > now:
-            wait = int(locked_until - now) + 1
-            con.execute(
-                "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=0 WHERE id=1",
-                (now,))
-            return False, f"密码错误次数过多，请 {wait} 秒后再试", 429
-
-        ok = _password.verify_in(config.DB_PATH, password)
-        if ok:
-            fail_count, locked_until = 0, 0.0
-        else:
-            fail_count += 1
-            if fail_count >= config.FAIL_THRESHOLD:
-                lock_step = config.LOCK_STEPS[
-                    min(fail_count - config.FAIL_THRESHOLD, len(config.LOCK_STEPS) - 1)]
-                locked_until = now + lock_step
-        con.execute(
-            "UPDATE security_lock SET last_verify_ts=?, last_verify_ok=?,"
-            " fail_count=?, locked_until=? WHERE id=1",
-            (now, 1 if ok else 0, fail_count, locked_until))
-    if ok:
-        return True, "验证通过", 200
-    if lock_step:
-        return False, f"密码错误次数过多，已锁定 {int(lock_step)} 秒", 429
-    return (False,
-            f"密码错误（已连续失败 {fail_count} 次，累计 {config.FAIL_THRESHOLD} 次将临时锁定）",
-            401)
+    return security.verify_with_lock(
+        lambda: _password.verify_in(config.DB_PATH, password),
+        config.DB_PATH,
+        init_fn=init,
+    )
 
 
 def reset_failures() -> None:

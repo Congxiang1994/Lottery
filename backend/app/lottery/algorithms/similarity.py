@@ -23,11 +23,19 @@ def _windows(H: np.ndarray, win: int) -> tuple[np.ndarray, np.ndarray, np.ndarra
     n = H.shape[0]
     if n <= win + 1:
         return np.zeros((0, win * H.shape[1])), np.zeros((0, H.shape[1])), H[-1:].ravel()
-    segs = np.stack([H[i:i + win].ravel() for i in range(n - win - 1)])
-    nxt = H[win + 1: n]
+    # 片段 i 覆盖 H[i:i+win]，其"下一期"标签必须是 H[i+win]（即 H[win:n]）。
+    # 旧代码用 H[win+1:n] 导致所有标签整体错位一期（预测的是下下期），
+    # 影响全部 7 种距离 + knn_multi；DTW 里的 H[i+win] 本来正确，不要改。
+    # 片段 i 覆盖 H[i:i+win]，标签为 H[i+win]；i 取 0..n-win-1 共 n-win 个，
+    # 与 H[win:n]（n-win 行）一一对应。旧代码用 range(n-win-1)+H[win+1:n]，
+    # 片段数虽相等但标签整体错位一期。
+    segs = np.stack([H[i:i + win].ravel() for i in range(n - win)])
+    nxt = H[win:n]
+    assert len(segs) == len(nxt), (
+        f"片段数 {len(segs)} 与标签数 {len(nxt)} 不一致："
+        "KNN 形态窗口与下一期标签必须一一对应")
     cur = H[n - win:].ravel()
-    m = min(len(segs), len(nxt))
-    return segs[:m], nxt[:m], cur
+    return segs, nxt, cur
 
 
 def _knn_vote(H: np.ndarray, max_n: int, dist_fn, topk: int = TOPK) -> tuple[np.ndarray, dict]:

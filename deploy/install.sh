@@ -33,6 +33,10 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y nginx python3-venv python3-pip git curl ffmpeg
 
+# 时区对齐（M38）：跑批按 Asia/Shanghai 的 00:00 触发，容器/云主机默认 UTC
+# 会导致每天跑批时间错乱。失败不阻断（无 systemd-timedated 的极简环境照常部署）。
+timedatectl set-timezone Asia/Shanghai || true
+
 step "[1.5/6] 准备 CPython $PY_VERSION（uv → $PY_INSTALL_DIR）"
 if [ ! -x "$PY314" ]; then
   if ! command -v uv >/dev/null 2>&1; then
@@ -74,10 +78,27 @@ if [ -f "$BACKEND/app/data/algo_results.db" ] && [ ! -f /data/lottery/algo_resul
 fi
 
 step "[4/6] 配置 Nginx（listen 8081，反代 /api，SPA 回退）"
-cp "$APP_DIR/deploy/nginx.conf" /etc/nginx/sites-available/lottery.conf
-ln -sf /etc/nginx/sites-available/lottery.conf /etc/nginx/sites-enabled/lottery.conf
+# 先备份现有配置，nginx -t 失败时回滚（改配置前必留退路）。
+NGINX_AVAILABLE=/etc/nginx/sites-available/lottery.conf
+NGINX_BACKUP=""
+if [ -f "$NGINX_AVAILABLE" ]; then
+  NGINX_BACKUP="${NGINX_AVAILABLE}.bak.$(date +%Y%m%d%H%M%S)"
+  cp -p "$NGINX_AVAILABLE" "$NGINX_BACKUP"
+  echo "已备份现有 nginx 配置 -> $NGINX_BACKUP"
+fi
+cp "$APP_DIR/deploy/nginx.conf" "$NGINX_AVAILABLE"
+ln -sf "$NGINX_AVAILABLE" /etc/nginx/sites-enabled/lottery.conf
 rm -f /etc/nginx/sites-enabled/default
-nginx -t
+if ! nginx -t; then
+  echo "✗ nginx 配置校验失败，回滚到备份配置"
+  if [ -n "$NGINX_BACKUP" ] && [ -f "$NGINX_BACKUP" ]; then
+    cp -p "$NGINX_BACKUP" "$NGINX_AVAILABLE"
+  else
+    rm -f "$NGINX_AVAILABLE" /etc/nginx/sites-enabled/lottery.conf
+  fi
+  nginx -t || true
+  exit 1
+fi
 systemctl reload nginx 2>/dev/null || systemctl restart nginx
 
 step "[5/6] 注册并启动 systemd 服务（自动发现 deploy/ 下所有 *.service / *.timer）"
@@ -114,6 +135,10 @@ for s in "$APP_DIR"/deploy/*.service; do
     echo "  · $svc.service 由 ${svc}.timer 驱动，跳过 enable --now"
   else
     systemctl enable --now "$svc.service"
+    # A18：`enable --now` 对「已在运行」的服务不会重新加载代码 ——— 旧进程继续
+    # 跑旧字节码，脚本却打印「部署完成」。显式 restart 让新代码立即生效，
+    # 若服务之前未起来则 restart 会失败，回退到 start。
+    systemctl restart "$svc.service" 2>/dev/null || systemctl start "$svc.service"
   fi
 done
 
@@ -122,8 +147,15 @@ for name in "${timers[@]}"; do
   systemctl start "$name.service" 2>/dev/null || true
 done
 
-step "[6/6] 开放本地防火墙 8081（Cloudflare Tunnel 走出站，公网无需入站放行）"
-ufw allow 8081/tcp 2>/dev/null || true
+step "[6/6] 防火墙：8081 不对外开放（A18）"
+# 8081 只走本机 / Cloudflare Tunnel（出站连接，无需入站放行）。
+# 旧版这里 `ufw allow 8081/tcp` 把 nginx 明文端口暴露到公网，
+# 任何人可绕过 Cloudflare 直接 http://IP:8081 访问。直接删除该放行；
+# 若历史规则已存在则一并移除（幂等）。
+if command -v ufw >/dev/null 2>&1; then
+  ufw delete allow 8081/tcp 2>/dev/null || true
+fi
+echo "  · 8081 仅监听本机/Cloudflare Tunnel，不对公网放行"
 
 echo -e "\n\033[32m✅ 部署完成！\033[0m"
 echo "   公网访问： https://doudoutech.cloud/   （Cloudflare Tunnel → Nginx:8081）"

@@ -13,6 +13,8 @@ export default function Ball({ n, kind = "red", size = 44, delay = 0 }: BallProp
   const fs = size * 0.4;
   return (
     <div
+      role="img"
+      aria-label={`${isRed ? "红" : "蓝"}球 ${n}`}
       className={`inline-flex items-center justify-center rounded-full bg-gradient-to-br ${colors} font-bold text-white animate-rise`}
       style={{
         width: size,

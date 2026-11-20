@@ -6,6 +6,8 @@ Description=Lottery · 每日 0:00 触发全量算法入库
 OnCalendar=*-*-* 00:00:00
 Persistent=true
 AccuracySec=30s
+# 随机延迟 0~300s，避免整点与其它定时任务/上游抓取撞车（M33）。
+RandomizedDelaySec=300
 Unit=lottery-algos.service
 
 [Install]

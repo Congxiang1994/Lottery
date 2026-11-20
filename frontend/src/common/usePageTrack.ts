@@ -8,7 +8,7 @@
  * 挂在 `App` 组件里：路由一变就上报一次（keepalive 保证「点完立刻关页」也不丢）。
  * 自动化环境直接跳过 —— 否则每次验证脚本跑一遍，页面上就多出几十条假浏览记录。
  */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 
 import { isAutomated } from "./automation";
@@ -39,6 +39,12 @@ function shouldTrack(pathname: string): boolean {
 
 export function usePageTrack(): void {
   const { pathname } = useLocation();
+  /**
+   * 同会话内按 pathname 去重：SPA 前进/后退会反复触发同一 pathname 的 effect，
+   * 之前每来回一次就多报一条浏览，访问统计虚高。用 ref 记住已上报过的路径，
+   * 组件生命周期内每个 pathname 只上报一次（不影响真实跳转到新页面）。
+   */
+  const tracked = useRef<Set<string>>(new Set());
 
   // cookie 同步与路由无关，整站只需做一次
   useEffect(() => {
@@ -48,6 +54,8 @@ export function usePageTrack(): void {
   useEffect(() => {
     if (isAutomated()) return;
     if (!shouldTrack(pathname)) return;
+    if (tracked.current.has(pathname)) return;
+    tracked.current.add(pathname);
     const body = JSON.stringify({
       path: pathname,
       title: typeof document !== "undefined" ? document.title : "",

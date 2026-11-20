@@ -266,11 +266,14 @@ def gp_symbolic(ctx: AlgoContext) -> AlgoOutput:
 # ---------------------------------------------------------------- 2. 公式网格穷举
 
 @register("formula_grid", "参数化公式网格寻优", CAT,
-          "把打分写成 score = w₁·z(近频) + w₂·z(中频) + w₃·z(遗漏) + w₄·z(邻号) + w₅·z(位置)，"
-          "在 3⁵ 权重网格上穷举，用最近 150 期滚动回测的命中数择优。",
+          "把打分写成 score = w₁·z(近频) + w₂·z(中频) + w₃·z(遗漏) + w₄·z(邻号)，"
+          "在 3⁴ 权重网格上穷举（已移除与下期无关的 pos 位置特征），"
+          "用最近 150 期滚动回测的命中数择优。",
           ["网格穷举", "滚动回测", "权重寻优", "可解释"], cost=3)
 def formula_grid(ctx: AlgoContext) -> AlgoOutput:
-    use = [0, 1, 3, 9, 5]  # f10, f30, omit, nb, pos
+    # 移除无信息的 pos 特征：号码位置是固定的 1..m 线性序列，与下期出现无关，
+    # 只会在网格搜索里引入系统性小号偏置。保留 f10/f30/omit/nb。
+    use = [0, 1, 3, 9]  # f10, f30, omit, nb
     levels = np.array([-1.0, 0.0, 1.0])
     grid = np.array(np.meshgrid(*([levels] * len(use)), indexing="ij")).reshape(len(use), -1)
 
@@ -303,6 +306,7 @@ def formula_grid(ctx: AlgoContext) -> AlgoOutput:
     detail = {
         "原理": "线性可解释打分函数 + 网格穷举 + 滚动回测择优",
         "参与特征": [FEAT_NAMES[u] for u in use],
+        "候选公式数": int(3 ** len(use)),
         "回测期数": 150,
         "红球最优权重": dr.get("最优权重"),
         "红球回测命中/期望": f"{dr.get('回测命中数')} / {dr.get('理论期望命中')}",

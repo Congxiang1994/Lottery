@@ -64,18 +64,28 @@ def freq_weighted(ctx: AlgoContext) -> AlgoOutput:
           "以近 30/100 期频率比值判定号码冷热，热号顺势 + 冷号回补，取平衡组合。",
           ["冷热分析", "均值回归"])
 def hot_cold(ctx: AlgoContext) -> AlgoOutput:
-    def side(H, max_n):
+    def side(H, omit, max_n):
         short = H[-30:].sum(axis=0) / max(len(H[-30:]), 1)
         long = H[-100:].sum(axis=0) / max(len(H[-100:]), 1)
-        ratio = (short + 1e-6) / (long + 1e-6)
-        # 热度偏离 1 越多越"有故事"：热号顺势 0.6 权重，冷号回补 0.4
-        hot = normalize(ratio)
-        cold = normalize(-ratio)
-        return 0.6 * hot + 0.4 * cold * 0.8
+        # 热号顺势：近 30 期频率相对近 100 期基线的"升温幅度"，只取正向。
+        # 注意不能用 normalize(-ratio) 表示冷号：normalize 是线性 min-max，
+        # normalize(a)+normalize(-a) ≡ 1，冷热两项会代数抵消成 ratio 的纯单调函数。
+        heat = np.clip((short - long) / (long + 1e-6), 0.0, None)
+        hot = normalize(heat)
+        # 冷号回补：用独立的"当前遗漏 / 历史平均遗漏"信号，衡量久未开出的回补压力，
+        # 与 heat 不是同一变量的相反数，因此不会被抵消。
+        cur = omit[-1]
+        avg = np.array([omit[:, j][omit[:, j] > 0].mean() if (omit[:, j] > 0).any() else 1.0
+                        for j in range(max_n)])
+        overdue = (cur + 1.0) / (avg + 1.0) - 1.0  # >0 表示超期未出
+        cold = normalize(np.clip(overdue, 0.0, None))
+        return 0.6 * hot + 0.4 * cold
     return AlgoOutput(
-        red=side(ctx.RH, ctx.red_max), blue=side(ctx.BH, ctx.blue_max),
-        detail={"原理": "ratio = f_30 / f_100，>1 为热、<1 为冷",
-                "策略": "热号顺势权重 0.6 + 冷号回补权重 0.32"},
+        red=side(ctx.RH, ctx.R_omit, ctx.red_max),
+        blue=side(ctx.BH, ctx.B_omit, ctx.blue_max),
+        detail={"原理": "热号=升温幅度 clip(f30-f100,0)；冷号=超期压力 clip(当前遗漏/历史均遗漏-1,0)",
+                "策略": "两向独立建模：热号顺势权重 0.6 + 冷号回补权重 0.4（不再用 -ratio 反向）",
+                "冷热一致性": "冷热分别由近期频率与遗漏压力驱动，非同一量的正负归一化"},
     )
 
 
@@ -261,12 +271,19 @@ def chi_square(ctx: AlgoContext) -> AlgoOutput:
     r = side(ctx.RH, ctx.red_max, ctx.red_count)
     b = side(ctx.BH, ctx.blue_max, ctx.blue_count)
     sig_r = int((np.abs(r) > 3.84).sum())
+    sig_b = int((np.abs(b) > 3.84).sum())
+    # 期望显著个数 = m·P(χ²₁>3.84) ≈ 0.05m；用实际观测个数对照给出结论，不再硬编码。
+    exp_sig = 0.05 * ctx.red_max
+    verdict = ("显著偏离个数接近随机预期（约 5%）" if abs(sig_r - exp_sig) <= max(2.0, 0.5 * exp_sig)
+               else f"红球显著偏离 {sig_r} 个，偏离随机预期 {exp_sig:.1f} 个")
     return AlgoOutput(
         red=r, blue=b,
         detail={"原理": "χ² = (O-E)²/E，带符号以区分偏多/偏少",
                 "临界值(p=0.05)": 3.84,
                 "红球显著偏离个数": sig_r,
-                "结论": "显著偏离个数接近随机预期，印证开奖均匀性"},
+                "蓝球显著偏离个数": sig_b,
+                "随机预期显著个数": round(exp_sig, 2),
+                "结论": verdict},
     )
 
 
@@ -339,8 +356,11 @@ def arm(ctx: AlgoContext) -> AlgoOutput:
             if b in last and conf_ba >= min_conf:
                 scores[a] += conf_ba * sup
                 rules += 1
-        if scores.max() <= 0:
-            scores = H.sum(axis=0) / n
+        # 无信息号码（没有触发任何关联规则）给全局频率先验分，而不是 0：
+        # dlt 上 27/35 号码长期并列 0，推荐完全靠 pick_top 的 jitter 随机挑，
+        # 加入先验后至少保留频率排序信息。
+        prior = H.sum(axis=0) / n
+        scores = scores + 0.1 * prior / max(prior.max(), 1e-9)
         return scores, len(l2), rules
 
     r, n2, nr = side(ctx.RH, ctx.red_max, ctx.red_count)
@@ -391,8 +411,6 @@ def bayes_beta(ctx: AlgoContext) -> AlgoOutput:
           "优先选择「冷门但等概率」的号码以最大化期望奖金份额。",
           ["泊松分布", "初等对称多项式", "博弈论", "冷门度加权"], cost=2)
 def poisson_emulator(ctx: AlgoContext) -> AlgoOutput:
-    rng = np.random.default_rng(20260818)
-
     def side(H, max_n, count):
         # 彩民偏好模拟：小号/生日号(1-31)/连号/热号更受青睐
         pref = np.ones(max_n)
@@ -503,13 +521,20 @@ def binom_test(ctx: AlgoContext) -> AlgoOutput:
     zr, pr = side(ctx.RH, ctx.red_max, ctx.red_count)
     zb, pb = side(ctx.BH, ctx.blue_max, ctx.blue_count)
     n_sig = int((pr < alpha).sum())
+    n_sig_b = int((pb < alpha).sum())
+    # 结论由实际显著个数决定（H0 真时期望显著数 ≈ alpha·m），不再硬编码。
+    exp_sig = alpha * ctx.red_max
+    verdict = ("校正后无显著偏离，数据与均匀随机假设一致" if n_sig == 0 and n_sig_b == 0
+               else f"检测到红球 {n_sig} / 蓝球 {n_sig_b} 个显著号码（随机预期约 {exp_sig:.1f}）")
     return AlgoOutput(
         red=zr, blue=zb,
         detail={"原理": "H₀: p = k/max，z = (obs - np₀)/√(np₀(1-p₀))，p 值乘以 m 做 Bonferroni 校正",
                 "显著水平": alpha,
                 "校正后显著红球数": n_sig,
+                "校正后显著蓝球数": n_sig_b,
+                "随机预期显著数": round(exp_sig, 2),
                 "最小校正p值": round(float(pr.min()), 4),
-                "结论": "校正后几乎无显著偏离 → 严格统计意义上开奖是均匀随机的"},
+                "结论": verdict},
     )
 
 

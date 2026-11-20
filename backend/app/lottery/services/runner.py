@@ -19,8 +19,6 @@ from app.lottery.config import ALGORITHM_COST_SECONDS, LOTTERIES
 from app.lottery.services import results_store, scraper
 
 ALL_LOTTERIES = ["ssq", "dlt"]
-_RUNNING: dict[str, threading.Thread] = {}
-_LOCK = threading.Lock()
 
 
 def _packet(m, ctx, out, ms: float) -> dict:
@@ -39,20 +37,18 @@ def _packet(m, ctx, out, ms: float) -> dict:
     }
 
 
-def _pool(lottery: str) -> list:
+def _pool() -> list:
+    """全部非集成算法（工具函数，与彩种无关）。"""
     return [m for m in REGISTRY.values() if m.category != "ensemble"]
 
 
 def start(lottery: str) -> tuple[bool, str]:
     """启动单彩种全量运行（仅当未在运行）。"""
-    pool = _pool(lottery)
+    pool = _pool()
     total_weight = float(sum(ALGORITHM_COST_SECONDS.get(m.cost, 1.0) for m in pool))
     if not results_store.progress_start(lottery, len(pool), total_weight):
         return False, "该彩种已有运行任务进行中，请等待完成"
-    th = threading.Thread(target=_work, args=(lottery,), daemon=True)
-    with _LOCK:
-        _RUNNING[lottery] = th
-    th.start()
+    threading.Thread(target=_work, args=(lottery,), daemon=True).start()
     return True, "已启动全部算法运行"
 
 
@@ -60,19 +56,22 @@ def start_all() -> tuple[bool, str]:
     """启动全量运行：顺序跑双色球 + 大乐透（各含预测 + 回测）。
 
     数据库互斥锁防并发：任何时刻全局仅允许一个「运行全部」任务。
+    S7：若某彩种 progress_start 失败，回滚已成功的彩种（progress_finish）
+    再返回 False，避免残留 running=1 的假运行状态。
     """
     if not results_store.global_lock_start():
         return False, "已有全量运行任务进行中（数据库锁），请等待完成"
+    started: list[str] = []
+    pool = _pool()
+    total_weight = float(sum(ALGORITHM_COST_SECONDS.get(m.cost, 1.0) for m in pool))
     for k in ALL_LOTTERIES:
-        pool = _pool(k)
-        total_weight = float(sum(ALGORITHM_COST_SECONDS.get(m.cost, 1.0) for m in pool))
         if not results_store.progress_start(k, len(pool), total_weight):
+            for done in started:
+                results_store.progress_finish(done)
             results_store.global_lock_end()
             return False, f"{LOTTERIES[k]['name']} 已有任务进行中，请等待完成"
-    th = threading.Thread(target=_work_all, daemon=True)
-    with _LOCK:
-        _RUNNING["all"] = th
-    th.start()
+        started.append(k)
+    threading.Thread(target=_work_all, daemon=True).start()
     return True, "已启动全部算法运行（双色球 + 大乐透）"
 
 
@@ -85,18 +84,26 @@ def _work_all() -> None:
                 pass  # _work 内部已捕获并写入进度 error
     finally:
         results_store.global_lock_end()
-        with _LOCK:
-            _RUNNING.pop("all", None)
 
 
 def _work(lottery: str) -> None:
     try:
         data = scraper.load_lottery(lottery)
+        source = "live"  # 本地文件通常为真实抓取或首启种子，落库时按格式宽严校验
         if not data or not data.get("draws"):
-            raise RuntimeError(f"{lottery} 数据未就绪")
+            # 本地文件缺失：尝试抓取（首启会带回种子数据）。
+            fetched = scraper.fetch_lottery(lottery)
+            if not fetched or not fetched.get("draws"):
+                raise RuntimeError(f"{lottery} 数据未就绪")
+            source = fetched.get("source", "live")
+            data = fetched
+            # S4：只有抓取成功（source=live）才覆盖数据文件；种子数据即使首启
+            # 也不由 runner 写盘，统一交给显式刷新接口处理。
+            if source == "live":
+                scraper.save_lottery(data)
         meta = LOTTERIES[lottery]
         ctx = engine_context(lottery, data["draws"], meta)
-        pool = [m for m in REGISTRY.values() if m.category != "ensemble"]
+        pool = _pool()
         total_w = float(sum(ALGORITHM_COST_SECONDS.get(m.cost, 1.0) for m in pool))
         t0 = time.time()
 
@@ -114,7 +121,8 @@ def _work(lottery: str) -> None:
             eta = elapsed / max(done_w, 1e-6) * remain if remain > 0 else 0.0
             results_store.progress_update(
                 lottery, i + 1, done_w, m.name, elapsed, eta, phase="predict")
-        results_store.save_batch(results, lottery)
+        # 种子来源（7 位期号）用宽松校验，真实抓取严格校验。
+        results_store.save_batch(results, lottery, allow_seed=(source == "seed"))
 
         # ---------- 阶段 2：全量回测 ----------
         results_store.progress_update(
@@ -154,19 +162,17 @@ def _work(lottery: str) -> None:
         results_store.progress_finish(lottery)
     except Exception as exc:  # noqa: BLE001
         results_store.progress_finish(lottery, f"{type(exc).__name__}: {exc}")
-    finally:
-        with _LOCK:
-            _RUNNING.pop(lottery, None)
 
 
 def _heartbeat(lottery: str, t0: float, stop: threading.Event,
                total: int, total_w: float) -> None:
-    """回测阶段心跳：每 2s 刷新 elapsed，让进度条持续走动。"""
+    """回测阶段心跳：每 2s 刷新 elapsed + updated_at（S3 防死锁抢占），进度条持续走动。"""
     msg = f"回测阶段（{total} 算法 × {FOLDS} 期留一预测）…"
     while not stop.wait(2.0):
         results_store.progress_update(
             lottery, total, total_w, msg,
             time.time() - t0, 0.0, phase="backtest")
+        results_store.global_lock_heartbeat()
 
 
 FOLDS = 200

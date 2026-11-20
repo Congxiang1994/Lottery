@@ -19,21 +19,34 @@ const VISITOR_COOKIE = "lottery_vid";
 
 const COOKIE_MAX_AGE = 365 * 24 * 3600;
 
+/**
+ * 隐私模式 / 存储被禁时的内存兜底 id。
+ *
+ * ⚠️ 必须模块级缓存：之前每次 catch 都现场生成一个新 anon id，
+ * 同一会话里每报一次埋点就是「一个新访客」，访问统计被严重放大。
+ * 现在无论 localStorage 能否用，同一页面会话内 id 都稳定不变。
+ */
+let memoryFallbackId: string | null = null;
+
+function newVisitorId(): string {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 /** 读取（必要时生成）持久访客 UUID。 */
 export function getVisitorId(): string {
   try {
     let id = localStorage.getItem(VISITOR_KEY);
     if (!id) {
-      id =
-        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      id = newVisitorId();
       localStorage.setItem(VISITOR_KEY, id);
     }
     return id;
   } catch {
-    // 隐私模式 / 存储被禁：退化为会话内随机值（不持久，但不会崩）
-    return `anon-${Math.random().toString(36).slice(2, 12)}`;
+    // 隐私模式 / 存储被禁：返回模块级稳定的会话内 id（不持久，但同会话不重复计数）
+    if (!memoryFallbackId) memoryFallbackId = `anon-${newVisitorId()}`;
+    return memoryFallbackId;
   }
 }
 

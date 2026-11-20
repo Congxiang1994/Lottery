@@ -1,11 +1,16 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { PredictionColumn, PredictionItem } from "../types";
 import { CheckCircle2, Filter, XCircle } from "lucide-react";
 
 /**
  * 历史开奖 × 算法推荐对照矩阵。
  *
- * 左侧 sticky 列 = 期号 + 开奖号码；右侧 1 列共识 + 85 列算法，横向滚动。
+ * 左侧 sticky 列 = 期号 + 开奖号码；右侧 1 列共识 + N 列算法，
+ * **全部 15 行共享同一个横向滚动容器**（M14）——之前每行各有一个
+ * overflow-x-auto，滚一行其他行不动，对照起来极其难受，且 15×86 个 Column
+ * 无 memo、每次 setState 全量重渲染。现在：单一滚动容器 + Column memo +
+ * redSet/blueSet useMemo，滚动同步、重渲染收敛到变化的行。
+ *
  * 每列：算法名（hover 全名）→ 红球 → 蓝球 → 命中号高亮描边 → 底部奖级标识。
  * 工具条：只看中奖列 / 分类过滤 / 共识列常显。
  */
@@ -17,7 +22,7 @@ const PRIZE_ORDER = ["一等奖", "二等奖", "三等奖", "四等奖", "五等
    这里**不再**维护手抄的 key→中文名映射表：曾经存在的那张表两边已经漂移过 ——
    key 写成 signal_img 而后端是 signal，界面直接把英文 key 显示出来；
    名字也有两套（后端「统计与概率」/ 前端「统计」），同一分类在算法广场
-   与历史对照页长得不一样。 */
+   & 历史对照页长得不一样。 */
 
 function MiniBall({
   n, kind, hit,
@@ -65,32 +70,47 @@ function PrizeTag({ prize }: { prize: string | null }) {
   );
 }
 
-function Column({
+/** 算法列表头（算法名）。memo：列集合稳定时表头不随滚动/筛选重渲染。 */
+const ColumnHeader = memo(function ColumnHeader({ name, sticky }: { name: string; sticky?: boolean }) {
+  return (
+    <div
+      className={`flex h-full w-[86px] shrink-0 items-center justify-center px-1 text-center ${
+        sticky ? "sticky left-[160px] z-20 ring-1 ring-brand-red/30" : ""
+      }`}
+      title={name}
+    >
+      <span className="block max-w-full truncate text-[11px] font-semibold text-paper-800">
+        {name}
+      </span>
+    </div>
+  );
+});
+
+/**
+ * 单个单元格：某算法在某期的预测号码 + 命中高亮 + 奖级。
+ *
+ * ⚠️ M13：`won` 必须是 `!!col.prize`，不能是 `col.prize !== null` ——
+ * 后端可能下发空字符串表示未中奖，`!== null` 会把空串误判成中奖。
+ */
+const Column = memo(function Column({
   col, draw,
 }: {
   col: PredictionColumn;
   draw: PredictionItem;
 }) {
-  const redSet = new Set(draw.red);
-  const blueSet = new Set(draw.blue);
-  const won = col.prize !== null;
+  const redSet = useMemo(() => new Set(draw.red), [draw.red]);
+  const blueSet = useMemo(() => new Set(draw.blue), [draw.blue]);
+  const won = !!col.prize;
   return (
     <div
-      className={`flex w-[86px] shrink-0 flex-col items-center gap-1.5 rounded-xl border px-1.5 py-2 transition ${
+      className={`flex h-full w-[86px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-1.5 transition ${
         won
-          /* ⚠️ 必须是**不透明**底色：共识列是 sticky 的，半透明底色会让横向滚动时
-             后面的算法列从它里面透上来（`/60`、`/50` 已实测透底）。同时
-             `bg-paper-50/50` 这种半透明语义色在暗色下没有对应映射，会变成亮块。 */
+          /* ⚠️ 必须**不透明**底色：共识列 sticky，半透明底色会让后面的算法列
+             横向滚动时从它里面透上来（`/60`、`/50` 已实测透底）。 */
           ? "border-emerald-200 bg-emerald-50"
           : "border-paper-100 bg-paper-50"
       }`}
     >
-      <div
-        className="max-w-full truncate text-center text-[11px] font-semibold text-paper-800"
-        title={col.name}
-      >
-        {col.name}
-      </div>
       <div className="flex flex-wrap justify-center gap-0.5">
         {col.red.map((n) => (
           <MiniBall key={`r${n}`} n={n} kind="red" hit={redSet.has(n)} />
@@ -104,7 +124,7 @@ function Column({
       <PrizeTag prize={col.prize} />
     </div>
   );
-}
+});
 
 export default function PredictionMatrix({
   items, redLabel, blueLabel,
@@ -129,15 +149,50 @@ export default function PredictionMatrix({
     return [...m.entries()].sort((x, y) => x[0].localeCompare(y[0]));
   }, [items]);
 
+  /**
+   * 统一列集合 —— 单一横向滚动的前提：所有行必须有**同一套列**，否则列错位。
+   * 之前是每行独立过滤 onlyWin，导致每行列数不同；现在改为列级过滤：
+   * 取所有期算法列的并集（按 id/name 去重），`onlyWin` 时只保留「当前页
+   * 至少有一期中奖」的算法列。语义仍可理解为「只看中奖列」，且跨期对齐。
+   */
+  const allCols = useMemo(() => {
+    const m = new Map<string, PredictionColumn>();
+    for (const it of items) {
+      for (const a of it.predictions?.algos ?? []) {
+        const k = a.id ?? a.name;
+        if (!m.has(k)) m.set(k, a);
+      }
+    }
+    return [...m.entries()];
+  }, [items]);
+
+  const columns = useMemo(
+    () =>
+      allCols.filter(([key, col]) => {
+        if (cat !== "all" && col.category !== cat) return false;
+        if (onlyWin) {
+          return items.some((it) =>
+            (it.predictions?.algos ?? []).some(
+              (a) => (a.id ?? a.name) === key && !!a.prize
+            )
+          );
+        }
+        return true;
+      }),
+    [allCols, cat, onlyWin, items]
+  );
+
+  /** 每期 → 算法 id → 列，供数据行按统一列集合取值。 */
   const rows = useMemo(
     () =>
-      items.map((it) => {
-        let algos = it.predictions?.algos ?? [];
-        if (cat !== "all") algos = algos.filter((a) => a.category === cat);
-        if (onlyWin) algos = algos.filter((a) => a.prize !== null);
-        return { draw: it, consensus: it.predictions?.consensus ?? null, algos };
-      }),
-    [items, onlyWin, cat]
+      items.map((it) => ({
+        draw: it,
+        consensus: it.predictions?.consensus ?? null,
+        algoMap: new Map(
+          (it.predictions?.algos ?? []).map((a) => [a.id ?? a.name, a] as const)
+        ),
+      })),
+    [items]
   );
 
   const noData = items.every((it) => !it.predictions);
@@ -192,61 +247,91 @@ export default function PredictionMatrix({
           当前页各期早于算法跑批上线时间，暂无预测数据可对照
         </div>
       ) : (
-        <div className="space-y-4">
-          {rows.map(({ draw, consensus, algos }) => (
-            <div
-              key={draw.issue}
-              className="overflow-hidden rounded-2xl border border-paper-100 bg-white/70"
-            >
-              {/* 期次头 */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-paper-100 bg-paper-50/70 px-4 py-2">
-                <span className="text-sm font-bold text-paper-900">
-                  第 {draw.issue} 期
-                </span>
-                <span className="text-xs text-paper-600">{draw.date}</span>
-                <span className="flex items-center gap-1 text-xs text-paper-600">
-                  开奖 {redLabel}：
-                  {draw.red.map((n) => (
-                    <MiniBall key={`dr${n}`} n={n} kind="red" hit={false} />
-                  ))}
-                  {blueLabel}：
-                  {draw.blue.map((n) => (
-                    <MiniBall key={`db${n}`} n={n} kind="blue" hit={false} />
-                  ))}
-                </span>
-                {draw.predictions ? (
-                  <span className="ml-auto text-[11px] text-paper-500">
-                    对照预测批次 {draw.run_date} · {algos.length}/{draw.predictions.count} 算法
-                    {consensus && ` · 共识命中 ${consensus.red_hit}+${consensus.blue_hit}`}
-                  </span>
-                ) : (
-                  <span className="ml-auto text-[11px] text-paper-400">
-                    无预测数据（早于跑批上线）
-                  </span>
-                )}
+        <div className="overflow-hidden rounded-2xl border border-paper-100 bg-white/70">
+          {/* 单一横向滚动容器：15 行 + 表头一起滚，算法列全程对齐 */}
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label="算法对照矩阵，可横向滚动查看全部算法"
+            className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/40"
+          >
+            <div className="w-max min-w-full">
+              {/* 表头 */}
+              <div className="flex border-b border-paper-200 bg-paper-50">
+                <div className="sticky left-0 z-20 flex w-[160px] shrink-0 items-center border-r border-paper-200 bg-paper-50 px-3 py-2 text-xs font-semibold text-paper-700">
+                  期号 / 开奖号码
+                </div>
+                {/* 共识列常显（sticky），表头也占位对齐 */}
+                <ColumnHeader name="共识" sticky />
+                {columns.map(([key, col]) => (
+                  <div key={key} className="p-1">
+                    <ColumnHeader name={col.name} />
+                  </div>
+                ))}
               </div>
-              {/* 矩阵 */}
-              {draw.predictions && (
-                <div className="overflow-x-auto p-3">
-                  <div className="flex gap-2">
-                    {consensus && (
-                      <div className="sticky left-0 z-10 shrink-0 rounded-xl ring-1 ring-brand-red/30">
-                        <Column col={consensus} draw={draw} />
-                      </div>
-                    )}
-                    {algos.map((a) => (
-                      <Column key={a.id ?? a.name} col={a} draw={draw} />
-                    ))}
-                    {algos.length === 0 && (
-                      <div className="py-6 text-xs text-paper-400">
-                        当前过滤条件下无算法列
+
+              {/* 数据行 */}
+              {rows.map(({ draw, consensus, algoMap }) => (
+                <div key={draw.issue} className="flex border-b border-paper-100">
+                  {/* sticky 期号 + 开奖号码列 */}
+                  <div className="sticky left-0 z-10 w-[160px] shrink-0 border-r border-paper-200 bg-white px-3 py-2">
+                    <div className="text-sm font-bold text-paper-900">
+                      第 {draw.issue} 期
+                    </div>
+                    <div className="text-xs text-paper-600">{draw.date}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-0.5 text-[10px] text-paper-600">
+                      {redLabel}：
+                      {draw.red.map((n) => (
+                        <MiniBall key={`dr${n}`} n={n} kind="red" hit={false} />
+                      ))}
+                      {blueLabel}：
+                      {draw.blue.map((n) => (
+                        <MiniBall key={`db${n}`} n={n} kind="blue" hit={false} />
+                      ))}
+                    </div>
+                    <div className="mt-1 text-[10px] text-paper-500">
+                      {draw.predictions
+                        ? `${draw.predictions.count} 算法 · ${draw.run_date ?? ""}`
+                        : "无预测数据（早于跑批上线）"}
+                    </div>
+                  </div>
+
+                  {/* 共识单元格（sticky） */}
+                  <div className="sticky left-[160px] z-10 bg-white p-1 ring-1 ring-brand-red/30">
+                    {consensus ? (
+                      <Column col={consensus} draw={draw} />
+                    ) : (
+                      <div className="flex h-full w-[86px] items-center justify-center text-[10px] text-paper-400">
+                        —
                       </div>
                     )}
                   </div>
+
+                  {/* 各算法单元格：按统一列集合取值，缺失留空占位保持对齐 */}
+                  {columns.map(([key]) => {
+                    const a = algoMap.get(key);
+                    return (
+                      <div key={key} className="p-1">
+                        {a ? (
+                          <Column col={a} draw={draw} />
+                        ) : (
+                          <div className="flex h-full w-[86px] items-center justify-center text-[10px] text-paper-300">
+                            —
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              {columns.length === 0 && (
+                <div className="p-6 text-center text-xs text-paper-400">
+                  当前过滤条件下无算法列
                 </div>
               )}
             </div>
-          ))}
+          </div>
         </div>
       )}
     </div>

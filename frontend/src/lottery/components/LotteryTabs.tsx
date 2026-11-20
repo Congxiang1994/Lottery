@@ -8,13 +8,15 @@ interface TabsProps {
 
 export default function LotteryTabs({ lotteries, value, onChange }: TabsProps) {
   return (
-    <div className="inline-flex rounded-xl border border-paper-200 bg-paper-200 p-1">
+    <div role="tablist" aria-label="彩种切换" className="inline-flex rounded-xl border border-paper-200 bg-paper-200 p-1">
       {lotteries.map((l) => {
         const active = l.key === value;
         const isRed = l.key === "ssq";
         return (
           <button
             key={l.key}
+            role="tab"
+            aria-selected={active}
             onClick={() => onChange(l.key)}
             aria-pressed={active}
             className={`relative rounded-lg px-4 py-2 text-sm font-semibold transition ${

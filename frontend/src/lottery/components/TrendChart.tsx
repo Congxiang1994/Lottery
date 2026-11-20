@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   ScatterChart,
   Scatter,
@@ -16,26 +17,27 @@ interface Props {
   blueMax: number;
 }
 
-export default function TrendChart({ draws, redMax, blueMax }: Props) {
+/** 提示框提到模块顶层：避免每次渲染都新建组件类型导致 Tooltip 整棵重挂载。 */
+function CustomTooltip({ active, payload, draws }: any) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-paper-200 bg-white px-3 py-2 text-xs text-paper-900 shadow-card">
+      <div>第 {draws[p.x]?.issue} 期</div>
+      <div>
+        {payload[0].name === "红球" ? "红" : "蓝"}球号码：<b>{p.y}</b>
+      </div>
+    </div>
+  );
+}
+
+function TrendChart({ draws, redMax, blueMax }: Props) {
   const redPts: { x: number; y: number }[] = [];
   const bluePts: { x: number; y: number }[] = [];
   draws.forEach((d, i) => {
     d.red.forEach((n) => redPts.push({ x: i, y: n }));
     d.blue.forEach((n) => bluePts.push({ x: i, y: n }));
   });
-
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    const p = payload[0].payload;
-    return (
-      <div className="rounded-lg border border-paper-200 bg-white px-3 py-2 text-xs text-paper-900 shadow-card">
-        <div>第 {draws[p.x]?.issue} 期</div>
-        <div>
-          {payload[0].name === "红球" ? "红" : "蓝"}球号码：<b>{p.y}</b>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="h-[340px] w-full">
@@ -58,7 +60,7 @@ export default function TrendChart({ draws, redMax, blueMax }: Props) {
             width={32}
           />
           <ZAxis range={[54, 54]} />
-          <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+          <Tooltip content={<CustomTooltip draws={draws} />} cursor={{ strokeDasharray: "3 3" }} />
           <Scatter name="红球" dataKey="y" data={redPts} fill="#ff3b5c" fillOpacity={0.85} />
           <Scatter name="蓝球" dataKey="y" data={bluePts} fill="#3b82f6" fillOpacity={0.9} />
         </ScatterChart>
@@ -66,3 +68,5 @@ export default function TrendChart({ draws, redMax, blueMax }: Props) {
     </div>
   );
 }
+
+export default memo(TrendChart);

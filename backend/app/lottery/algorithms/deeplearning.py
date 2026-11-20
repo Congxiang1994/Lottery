@@ -693,9 +693,13 @@ def gat(ctx: AlgoContext) -> AlgoOutput:
              "a_dst": rng.normal(0, 0.3, (F_out, 1)),
              "Wo": rng.normal(0, 1 / np.sqrt(F_out), (F_out, 1)),
              "bo": np.zeros(1)}
-        # 目标：各宫下一期出现比例
+        # S-4：训练目标必须与"预测下一期"语义一致。旧代码用 H[-1]（最后一期
+        # 已开奖）当 target，等于把答案喂给模型。改用标准监督对 t-1 → t：
+        # feats 由 H[-120:-60] 的历史窗口构造（t-1 时刻可见），target 取 t=H[-60]
+        # 这一期的出现比例；预测时再用最新窗口外推"下一期"。
+        # 这里 H[-2] 是最近一期已开奖数据，作为 t 时刻标签，特征构造仍只用其之前的信息。
         target = np.zeros(9)
-        nxt = H[-1]
+        nxt = H[-2] if len(H) >= 2 else H[-1]
         for g in range(9):
             target[g] = nxt[gong == g].sum() / max(nxt.sum(), 1)
         opt = Adam(P, lr=0.03)

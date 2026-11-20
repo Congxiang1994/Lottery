@@ -17,7 +17,7 @@
  * 2. ``status`` 挂在异常上 —— 页面据此区分「会话过期回密码门（401）」与「真故障（5xx）」
  * 3. 网络层失败（断网 / 跨域 / 超时）统一成 ``网络连接失败，请检查网络``
  * 4. 自动带 ``credentials: "same-origin"``（管理会话是 httpOnly cookie）
- * 5. ``query()` 统一拼 query（跳过空值），不再各页面手写模板串
+ * 5. ``query()`` 统一拼 query（跳过空串/null/undefined，保留 false），不再各页面手写模板串
  */
 
 export class ApiError extends Error {
@@ -34,11 +34,13 @@ export class ApiError extends Error {
 
 export type Query = Record<string, string | number | boolean | null | undefined>;
 
-/** 拼 query string（跳过 ``""`` / ``null`` / ``undefined`` / ``false``）。 */
+/** 拼 query string（只跳过 ``""`` / ``null`` / ``undefined``）。 */
 export function query(params: Query): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(params)) {
-    if (v === "" || v === null || v === undefined || v === false) continue;
+    // ⚠️ false 是合法布尔开关参数（如 enabled=false），必须照常发出去，
+    // 不能当空值跳过 —— 否则后端拿到缺省值，布尔开关会被静默吞掉。
+    if (v === "" || v === null || v === undefined) continue;
     parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
   }
   return parts.length ? `?${parts.join("&")}` : "";

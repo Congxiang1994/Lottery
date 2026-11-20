@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import random
+
 from datetime import datetime, date as date_cls
 
 # 地支 -> 数 (子1 ... 亥12)
@@ -18,12 +20,13 @@ BAGUA = {1: "乾", 2: "兑", 3: "离", 4: "震", 5: "巽", 6: "坎", 7: "艮", 8
 
 
 def _hour_to_zhi(hour: int) -> int:
-    """公历小时 -> 时辰地支数(1-12)。子时 23:00-00:59。"""
-    # 子(23,0) 丑(1,2) 寅(3,4) 卯(5,6) 辰(7,8) 巳(9,10)
-    # 午(11,12) 未(13,14) 申(15,16) 酉(17,18) 戌(19,20) 亥(21,22)
-    table = [11, 12, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7,
-             8, 8, 9, 9, 10, 10, 11, 11]
-    return table[hour % 24]
+    """公历小时 -> 时辰地支数(1-12)。子时 23:00-00:59。
+
+    M27：旧表整体错位（23→11、0→12，实际应为子=1）。改用地支序号公式：
+    每个时辰跨 2 小时，子时跨 23/0，故 ``(hour+1)//2 % 12 + 1``：
+      23→1(子) 0→1(子) 1→2(丑) 2→2(丑) … 21→12(亥) 22→12(亥)。
+    """
+    return ((hour % 24 + 1) // 2) % 12 + 1
 
 
 def _lunar_components(d: date_cls):
@@ -53,24 +56,14 @@ def _yao_number(n: int) -> int:
     return r if r != 0 else 6
 
 
-def _lcg(seed: int):
-    state = seed & 0x7FFFFFFF
-    while True:
-        state = (state * 1103515245 + 12345) & 0x7FFFFFFF
-        yield state
-
-
 def _pick(seed: int, count: int, max_n: int) -> list[int]:
-    out: list[int] = []
-    seen = set()
-    for v in _lcg(seed):
-        num = v % max_n + 1
-        if num not in seen:
-            seen.add(num)
-            out.append(num)
-        if len(out) >= count:
-            break
-    return sorted(out)
+    """确定性均匀抽样：用 ``random.Random(seed).sample()`` 取代低位周期有偏的 LCG。
+
+    M28：旧 LCG 的 ``v % max_n`` 低位周期短，某些种子下几乎取不到特定号码；
+    ``sample`` 直接在不重复的全集中均匀抽取，且 __random__ 实现稳定可复现。
+    """
+    count = max(0, min(count, max_n))
+    return sorted(random.Random(seed).sample(range(1, max_n + 1), count))
 
 
 def gua_predict(lottery: str, meta: dict, target_date: date_cls | None = None) -> dict | None:

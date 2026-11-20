@@ -32,6 +32,11 @@ def main() -> int:
     print(f"彩种={lottery} 期数={len(draws)} 最新={draws[-1]['issue']}({draws[-1]['date']})")
     print(f"注册算法 {cat['total']} 个，分类 {len(cat['categories'])} 个\n")
 
+    # 空注册表不能再当「全部成功」：循环不跑却打印成功返回 0，是最危险的假绿。
+    # 先断言有算法，再按筛选条件构建待跑列表。
+    if not REGISTRY:
+        print("✗ 注册表为空，没有可执行算法（疑似 import 失败/注册被删）")
+        return 1
     fails: list[tuple[str, str]] = []
     slow: list[tuple[str, float]] = []
     by_cat: dict[str, list] = {}
@@ -39,6 +44,9 @@ def main() -> int:
         if quick and m.cost > 2:
             continue
         by_cat.setdefault(m.category, []).append(m)
+    if not by_cat:
+        print(f"✗ 筛选后无可执行算法（quick={quick}），拒绝打印「全部成功」")
+        return 1
 
     total_t = time.perf_counter()
     for cat_key, metas in by_cat.items():

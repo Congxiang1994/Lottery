@@ -33,6 +33,7 @@ from app.lottery.algorithms.base import (
     CATEGORIES,
     REGISTRY,
     AlgoContext,
+    digit_seed,
     pick_top,
     safe_run,
 )
@@ -66,6 +67,30 @@ def _hyper_var(pool: int, winners: int, picks: int) -> float:
 def _normal_sf(z: float) -> float:
     """标准正态上尾概率 P(Z >= z)，用 erfc 避免依赖 scipy。"""
     return 0.5 * math.erfc(z / math.sqrt(2.0))
+
+
+def _block_bootstrap_se(series: np.ndarray, block: int, n_boot: int = 400,
+                        seed: int = 0) -> float:
+    """移动块自助法估计"折叠均值"的标准误。
+
+    相邻折用高度重叠的历史窗口预测，折间命中数强相关；直接用
+    sqrt(var/f) 会把误差低估 sqrt(f) 倍，制造大量假显著。块自助法
+    按连续 block 个折整块重采样，保留序列相关性，得到保守得多的 SE。
+    """
+    x = np.asarray(series, dtype=np.float64)
+    n = len(x)
+    if n < 2:
+        return 0.0
+    block = max(1, min(int(block), n))
+    rng = np.random.default_rng(abs(int(seed)) % (2**31 - 1))
+    n_blocks = math.ceil(n / block)
+    offs = np.arange(block)[None, :]
+    means = np.empty(n_boot, dtype=np.float64)
+    for b in range(n_boot):
+        starts = rng.integers(0, n - block + 1, size=n_blocks)
+        idx = (starts[:, None] + offs).ravel()[:n]
+        means[b] = x[idx].mean()
+    return float(means.std(ddof=1))
 
 
 def _bh_reject(pvals: list[float], alpha: float = 0.05) -> list[bool]:
@@ -106,7 +131,10 @@ def evaluate(
     只读接口（GET /backtest 等）一律只消费缓存。
     """
     issue_base = ctx.all_draws[-1]["issue"] if ctx.all_draws else ""
-    if ids is None:
+    # step != 1 的结果（按间隔抽样折）与 step=1 不共用口径，绝不能读写 sqlite
+    # 持久缓存，否则不同 step 会互相污染。内存键已含 step，保持原样。
+    persist = (step == 1)
+    if ids is None and persist:
         cached = results_store.backtest_get(ctx.lottery, folds, max_cost, issue_base)
         if cached is not None:
             return cached
@@ -114,8 +142,8 @@ def evaluate(
     now = time.time()
     if key in _CACHE and now - _CACHE[key][0] < _TTL:
         result = _CACHE[key][1]
-        # 内存命中时也回写 sqlite，防止 sqlite 被删后不再持久化
-        if ids is None:
+        # 内存命中时也回写 sqlite，防止 sqlite 被删后不再持久化（step=1 才写）
+        if ids is None and persist:
             try:
                 results_store.backtest_put(ctx.lottery, folds, max_cost, issue_base, result)
             except Exception:  # noqa: BLE001
@@ -127,7 +155,7 @@ def evaluate(
         return None
 
     # 计算前抢占互斥锁：别人正在算同一份回测则返回 None（由调用方决定等待/503）
-    if ids is None:
+    if ids is None and persist:
         try:
             if not results_store.backtest_claim(ctx.lottery, folds, max_cost):
                 return None
@@ -135,10 +163,10 @@ def evaluate(
             pass  # 锁不可用时退化为直接计算（不阻塞）
 
     try:
-        return _compute(ctx, ids, folds, max_cost, step, key, now, issue_base)
+        return _compute(ctx, ids, folds, max_cost, step, key, now, issue_base, persist)
     finally:
         # 释放锁（正常/异常路径都释放；锁未持有或已过期也无害）
-        if ids is None:
+        if ids is None and persist:
             try:
                 results_store.backtest_release(ctx.lottery, folds, max_cost)
             except Exception:  # noqa: BLE001
@@ -154,6 +182,7 @@ def _compute(
     key: tuple,
     now: float,
     issue_base: str,
+    persist: bool,
 ) -> dict:
     """实际滚动回测计算（evaluate 已抢锁，此处不再查缓存）。"""
     pool = [m for m in REGISTRY.values()
@@ -163,6 +192,12 @@ def _compute(
     n_all = len(ctx.all_draws)
     cuts = [n_all - 1 - i * step for i in range(folds)]
     cuts = [c for c in cuts if c >= 200]
+    # S-3：不足 3 个有效切点时不产出/不落库。否则会生成 folds=0 但 algos 齐全的
+    # 假结果，下游把"从未评估"误读成"评估通过"。
+    if len(cuts) < 3:
+        raise ValueError(
+            f"有效回测折数不足：请求 folds={folds}, step={step}，"
+            f"数据共 {n_all} 期，过滤 c>=200 后仅剩 {len(cuts)} 个切点（至少需 3 个）")
 
     rk, bk = ctx.red_count, ctx.blue_count
     rm, bm = ctx.red_max, ctx.blue_max
@@ -173,12 +208,19 @@ def _compute(
                "elapsed_ms": 0.0}
         for m in pool
     }
+    # 每算法逐折命中数（用于块自助法估计相关折下的标准误）
+    hit_series: dict[str, dict[str, list[int]]] = {
+        m.id: {"red": [], "blue": []} for m in pool
+    }
 
     # 零假设基线累计（每折 × NULL_TICKETS 组真随机号码）
     null_red_hits = 0
     null_blue_hits = 0
+    # 每折一份 lift 分布（块自助法的经验依据），供前端画箱线图/校验离散度
+    null_red_lifts: list[float] = []
+    null_blue_lifts: list[float] = []
 
-    for c in cuts:
+    for fold_i, c in enumerate(cuts):
         sub = sub_context(ctx, c)
         actual = ctx.all_draws[c]
         ar = set(int(v) for v in actual["red"])
@@ -196,24 +238,42 @@ def _compute(
             s["both"] += 1 if (hr and hb) else 0
             s["folds"] += 1
             s["elapsed_ms"] += (time.perf_counter() - t0) * 1000
+            hit_series[m.id]["red"].append(hr)
+            hit_series[m.id]["blue"].append(hb)
 
         # ---------- 零假设基线：同一折里抽 NULL_TICKETS 组真随机号码 ----------
-        rng = np.random.default_rng(abs(c) + 20260101)
+        # 种子用折索引 i（而非绝对 cut），避免不同数据集/不同 step 下种子随 cut 漂移
+        rng = np.random.default_rng(fold_i + 20260101)
         nh_r = nh_b = 0
-        for _ in range(NULL_TICKETS):
+        fold_tickets = NULL_TICKETS
+        fold_red_hits = np.zeros(fold_tickets, dtype=np.int32)
+        fold_blue_hits = np.zeros(fold_tickets, dtype=np.int32)
+        for t_i in range(fold_tickets):
             rr = rng.choice(rm, rk, replace=False) + 1
             bb = rng.choice(bm, bk, replace=False) + 1
-            nh_r += len(ar & set(int(x) for x in rr))
-            nh_b += len(ab & set(int(x) for x in bb))
+            hr = len(ar & set(int(x) for x in rr))
+            hb = len(ab & set(int(x) for x in bb))
+            fold_red_hits[t_i] = hr
+            fold_blue_hits[t_i] = hb
+            nh_r += hr
+            nh_b += hb
         null_red_hits += nh_r
         null_blue_hits += nh_b
+        # 每折命中数的均值 -> 归一化成 lift 后入分布
+        exp_r_fold = rk * rk / rm
+        exp_b_fold = bk * bk / bm
+        null_red_lifts.append(round(float(fold_red_hits.mean() / exp_r_fold), 4) if exp_r_fold else 0.0)
+        null_blue_lifts.append(round(float(fold_blue_hits.mean() / exp_b_fold), 4) if exp_b_fold else 0.0)
 
     exp_r = rk * rk / rm
     exp_b = bk * bk / bm
     var_r = _hyper_var(rm, rk, rk)
     var_b = _hyper_var(bm, bk, bk)
 
-    for s in stats.values():
+    # 块大小：相邻折窗口重叠比例。step=1 时相邻折差 1 期、窗口 200 期 → 高度重叠，
+    # 取 min(10, 折数) 作为块长，保留折间相关性；再用观测折内方差做下限守卫。
+    block = max(2, min(10, len(cuts) // 2))
+    for aid, s in stats.items():
         f = max(s["folds"], 1)
         s["red_avg"] = round(s["red_hits"] / f, 3)
         s["blue_avg"] = round(s["blue_hits"] / f, 3)
@@ -225,28 +285,30 @@ def _compute(
         s["elapsed_ms"] = round(s["elapsed_ms"] / f, 1)
 
         # ---- 95% 置信区间 + 单侧 p 值（H0: 真实 lift = 1，即算法无预测力）----
-        sd_r = math.sqrt(var_r / f) if var_r > 0 else 0.0
-        sd_b = math.sqrt(var_b / f) if var_b > 0 else 0.0
-        if sd_r > 1e-12:
-            lo, hi = s["red_avg"] - 1.96 * sd_r, s["red_avg"] + 1.96 * sd_r
-            s["red_ci"] = [round(lo / exp_r, 3), round(hi / exp_r, 3)]
-            z = (s["red_avg"] - exp_r) / sd_r
-            s["red_p"] = round(_normal_sf(z), 4)
-        else:
-            s["red_ci"] = [1.0, 1.0]
-            s["red_p"] = 1.0
-        if sd_b > 1e-12:
-            lo, hi = s["blue_avg"] - 1.96 * sd_b, s["blue_avg"] + 1.96 * sd_b
-            s["blue_ci"] = [round(lo / exp_b, 3), round(hi / exp_b, 3)]
-            z = (s["blue_avg"] - exp_b) / sd_b
-            s["blue_p"] = round(_normal_sf(z), 4)
-        else:
-            s["blue_ci"] = [1.0, 1.0]
-            s["blue_p"] = 1.0
+        # M-5：不再用 sqrt(var/f)（折间高度相关时低估约 sqrt(f) 倍），
+        # 改以移动块自助法估计均值的标准误，并取"解析下限"的较大者做保守守卫。
+        seed = digit_seed(aid, "red")
+        for side, exp, avg_key, ci_key, p_key in (
+            ("red", exp_r, "red_avg", "red_ci", "red_p"),
+            ("blue", exp_b, "blue_avg", "blue_ci", "blue_p"),
+        ):
+            series = np.asarray(hit_series[aid][side], dtype=np.float64)
+            sd_boot = _block_bootstrap_se(series, block, seed=seed + (0 if side == "red" else 1))
+            sd_floor = math.sqrt((var_r if side == "red" else var_b) / f)
+            se = max(sd_boot, sd_floor)
+            if se > 1e-12 and exp > 0:
+                lo, hi = s[avg_key] - 1.96 * se, s[avg_key] + 1.96 * se
+                s[ci_key] = [round(lo / exp, 3), round(hi / exp, 3)]
+                z = (s[avg_key] - exp) / se
+                s[p_key] = round(_normal_sf(z), 4)
+            else:
+                s[ci_key] = [1.0, 1.0]
+                s[p_key] = 1.0
 
-    # ---- 多重比较校正：85 个算法同时检验，不校正必然出假阳性 ----
+    # ---- 多重比较校正：红 + 蓝两侧一起做 BH（取每算法两侧 p 值的较小者）----
     ordered = list(stats.values())
-    for s, ok in zip(ordered, _bh_reject([s["red_p"] for s in ordered])):
+    combined_p = [min(s["red_p"], s["blue_p"]) for s in ordered]
+    for s, ok in zip(ordered, _bh_reject(combined_p)):
         s["passes_fdr"] = bool(ok)
 
     result = {
@@ -259,13 +321,17 @@ def _compute(
         # 零假设基线：如果算法没有任何预测力，随机号码会打出的 lift 中位数
         "null_red_lift": round(null_red_hits / max(len(cuts) * NULL_TICKETS, 1) / exp_r, 3),
         "null_blue_lift": round(null_blue_hits / max(len(cuts) * NULL_TICKETS, 1) / exp_b, 3),
+        # M-5：补充逐折 lift 分布（而非只有点估计），前端可选用 / 画箱线图
+        "null_red_lifts": null_red_lifts,
+        "null_blue_lifts": null_blue_lifts,
         "null_tickets_per_fold": NULL_TICKETS,
         "passes_fdr_count": sum(1 for s in stats.values() if s["passes_fdr"]),
-        "note": "lift = 实际命中 / 随机期望；95%CI 跨 1.0 即与随机无差别；"
-                "passes_fdr=False 表示经多重比较校正后仍无法排除「纯噪声」",
+        "note": "lift = 实际命中 / 随机期望；95%CI 用移动块自助法（折间相关）；"
+                "passes_fdr 对红蓝两侧 p 取较小者统一做 BH 校正；"
+                "False 表示经多重比较校正后仍无法排除「纯噪声」",
     }
     _CACHE[key] = (now, result)
-    if ids is None:
+    if ids is None and persist:
         try:
             results_store.backtest_put(ctx.lottery, folds, max_cost, issue_base, result)
         except Exception:  # noqa: BLE001
@@ -274,8 +340,17 @@ def _compute(
 
 
 def meta_weights(ctx: AlgoContext, folds: int = 4, max_cost: int = 1) -> dict[str, float]:
-    """由回测 lift 生成元学习权重（softmax，温度 0.25，仅取 lift>0 者）。"""
-    res = evaluate(ctx, folds=folds, max_cost=max_cost)
+    """由回测 lift 生成元学习权重（softmax，温度 0.25）。
+
+    S-2：这里必须显式 allow_compute=True —— 此前沿用 evaluate 的默认只读模式，
+    缓存永远缺失 → 永远返回空权重 → meta_stack 静默退化成全 0.5 且 detail 为空。
+    元学习堆叠是在线按需计算，属于「显式触发计算」的场景。
+    """
+    try:
+        res = evaluate(ctx, folds=folds, max_cost=max_cost, allow_compute=True)
+    except Exception:  # noqa: BLE001
+        # 数据不足（例如 S-3 有效折数不够）时降级：返回空权重，由调用方给出明确 error
+        return {}
     if res is None:
         return {}
     ids = [a["id"] for a in res["algos"]]

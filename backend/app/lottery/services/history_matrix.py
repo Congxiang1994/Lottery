@@ -19,6 +19,8 @@ SQL 调用 + 奖级换算。它违反 ``router 只做 HTTP 边界`` 的分层约
 """
 from __future__ import annotations
 
+import bisect
+
 import numpy as np
 
 from app.lottery.algorithms.base import CATEGORIES, normalize, pick_top
@@ -26,6 +28,12 @@ from app.lottery.prizes import prize_level
 from app.lottery.services import results_store
 
 CONSENSUS_NAME = "全算法共识"
+
+
+def consensus_seed(issue: str | int) -> int:
+    """tiebreak 种子唯一真源：完整期号（5/7 位均可），非数字退化为 0。"""
+    text = str(issue or "")
+    return int(text) if text.isdigit() else 0
 
 
 def page_slice(draws: list[dict], page: int, page_size: int) -> tuple[list[dict], int]:
@@ -63,12 +71,14 @@ def build_history_matrix(
     page_draws, total = page_slice(draws, page, page_size)
 
     # 1) 逐期定位预测批次（run_date <= 开奖日期 的最近一次）
+    # M21：一次查出全部 run_date 后在内存 bisect，避免逐期 SQL 的 N+1。
+    all_dates = results_store.all_run_dates(lottery)  # 升序
     items: list[dict] = []
     wanted_dates: set[str] = set()
     for d in page_draws:
         d = dict(d)
-        run = results_store.runs_before(lottery, d["date"], limit=1)
-        d["_run_date"] = run[0] if run else None
+        idx = bisect.bisect_right(all_dates, d["date"]) - 1
+        d["_run_date"] = all_dates[idx] if idx >= 0 else None
         if d["_run_date"]:
             wanted_dates.add(d["_run_date"])
         items.append(d)
@@ -79,7 +89,6 @@ def build_history_matrix(
     batches = results_store.batch_by_dates(lottery, sorted(wanted_dates))
 
     # 3) 组装：共识列 + 算法列 + 命中/奖级
-    seed_base = 0
     for d in items:
         run_date = d.pop("_run_date", None)
         base = {"issue": d["issue"], "date": d["date"],
@@ -93,8 +102,10 @@ def build_history_matrix(
         # ⚠️ 取值必须在 d.clear() 之后用 base，不能再用 d —— 上面已经清空过。
         actual_red = {int(v) for v in base["red"]}
         actual_blue = {int(v) for v in base["blue"]}
-        seed_base += 1
-        seed = int(str(base["issue"])[-6:] or seed_base)
+
+        # M31：seed 口径与 combine_latest_batch 统一为「完整期号」（一个函数真源），
+        # 旧实现这里用后 6 位、首页用完整期号，同一批号在两页 tiebreak 分叉。
+        seed = consensus_seed(base["issue"])
 
         # 共识列：走全站唯一口径 aggregate_consensus（号码计票）
         agg = aggregate_consensus(batch, meta, seed)
@@ -184,7 +195,7 @@ def combine_latest_batch(lottery: str, meta: dict) -> dict:
     if not res:
         return None
 
-    seed = int(res["issue_base"] or 0)
+    seed = consensus_seed(res["issue_base"])
     agg = aggregate_consensus(res["results"], meta, seed)
 
     return {

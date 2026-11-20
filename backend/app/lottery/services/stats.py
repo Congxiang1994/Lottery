@@ -68,8 +68,11 @@ def hot_cold(draws: list[dict], meta: dict, window: int = 50, top: int = 10) -> 
     def rank(counter: Counter, max_n: int) -> dict:
         counts = [(n, counter.get(n, 0)) for n in _range(max_n)]
         counts.sort(key=lambda x: x[1], reverse=True)
+        # M26：cold 只能从 hot 之外的尾段取，避免 top 较大时冷热号重叠。
+        n_cold = min(top, max_n - top)
         hot = [{"number": n, "count": c} for n, c in counts[:top]]
-        cold = [{"number": n, "count": c} for n, c in counts[-top:][::-1]]
+        cold = [{"number": n, "count": c}
+                for n, c in counts[-n_cold:][::-1]] if n_cold else []
         return {"hot": hot, "cold": cold}
 
     return {

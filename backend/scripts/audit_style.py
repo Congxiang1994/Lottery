@@ -22,18 +22,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent / "app"
 issues: list[str] = []
 
 
-def module_docstring_ids(tree: ast.Module) -> set[int]:
-    """收集所有字符串常量节点的 id（docstring / 文档示例里的文字不算代码）。"""
-    return {id(n) for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
-
-
 for f in sorted(ROOT.rglob("*.py")):
     if "__pycache__" in f.parts:
         continue
     src = f.read_text()
     tree = ast.parse(src)
     rel = f.relative_to(ROOT)
-    strings = module_docstring_ids(tree)
 
     # ---- 1) import 副作用 ----
     for node in tree.body:
@@ -64,8 +58,9 @@ for f in sorted(ROOT.rglob("*.py")):
         name = getattr(fn, "id", None) or getattr(fn, "attr", None)
         if name != "HTTPException":
             continue
-        if id(node) in strings:
-            continue
+        # 旧实现这里有 `if id(node) in strings: continue` —— strings 是字符串
+        # 常量的 id 集合，node 是 Call 节点，两者永不相等，是永久不触发的
+        # 死过滤（且会误放行合法 HTTPException 检查）；直接删掉。
         if not any(k.arg == "status_code" for k in node.keywords):
             issues.append(f"{f}:{node.lineno} HTTPException 缺 status_code=")
 

@@ -142,8 +142,9 @@ def heat_diffusion(ctx: AlgoContext) -> AlgoOutput:
         for _ in range(steps):
             lap = np.empty_like(u)
             lap[1:-1] = u[2:] - 2 * u[1:-1] + u[:-2]
-            lap[0] = u[1] - u[0]          # 绝热边界 ∂u/∂x = 0
-            lap[-1] = u[-2] - u[-1]
+            # Neumann 绝热边界：镜像虚节点 u[-1]=u[1] → 拉普拉斯 = 2(u[1]-u[0])
+            lap[0] = 2 * (u[1] - u[0])
+            lap[-1] = 2 * (u[-2] - u[-1])
             u = u + cfl * lap
         return u
 
@@ -176,25 +177,34 @@ def spring_oscillator(ctx: AlgoContext) -> AlgoOutput:
         cnt = Hs.sum(axis=0)
         period = np.where(cnt > 0, L / np.maximum(cnt, 1), float(max_n) / max(k, 1) * 2)
         omega = 2.0 * math.pi / np.clip(period, 1.5, 200.0)
+        # 稳定性守卫：半隐式欧拉对无阻尼振子要求 ω·dt < 2，否则指数发散、
+        # 打分溢出/全部饱和成同一个值。ω 过大时缩小有效 dt 到稳定域内。
+        omega_max = float(np.max(omega)) if len(omega) else 0.0
+        dt_eff = dt
+        if omega_max * dt_eff > 2.0:
+            dt_eff = 1.5 / omega_max
         x = np.zeros(max_n)
         v = np.zeros(max_n)
         for t in range(L):
             f = Hs[t]  # 开出 → 单位冲量
             acc = f - 2.0 * zeta * omega * v - (omega ** 2) * x
-            v = v + acc * dt
-            x = x + v * dt
+            v = v + acc * dt_eff
+            x = x + v * dt_eff
         # 再自由演化一步，得到「下一期」的预测位移
         acc = -2.0 * zeta * omega * v - (omega ** 2) * x
-        v_n = v + acc * dt
-        x_n = x + v_n * dt
+        v_n = v + acc * dt_eff
+        x_n = x + v_n * dt_eff
         energy = 0.5 * v_n ** 2 + 0.5 * (omega ** 2) * x_n ** 2
-        return normalize(x_n) * 0.6 + normalize(energy) * 0.4, period
+        return normalize(x_n) * 0.6 + normalize(energy) * 0.4, period, dt_eff
 
-    r, pr = side(ctx.RH, ctx.red_max, ctx.red_count)
-    b, _ = side(ctx.BH, ctx.blue_max, ctx.blue_count)
+    r, pr, dt_r = side(ctx.RH, ctx.red_max, ctx.red_count)
+    b, _, dt_b = side(ctx.BH, ctx.blue_max, ctx.blue_count)
     return AlgoOutput(red=r, blue=b, detail={
         "原理": "ẍ + 2ζωẋ + ω²x = f(t)，冲量响应 + 一步外推",
-        "阻尼比 ζ": zeta, "积分步长 dt": dt, "回溯期数": 300,
+        "阻尼比 ζ": zeta, "积分步长 dt": dt,
+        "有效步长 dt_eff": {"红球": round(dt_r, 4), "蓝球": round(dt_b, 4)},
+        "稳定性守卫": "ω·dt>2 时缩小 dt 至 1.5/ω_max（半隐式欧拉稳定域）",
+        "回溯期数": 300,
         "固有周期范围": f"{pr.min():.1f} ~ {pr.max():.1f} 期",
         "打分": "0.6·归一化位移 + 0.4·归一化总能量",
         "物理含义": "出现节奏与固有频率共振的号码振幅最大",

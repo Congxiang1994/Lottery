@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+import time
 from datetime import datetime
 from typing import Iterable
 
@@ -128,21 +128,36 @@ def init() -> None:
     init_schema(DB_PATH, SCHEMA, migrations=_MIGRATIONS)
 
 
-def _validate_issue_bases(results: list[dict], lottery: str) -> None:
-    """落库前校验 issue_base 必须是真实存在的期号。
+def _validate_issue_bases(results: list[dict], lottery: str,
+                          allow_seed: bool = False) -> None:
+    """落库前校验 ``issue_base`` 格式与存在性。
 
     2026-08-27 曾写入一条 ``issue_base='20263435'`` 的脏批次（87 个字符的期号，
     开奖数据里根本不存在）。``runs_before`` 会把它当成合法批次选中，导致
     历史对照页那一期的「算法对照」整体错位，且没有任何告警。
 
-    校验规则：必须是 5 位数字，且能在该彩种的开奖数据里找到。
+    格式规则（两种合法期号）：
+    - 5 位 ``YYNNN``：真实抓取数据格式；**必须**能在开奖数据里找到。
+    - 7 位 ``YYYYNNN``：仓库种子数据格式；其期号是占位值，不在真实开奖数据里，
+      因此**跳过存在性校验**，但仍严格校验是 7 位纯数字。
+
+    ``allow_seed=True`` 时接受 5 位 + 7 位两种；默认 ``False`` 只接受 5 位。
+    两种模式下脏数据（非 5/7 位、非纯数字、5 位不在真实数据中）一律拒绝。
     """
     bases = {str(r.get("issue_base", "")) for r in results}
-    bad_shape = {b for b in bases if not (len(b) == 5 and b.isdigit())}
+    allowed_lengths = (5, 7) if allow_seed else (5,)
+    label = "5 位或 7 位" if allow_seed else "5 位"
+    bad_shape = {b for b in bases
+                 if not (len(b) in allowed_lengths and b.isdigit())}
     if bad_shape:
         raise ValueError(
-            f"{lottery}: 期号格式非法 {sorted(bad_shape)}（应为 5 位数字）；"
+            f"{lottery}: 期号格式非法 {sorted(bad_shape)}（应为{label}数字）；"
             "疑似抓取/解析污染，拒绝落库")
+
+    # 种子来源（7 位）的期号是占位值，不在真实开奖数据里，跳过存在性校验。
+    live_bases = {b for b in bases if len(b) == 5}
+    if not live_bases:
+        return
 
     # 与真实开奖数据比对（导入放函数内：避免 results_store ↔ scraper 循环导入）
     from app.lottery.services import scraper
@@ -153,14 +168,15 @@ def _validate_issue_bases(results: list[dict], lottery: str) -> None:
     known = {str(d["issue"]) for d in (data or {}).get("draws", [])}
     if not known:
         return
-    unknown = {b for b in bases if b not in known}
+    unknown = {b for b in live_bases if b not in known}
     if unknown:
         raise ValueError(
             f"{lottery}: 期号 {sorted(unknown)} 不在开奖数据中"
             f"（现有最新 {max(known)}）；拒绝写入脏批次")
 
 
-def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = None) -> int:
+def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = None,
+               allow_seed: bool = False) -> int:
     """一次性写一批算法结果；upsert 行为：同日重跑会覆盖。
 
     每条 dict 需包含: id, name, category, red, blue, red_conf, blue_conf,
@@ -171,13 +187,14 @@ def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = Non
     共识融合必须用前者，否则会退化。
 
     落库前会校验 ``issue_base`` 是真实期号（见 ``_validate_issue_bases``）。
+    ``allow_seed=True`` 时额外接受种子格式（7 位）期号，供种子来源的批次落库。
     """
     if run_date is None:
         run_date = datetime.now().strftime("%Y-%m-%d")
     rows = []
     packed = list(results)
     if packed:
-        _validate_issue_bases(packed, lottery)
+        _validate_issue_bases(packed, lottery, allow_seed=allow_seed)
     for r in packed:
         rows.append((
             lottery, r["id"], r["name"], r["category"],
@@ -194,6 +211,15 @@ def save_batch(results: Iterable[dict], lottery: str, run_date: str | None = Non
     if not rows:
         return 0
     with _conn() as con:
+        # M25：同日重跑时，本批未出现的 algo_id 必须清掉。否则 INSERT OR REPLACE
+        # 只覆盖出现的行，上一批多出来的算法会残留，导致「最新一批」算法数虚高。
+        batch_algo_ids = [r[1] for r in rows]  # rows[1] = algo_id
+        marks = ",".join("?" for _ in batch_algo_ids)
+        con.execute(
+            f"""DELETE FROM algo_results
+                WHERE lottery=? AND run_date=? AND algo_id NOT IN ({marks})""",
+            (lottery, run_date, *batch_algo_ids),
+        )
         con.executemany(
             """INSERT OR REPLACE INTO algo_results
                (lottery, algo_id, algo_name, category, run_date, issue_base,
@@ -258,13 +284,20 @@ def latest(lottery: str) -> dict | None:
 
 
 def summary() -> list[dict]:
-    """全局最近一批：每个彩种一行摘要。"""
+    """全局最近一批：每个彩种一行摘要。
+
+    S8：必须按**每个彩种各自的** MAX(run_date) 取，不能用全库 MAX —— 两彩种
+    跑批日期不同时（如 ssq=2026-11-19、dlt=2026-11-18），全局 MAX 会把 dlt
+    那一行直接丢掉，只剩 1 行。
+    """
     with _conn() as con:
         cur = con.execute(
-            """SELECT lottery, run_date, issue_base, COUNT(*) AS n
-               FROM algo_results
-               WHERE run_date = (SELECT MAX(run_date) FROM algo_results)
-               GROUP BY lottery, run_date"""
+            """SELECT a.lottery, a.run_date, a.issue_base, COUNT(*) AS n
+               FROM algo_results a
+               JOIN (SELECT lottery, MAX(run_date) AS max_date
+                     FROM algo_results GROUP BY lottery) m
+                 ON a.lottery = m.lottery AND a.run_date = m.max_date
+               GROUP BY a.lottery, a.run_date, a.issue_base"""
         )
         return [
             {"lottery": r[0], "run_date": r[1], "issue_base": r[2], "count": r[3]}
@@ -286,14 +319,27 @@ def runs(lottery: str, limit: int = 14) -> list[str]:
 
 def runs_before(lottery: str, date: str, limit: int = 1) -> list[str]:
     """该彩种在 date（含）之前最近 limit 次 run_date（降序）。"""
+    return all_run_dates(lottery, before=date, limit=limit)
+
+
+def all_run_dates(lottery: str, before: str | None = None,
+                  limit: int | None = None) -> list[str]:
+    """一次查出该彩种所有 run_date（升序）。
+
+    M21：历史对照页逐期调 ``runs_before`` 会 N+1；改为一次取出全部日期，
+    调用方在内存里 bisect 定位每期对应的批次。
+    """
+    sql = "SELECT DISTINCT run_date FROM algo_results WHERE lottery = ?"
+    args: list = [lottery]
+    if before is not None:
+        sql += " AND run_date <= ?"
+        args.append(before)
+    sql += " ORDER BY run_date ASC"
+    if limit is not None:
+        sql += " LIMIT ?"
+        args.append(limit)
     with _conn() as con:
-        cur = con.execute(
-            """SELECT DISTINCT run_date FROM algo_results
-               WHERE lottery = ? AND run_date <= ?
-               ORDER BY run_date DESC LIMIT ?""",
-            (lottery, date, limit),
-        )
-        return [r[0] for r in cur.fetchall()]
+        return [r[0] for r in con.execute(sql, args).fetchall()]
 
 
 def batch_by_dates(lottery: str, run_dates: list[str]) -> dict[str, list[dict]]:
@@ -361,33 +407,58 @@ def by_date(lottery: str, run_date: str) -> dict | None:
 # ------------------------------------------------------------ 全量运行进度
 
 
+#: 运行锁「心跳超时」阈值（秒）。running=1 但 updated_at 超过该时长视为死锁，
+#: 允许抢占。runner 每 2s 刷新一次心跳，正常运行绝不会误判。
+STALE_LOCK_SECONDS = 600  # 10 分钟
+
+
+def _stale(updated_at: str | None, now_ts: float | None = None) -> bool:
+    """判断 updated_at 是否已超过 STALE_LOCK_SECONDS（脏值/空值按已过期处理）。"""
+    if not updated_at:
+        return True
+    try:
+        ts = datetime.strptime(str(updated_at), "%Y-%m-%d %H:%M:%S").timestamp()
+    except (ValueError, TypeError):
+        return True
+    return (now_ts if now_ts is not None else time.time()) - ts > STALE_LOCK_SECONDS
+
+
 def progress_start(lottery: str, total: int, total_weight: float,
                    phase: str = "predict") -> bool:
-    """抢占式启动：仅当该彩种无任务在跑时成功（跨 worker 原子）。"""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """抢占式启动：无任务在跑、或旧任务心跳超时（死锁）时成功（跨 worker 原子）。
+
+    S3：running=1 但若 updated_at 已超 10 分钟（后台线程崩溃残留），视为死锁可抢占。
+    """
+    now_dt = datetime.now()
+    now = now_dt.strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as con:
-        cur = con.execute(
-            """UPDATE run_progress SET running=1, done=0, total=?, done_weight=0,
-               total_weight=?, current='', elapsed=0, eta=0, phase=?, error=NULL,
-               started_at=?, finished_at=NULL, updated_at=?
-               WHERE lottery=? AND running=0""",
-            (total, total_weight, phase, now, now, lottery),
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT running, updated_at FROM run_progress WHERE lottery=?",
+            (lottery,)).fetchone()
+        if row and row[0] and not _stale(row[1], now_dt.timestamp()):
+            return False
+        con.execute(
+            """INSERT OR REPLACE INTO run_progress
+               (lottery, running, done, total, done_weight, total_weight,
+                current, elapsed, eta, phase, error, started_at, finished_at, updated_at)
+               VALUES (?,1,0,?,0,?,'',0,0,?,NULL,?,NULL,?)""",
+            (lottery, total, total_weight, phase, now, now),
         )
-        if cur.rowcount == 0:
-            # 首次启动（无行）或已在运行
-            cur = con.execute(
-                "SELECT running FROM run_progress WHERE lottery=?", (lottery,))
-            row = cur.fetchone()
-            if row and row[0]:
-                return False
-            con.execute(
-                """INSERT OR REPLACE INTO run_progress
-                   (lottery, running, done, total, done_weight, total_weight,
-                    current, elapsed, eta, phase, error, started_at, finished_at, updated_at)
-                   VALUES (?,1,0,?,0,?,'',0,0,?,NULL,?,NULL,?)""",
-                (lottery, total, total_weight, phase, now, now),
-            )
     return True
+
+
+def progress_heartbeat(lottery: str, phase: str | None = None) -> None:
+    """只刷新 updated_at（心跳），用于后台任务长时间运行时防被判定为死锁（S3）。"""
+    with _conn() as con:
+        if phase is None:
+            con.execute(
+                "UPDATE run_progress SET updated_at=? WHERE lottery=?",
+                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), lottery))
+        else:
+            con.execute(
+                "UPDATE run_progress SET updated_at=?, phase=? WHERE lottery=?",
+                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), phase, lottery))
 
 
 def progress_update(lottery: str, done: int, done_weight: float,
@@ -515,23 +586,34 @@ def backtest_release(lottery: str, folds: int, max_cost: int) -> None:
 # 密码校验流控已迁到 app.common.security（全站唯一实现）。
 # 此处 re-export 是为了不弄脏既有调用点（lottery router / 各域 admin auth / 脚本）。
 # 新代码请直接 ``from app.common.security import verify_password``。
-verify_password = verify_password  # noqa: PLW0127  (显式声明对外契约，勿删)
 
 
 def global_lock_start() -> bool:
-    """获取全局运行互斥锁（跨 worker 原子）。已占用返回 False。"""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """获取全局运行互斥锁（跨 worker 原子）。
+
+    S3：running=1 但 updated_at 超 10 分钟（后台崩溃残留）视为死锁可抢占。
+    """
+    now_dt = datetime.now()
+    now = now_dt.strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as con:
         con.execute("BEGIN IMMEDIATE")
         con.execute("INSERT OR IGNORE INTO global_run_lock (id) VALUES (1)")
         row = con.execute(
-            "SELECT running FROM global_run_lock WHERE id=1").fetchone()
-        if row and row[0]:
+            "SELECT running, updated_at FROM global_run_lock WHERE id=1").fetchone()
+        if row and row[0] and not _stale(row[1], now_dt.timestamp()):
             return False
         con.execute(
             "UPDATE global_run_lock SET running=1, started_at=?, updated_at=? WHERE id=1",
             (now, now))
     return True
+
+
+def global_lock_heartbeat() -> None:
+    """刷新全局锁 updated_at（长任务心跳），防被 S3 死锁抢占误判。"""
+    with _conn() as con:
+        con.execute(
+            "UPDATE global_run_lock SET updated_at=? WHERE id=1",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),))
 
 
 def global_lock_end() -> None:

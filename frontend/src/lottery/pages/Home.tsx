@@ -18,27 +18,31 @@ export default function Home() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [combined, setCombined] = useState<SavedCombined | null>(null);
-  /* 失败态：原先 catch 全静默，接口挂掉时页面会**永远停在骨架屏**上 ——
-     用户看不出是在加载还是已经失败。现在失败给一句人话 + 重试出口。 */
-  const [err, setErr] = useState<string | null>(null);
+  /* 失败态：M6 —— summary 与 stats 两条请求各自独立记错，
+     避免一路失败把另一路明明正常的数据也按下去。 */
+  const [summaryErr, setSummaryErr] = useState<string | null>(null);
+  const [statsErr, setStatsErr] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
-  const retry = () => setTick((t) => t + 1);
+  const retrySummary = () => setTick((t) => t + 1);
+  const retryStats = () => setTick((t) => t + 1);
 
   useEffect(() => {
     setSummary(null);
     setStats(null);
     setCombined(null);
-    setErr(null);
-    api.summary(key).then(setSummary).catch((e) => setErr(errText(e)));
-    api.stats(key).then(setStats).catch((e) => setErr(errText(e)));
+    setSummaryErr(null);
+    setStatsErr(null);
+    api.summary(key).then(setSummary).catch((e) => setSummaryErr(errText(e)));
+    api.stats(key).then(setStats).catch((e) => setStatsErr(errText(e)));
     // 共识推荐来自每日跑批缓存，不触发实时计算 —— 拿不到只是「暂无数据」，不算故障
     api.savedCombined(key).then(setCombined).catch(() => {});
   }, [key, tick]);
 
   const meta = lotteries.find((l) => l.key === key);
-  const hot = stats?.hot_cold.red.hot[0];
-  const hotBlue = stats?.hot_cold.blue.hot[0];
-  const coldRed = stats?.hot_cold.red.cold[0];
+  // M20：hot_cold 各层全链可选链，某层缺字段时不能再抛 TypeError 白屏
+  const hot = stats?.hot_cold?.red?.hot?.[0];
+  const hotBlue = stats?.hot_cold?.blue?.hot?.[0];
+  const coldRed = stats?.hot_cold?.red?.cold?.[0];
 
   return (
     <div className="pt-8">
@@ -65,11 +69,18 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 加载失败：一条提示 + 重试，取代「永远转的骨架屏」 */}
-      {err && (
+      {/* 加载失败：两条请求各自一块，互不牵连（M6） */}
+      {summaryErr && (
         <ErrorBlock
-          message={`开奖数据加载失败：${err}`}
-          onRetry={retry}
+          message={`最新开奖加载失败：${summaryErr}`}
+          onRetry={retrySummary}
+          className="mt-8"
+        />
+      )}
+      {statsErr && (
+        <ErrorBlock
+          message={`统计数据加载失败：${statsErr}`}
+          onRetry={retryStats}
           className="mt-8"
         />
       )}
@@ -104,7 +115,7 @@ export default function Home() {
                 ))}
               </div>
             </div>
-          ) : err ? null : (
+          ) : summaryErr ? null : (
             <div className="shimmer h-32 animate-shimmer rounded-2xl" />
           )}
         </div>
@@ -170,7 +181,7 @@ export default function Home() {
               redMax={summary?.red_max ?? (key === "dlt" ? 35 : 33)}
               blueMax={summary?.blue_max ?? (key === "dlt" ? 12 : 16)}
             />
-          ) : err ? null : (
+          ) : statsErr ? null : (
             <div className="shimmer h-[340px] animate-shimmer rounded-2xl" />
           )}
         </Reveal>
@@ -179,10 +190,10 @@ export default function Home() {
           <h3 className="mb-4 text-base font-bold">号码出现频率</h3>
           {stats ? (
             <div className="space-y-5">
-              <Heatmap items={stats.frequency.red.map((f) => ({ number: f.number, count: f.count }))} kind="red" title={`${meta?.red_label}（1-${summary?.red_max}）`} />
-              <Heatmap items={stats.frequency.blue.map((f) => ({ number: f.number, count: f.count }))} kind="blue" title={`${meta?.blue_label}（1-${summary?.blue_max}）`} />
+              <Heatmap items={stats.frequency.red.map((f) => ({ number: f.number, count: f.count }))} kind="red" title={`${meta?.red_label}（1-${summary?.red_max ?? stats?.summary?.red_max ?? ""}）`} />
+              <Heatmap items={stats.frequency.blue.map((f) => ({ number: f.number, count: f.count }))} kind="blue" title={`${meta?.blue_label}（1-${summary?.blue_max ?? stats?.summary?.blue_max ?? ""}）`} />
             </div>
-          ) : err ? null : (
+          ) : statsErr ? null : (
             <div className="shimmer h-48 animate-shimmer rounded-2xl" />
           )}
         </Reveal>
@@ -200,7 +211,7 @@ export default function Home() {
               <ColdHotRow title="热号" items={stats.hot_cold.red.hot} kind="red" hot />
               <ColdHotRow title="冷号" items={stats.hot_cold.red.cold} kind="red" />
             </div>
-          ) : err ? null : (
+          ) : statsErr ? null : (
             <div className="shimmer h-24 animate-shimmer rounded-2xl" />
           )}
           <button

@@ -11,5 +11,10 @@ Environment=PYTHONPATH=/opt/lottery/backend
 ExecStart=/opt/lottery/backend/.venv/bin/python /opt/lottery/backend/scripts/run_all_algorithms.py
 StandardOutput=journal
 StandardError=journal
-# 全量跑批（预测 + 回测）实测约 15 分钟；给足超时上限
-TimeoutStartSec=1800
+# 全量跑批（预测 + 回测）实测约 20 分钟；40 分钟上限留足余量，
+# 并计入爬取（2×60s）、预测（~18s）与等回测锁（最多 900s）的开销（M32）。
+TimeoutStartSec=2400
+# oneshot 失败时自动重试一次（M32）：瞬时网络抖动 / 数据库瞬时锁不应让
+# 当日跑批静默躺成 failed；每 30s 重试，避免忙循环。
+Restart=on-failure
+RestartSec=30
