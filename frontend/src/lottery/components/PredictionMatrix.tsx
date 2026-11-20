@@ -5,18 +5,29 @@ import { CheckCircle2, Filter, XCircle } from "lucide-react";
 /**
  * 历史开奖 × 算法推荐对照矩阵。
  *
- * 左侧 sticky 列 = 期号 + 开奖号码；右侧 1 列共识 + N 列算法，
- * **全部 15 行共享同一个横向滚动容器**（M14）——之前每行各有一个
- * overflow-x-auto，滚一行其他行不动，对照起来极其难受，且 15×86 个 Column
- * 无 memo、每次 setState 全量重渲染。现在：单一滚动容器 + Column memo +
- * redSet/blueSet useMemo，滚动同步、重渲染收敛到变化的行。
+ * 布局要点（2026-11-20 重做）
+ * --------------------------
+ * 单一横向滚动容器（15 行 + 表头一起滚，算法列全程对齐），但**视觉上保持
+ * 「每期一张卡片」**：表头是均匀网格，数据行是有分隔的卡片带，不再出现
+ * 「表头高低不齐 / 共识列贯穿红框」这类破坏观感的问题。
  *
- * 每列：算法名（hover 全名）→ 红球 → 蓝球 → 命中号高亮描边 → 底部奖级标识。
- * 工具条：只看中奖列 / 分类过滤 / 共识列常显。
+ * 踩过的坑（改之前先读）：
+ * - 表头各单元格必须**同一套盒模型**（同高、同 padding、同外包装）。之前
+ *   算法列外面套了一层 `<div className="p-1">` 而共识列没有 → 表头高低不齐。
+ * - 共识列**不要用 `ring-*`**：在单一滚动容器里它会被拉成贯穿整列的红色竖线，
+ *   非常刺眼。改用极淡底色 + 左右 1px 分隔线表达「这一列特殊」。
+ * - 算法名固定 `w-[108px] + line-clamp-2`：太窄会截成「VAE 变自分…」，
+ *   太高会让表头随名字长短跳动。两行 + 固定行高两头都占住。
  */
 
 const PRIZE_ORDER = ["一等奖", "二等奖", "三等奖", "四等奖", "五等奖", "六等奖",
   "七等奖", "八等奖", "九等奖"];
+
+/** 列宽常量：表头与数据行必须引用同一份，否则一定错位。 */
+const COL_W = "w-[108px]";
+const LEFT_W = "w-[178px]";
+/** 共识列 sticky 的 left 偏移 = 左侧期号列宽度。改 LEFT_W 必须同步这里。 */
+const CONSENSUS_LEFT = "left-[178px]";
 
 /* 分类显示名一律取后端下发的 category_name（CATEGORIES 是唯一真源）。
    这里**不再**维护手抄的 key→中文名映射表：曾经存在的那张表两边已经漂移过 ——
@@ -70,16 +81,17 @@ function PrizeTag({ prize }: { prize: string | null }) {
   );
 }
 
-/** 算法列表头（算法名）。memo：列集合稳定时表头不随滚动/筛选重渲染。 */
-const ColumnHeader = memo(function ColumnHeader({ name, sticky }: { name: string; sticky?: boolean }) {
+/** 算法列表头。固定两行高度，名字长短不影响表头行高。 */
+const ColumnHeader = memo(function ColumnHeader({
+  name, highlight,
+}: { name: string; highlight?: boolean }) {
   return (
-    <div
-      className={`flex h-full w-[86px] shrink-0 items-center justify-center px-1 text-center ${
-        sticky ? "sticky left-[160px] z-20 ring-1 ring-brand-red/30" : ""
-      }`}
-      title={name}
-    >
-      <span className="block max-w-full truncate text-[11px] font-semibold text-paper-800">
+    <div className={`${COL_W} shrink-0 px-1.5`} title={name}>
+      <span
+        className={`line-clamp-3 block text-[9.5px] font-semibold leading-[1.25] ${
+          highlight ? "text-brand-red" : "text-paper-700"
+        }`}
+      >
         {name}
       </span>
     </div>
@@ -103,10 +115,10 @@ const Column = memo(function Column({
   const won = !!col.prize;
   return (
     <div
-      className={`flex h-full w-[86px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-1.5 transition ${
+      className={`flex h-full w-full flex-col items-center justify-center gap-1.5 rounded-lg border px-1 py-1.5 transition ${
         won
           /* ⚠️ 必须**不透明**底色：共识列 sticky，半透明底色会让后面的算法列
-             横向滚动时从它里面透上来（`/60`、`/50` 已实测透底）。 */
+             横向滚动时从它里面透上来。 */
           ? "border-emerald-200 bg-emerald-50"
           : "border-paper-100 bg-paper-50"
       }`}
@@ -137,7 +149,6 @@ export default function PredictionMatrix({
   const [cat, setCat] = useState<string>("all");
 
   // 分类选项：仅从数据中出现过的分类取，保证切换有意义。
-  // 显示名用后端下发的 category_name（取不到才退回 key —— 至少不会显示错名字）
   const cats = useMemo(() => {
     const m = new Map<string, string>();
     for (const it of items) {
@@ -151,7 +162,6 @@ export default function PredictionMatrix({
 
   /**
    * 统一列集合 —— 单一横向滚动的前提：所有行必须有**同一套列**，否则列错位。
-   * 之前是每行独立过滤 onlyWin，导致每行列数不同；现在改为列级过滤：
    * 取所有期算法列的并集（按 id/name 去重），`onlyWin` 时只保留「当前页
    * 至少有一期中奖」的算法列。语义仍可理解为「只看中奖列」，且跨期对齐。
    */
@@ -256,80 +266,98 @@ export default function PredictionMatrix({
             className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/40"
           >
             <div className="w-max min-w-full">
-              {/* 表头 */}
-              <div className="flex border-b border-paper-200 bg-paper-50">
-                <div className="sticky left-0 z-20 flex w-[160px] shrink-0 items-center border-r border-paper-200 bg-paper-50 px-3 py-2 text-xs font-semibold text-paper-700">
+              {/* ---------- 表头：所有单元格同一套盒模型 + 固定高度 ---------- */}
+              <div className="flex h-[52px] items-center border-b border-paper-200 bg-paper-50">
+                <div
+                  className={`sticky left-0 z-20 flex h-full ${LEFT_W} shrink-0 items-center border-r border-paper-200 bg-paper-50 px-3 text-[11px] font-semibold text-paper-700`}
+                >
                   期号 / 开奖号码
                 </div>
-                {/* 共识列常显（sticky），表头也占位对齐 */}
-                <ColumnHeader name="共识" sticky />
+                {/* 共识列：极淡底色 + 左右细线，不用 ring（会被拉成贯穿红线） */}
+                <div
+                  className={`sticky ${CONSENSUS_LEFT} z-20 flex h-full ${COL_W} shrink-0 items-center justify-center border-r border-paper-200 bg-brand-red/[0.035] px-1.5`}
+                >
+                  <span className="text-[10px] font-semibold text-brand-red">共识</span>
+                </div>
                 {columns.map(([key, col]) => (
-                  <div key={key} className="p-1">
-                    <ColumnHeader name={col.name} />
+                  <ColumnHeader key={key} name={col.name} />
+                ))}
+                {columns.length === 0 && (
+                  <div className="px-3 text-[10px] text-paper-400">无算法列</div>
+                )}
+              </div>
+
+              {/* ---------- 数据行：卡片带（每期一条，hover 高亮） ---------- */}
+              <div className="divide-y divide-paper-100">
+                {rows.map(({ draw, consensus, algoMap }) => (
+                  <div
+                    key={draw.issue}
+                    className="flex items-stretch transition hover:bg-paper-50/60"
+                  >
+                    {/* 期号 + 开奖号码（紧凑两行：标题行 + 号码行） */}
+                    <div
+                      className={`sticky left-0 z-10 ${LEFT_W} shrink-0 border-r border-paper-200 bg-white px-3 py-2`}
+                    >
+                      <div className="flex items-baseline justify-between gap-1">
+                        <span className="whitespace-nowrap text-[13px] font-bold text-paper-900">
+                          第 {draw.issue} 期
+                        </span>
+                        <span className="whitespace-nowrap text-[10px] text-paper-500">
+                          {draw.date.slice(5)}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-0.5">
+                        <span className="mr-0.5 shrink-0 text-[9px] text-paper-400">
+                          {redLabel}
+                        </span>
+                        {draw.red.map((n) => (
+                          <MiniBall key={`dr${n}`} n={n} kind="red" hit={false} />
+                        ))}
+                        <span className="mx-0.5 shrink-0 text-[9px] text-paper-400">
+                          {blueLabel}
+                        </span>
+                        {draw.blue.map((n) => (
+                          <MiniBall key={`db${n}`} n={n} kind="blue" hit={false} />
+                        ))}
+                      </div>
+                      <div className="mt-1 whitespace-nowrap text-[10px] text-paper-400">
+                        {draw.predictions
+                          ? `${draw.predictions.count} 算法对照`
+                          : "无预测数据"}
+                      </div>
+                    </div>
+
+                    {/* 共识单元格（sticky） */}
+                    <div
+                      className={`sticky ${CONSENSUS_LEFT} z-10 ${COL_W} shrink-0 border-r border-paper-200 bg-brand-red/[0.035] px-1 py-1.5`}
+                    >
+                      {consensus ? (
+                        <Column col={consensus} draw={draw} />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-paper-300">
+                          —
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 各算法单元格：按统一列集合取值，缺失留空占位保持对齐 */}
+                    {columns.map(([key]) => {
+                      const a = algoMap.get(key);
+                      return (
+                        <div key={key} className={`${COL_W} shrink-0 px-1 py-1.5`}>
+                          {a ? (
+                            <Column col={a} draw={draw} />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[10px] text-paper-300">
+                              —
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 ))}
               </div>
-
-              {/* 数据行 */}
-              {rows.map(({ draw, consensus, algoMap }) => (
-                <div key={draw.issue} className="flex border-b border-paper-100">
-                  {/* sticky 期号 + 开奖号码列 */}
-                  <div className="sticky left-0 z-10 w-[160px] shrink-0 border-r border-paper-200 bg-white px-3 py-2">
-                    <div className="text-sm font-bold text-paper-900">
-                      第 {draw.issue} 期
-                    </div>
-                    <div className="text-xs text-paper-600">{draw.date}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-0.5 text-[10px] text-paper-600">
-                      {redLabel}：
-                      {draw.red.map((n) => (
-                        <MiniBall key={`dr${n}`} n={n} kind="red" hit={false} />
-                      ))}
-                      {blueLabel}：
-                      {draw.blue.map((n) => (
-                        <MiniBall key={`db${n}`} n={n} kind="blue" hit={false} />
-                      ))}
-                    </div>
-                    <div className="mt-1 text-[10px] text-paper-500">
-                      {draw.predictions
-                        ? `${draw.predictions.count} 算法 · ${draw.run_date ?? ""}`
-                        : "无预测数据（早于跑批上线）"}
-                    </div>
-                  </div>
-
-                  {/* 共识单元格（sticky） */}
-                  <div className="sticky left-[160px] z-10 bg-white p-1 ring-1 ring-brand-red/30">
-                    {consensus ? (
-                      <Column col={consensus} draw={draw} />
-                    ) : (
-                      <div className="flex h-full w-[86px] items-center justify-center text-[10px] text-paper-400">
-                        —
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 各算法单元格：按统一列集合取值，缺失留空占位保持对齐 */}
-                  {columns.map(([key]) => {
-                    const a = algoMap.get(key);
-                    return (
-                      <div key={key} className="p-1">
-                        {a ? (
-                          <Column col={a} draw={draw} />
-                        ) : (
-                          <div className="flex h-full w-[86px] items-center justify-center text-[10px] text-paper-300">
-                            —
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-
-              {columns.length === 0 && (
-                <div className="p-6 text-center text-xs text-paper-400">
-                  当前过滤条件下无算法列
-                </div>
-              )}
             </div>
           </div>
         </div>
