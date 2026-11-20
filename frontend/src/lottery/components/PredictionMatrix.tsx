@@ -225,9 +225,11 @@ export default function PredictionMatrix({
           (it.predictions?.algos ?? []).map((a) => [a.id ?? a.name, a] as const)
         ),
       }))
-      .filter(({ draw, consensus, algoMap }) => {
+      .filter(({ consensus, algoMap }) => {
         if (!onlyWin) return true;
-        if (consensus && !!consensus.prize) return true;
+        // 共识列常显 → 只要有共识，这一期就保留（否则会出现「有共识格子
+        // 但整行被过滤掉」的矛盾，或者只剩一行光秃秃的期号）。
+        if (consensus) return true;
         for (const [k, a] of algoMap) {
           if (visibleKeys.has(k) && !!a.prize) return true;
         }
@@ -343,7 +345,9 @@ export default function PredictionMatrix({
 
                     {/* 共识单元格（sticky）。只看中奖且共识未中奖时**整格不渲染**，
                         否则会留下一条空的粉色底纹（视觉噪点）。 */}
-                    {consensus && (!onlyWin || consensus.prize) ? (
+                    {/* 共识列**常显**：不参与「只看中奖」过滤 —— 它是整页的基准列，
+                        中没中都展示，方便一眼看到全算法融合出的号码。 */}
+                    {consensus ? (
                       <div
                         className={`sticky left-[64px] z-10 ${COL_W} shrink-0 border-r border-paper-200 bg-brand-red/[0.035] px-1 py-1`}
                       >
