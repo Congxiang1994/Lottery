@@ -24,7 +24,7 @@ import { CheckCircle2, Filter, XCircle } from "lucide-react";
  *   算法列外面套了一层 `<div className="p-1">` 而共识列没有 → 表头高低不齐。
  * - 共识列**不要用 `ring-*`**：在单一滚动容器里它会被拉成贯穿整列的红色竖线，
  *   非常刺眼。改用极淡底色 + 右侧 1px 分隔线表达「这一列特殊」。
- * - 算法名固定 `w-[108px] + line-clamp-3`：太窄会截成「VAE 变自分…」，
+ * - 算法名固定 `w-[120px] + line-clamp-3`：太窄会截成「VAE 变自分…」，
  *   太高会让表头随名字长短跳动。三行 + 固定行高两头都占住。
  */
 
@@ -32,7 +32,7 @@ const PRIZE_ORDER = ["一等奖", "二等奖", "三等奖", "四等奖", "五等
   "七等奖", "八等奖", "九等奖"];
 
 /** 列宽常量：表头与数据行必须引用同一份，否则一定错位。 */
-const COL_W = "w-[108px]";
+const COL_W = "w-[120px]";
 /** 共识列 sticky 吸在最左（左列移除后 left 偏移为 0）。 */
 const CONSENSUS_LEFT = "left-0";
 
@@ -112,17 +112,19 @@ const ColumnHeader = memo(function ColumnHeader({
  * 后端可能下发空字符串表示未中奖，`!== null` 会把空串误判成中奖。
  */
 const Column = memo(function Column({
-  col, draw,
+  col, draw, showName = false,
 }: {
   col: PredictionColumn;
   draw: PredictionItem;
+  /** 「只看中奖」稀疏视图下没有表头，必须在卡片内显示算法名，否则认不出是谁。 */
+  showName?: boolean;
 }) {
   const redSet = useMemo(() => new Set(draw.red), [draw.red]);
   const blueSet = useMemo(() => new Set(draw.blue), [draw.blue]);
   const won = !!col.prize;
   return (
     <div
-      className={`flex h-[74px] w-full flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border px-1 py-1 transition ${
+      className={`flex h-full min-h-[74px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1 py-1 transition ${
         won
           /* ⚠️ 必须**不透明**底色：共识列 sticky，半透明底色会让后面的算法列
              横向滚动时从它里面透上来。 */
@@ -130,6 +132,14 @@ const Column = memo(function Column({
           : "border-paper-100 bg-paper-50"
       }`}
     >
+      {showName && (
+        <div
+          className="line-clamp-2 w-full text-center text-[9px] leading-[1.2] text-paper-600"
+          title={col.name}
+        >
+          {col.name}
+        </div>
+      )}
       <div className="flex flex-wrap justify-center gap-0.5">
         {col.red.map((n) => (
           <MiniBall key={`r${n}`} n={n} kind="red" hit={redSet.has(n)} />
@@ -317,7 +327,7 @@ export default function PredictionMatrix({
                 {rows.map(({ draw, consensus, algoMap }) => (
                   <div
                     key={draw.issue}
-                    className="flex items-center transition hover:bg-paper-50/60"
+                    className="flex items-stretch transition hover:bg-paper-50/60"
                   >
                     {/* 期号窄条（sticky，只有期号 + 日期） */}
                     <div
@@ -337,7 +347,7 @@ export default function PredictionMatrix({
                       <div
                         className={`sticky left-[64px] z-10 ${COL_W} shrink-0 border-r border-paper-200 bg-brand-red/[0.035] px-1 py-1`}
                       >
-                        <Column col={consensus} draw={draw} />
+                        <Column col={consensus} draw={draw} showName={onlyWin} />
                       </div>
                     ) : null}
 
@@ -350,8 +360,8 @@ export default function PredictionMatrix({
                       if (!a) return null;
                       if (onlyWin && !a.prize) return null;
                       return (
-                        <div key={key} className={`${COL_W} shrink-0 px-1 py-1`}>
-                          <Column col={a} draw={draw} />
+                        <div key={key} className={`${COL_W} shrink-0 self-stretch px-1 py-1`}>
+                          <Column col={a} draw={draw} showName={onlyWin} />
                         </div>
                       );
                     })}
