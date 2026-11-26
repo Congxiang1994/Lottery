@@ -118,7 +118,7 @@ def oauth_start(region: str, explicit_base: str = "") -> dict[str, Any]:
         )
     except requests.RequestException as e:
         raise UpstreamError(f"无法连接登录服务 {base}：{e.__class__.__name__}")
-    data = _data_of(_envelope(resp))
+    data = _envelope(resp)
     state = _first(data, ["state", "State"])
     if not state:
         raise UpstreamError("登录服务未返回 state")
@@ -157,7 +157,7 @@ def oauth_poll(session: dict[str, Any]) -> dict[str, Any] | None:
     for path in (f"{API_PREFIX}/account", f"{API_PREFIX}/login/account"):
         try:
             r = requests.get(session["base"] + path, headers=headers, timeout=HTTP_TIMEOUT_SECONDS)
-            candidate = _data_of(_envelope(r))
+            candidate = _envelope(r)
             if _first(candidate, ["uid", "Uid", "userId", "UserID"]):
                 profile = candidate
                 break
@@ -220,7 +220,7 @@ def refresh_token(cred: dict[str, Any]) -> dict[str, Any]:
             json={},
             timeout=HTTP_TIMEOUT_SECONDS,
         )
-        data = _data_of(_envelope(resp))
+        data = _envelope(resp)
     except requests.RequestException as e:
         raise UpstreamError(f"刷新凭据失败：{e.__class__.__name__}")
     access = _first(data, ["accessToken", "access_token"])

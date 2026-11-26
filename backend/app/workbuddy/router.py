@@ -128,7 +128,10 @@ def oauth_start(payload: dict, workbuddy_session: str | None = Cookie(default=No
     _require(workbuddy_session)
     region = _check_region(str(payload.get("region") or "cn"))
     explicit = str(payload.get("base") or "")
-    info = upstream.oauth_start(region, explicit)
+    try:
+        info = upstream.oauth_start(region, explicit)
+    except upstream.UpstreamError as e:
+        raise HTTPException(502, detail=str(e))
     login_id = "wbo_" + uuid.uuid4().hex
     with _sessions_lock:
         _clean_sessions()

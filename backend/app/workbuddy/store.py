@@ -204,6 +204,7 @@ def list_accounts(region: str | None = None, include_hidden: bool = False) -> li
 def get_credential(account_id: str) -> dict[str, Any] | None:
     """取明文凭据（仅服务端内部调用，绝不进任何响应）。"""
     with get_conn(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
         row = con.execute(
             "SELECT cred, region, token_expiry, refresh_expiry FROM workbuddy_accounts WHERE account_id=?",
             (account_id,),
@@ -266,6 +267,7 @@ def set_member(account_id: str, member: bool) -> bool:
 def set_current(account_id: str) -> bool:
     """每区域唯一当前账号（把同区域其它账号 clear）。"""
     with get_conn(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
         row = con.execute("SELECT region FROM workbuddy_accounts WHERE account_id=?", (account_id,)).fetchone()
         if not row:
             return False
@@ -315,6 +317,7 @@ def get_settings(region: str) -> dict[str, Any]:
     if region not in REGIONS:
         raise ValueError("未知区域")
     with get_conn(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
         row = con.execute("SELECT data FROM workbuddy_settings WHERE region=?", (region,)).fetchone()
     if not row:
         return default_settings()
