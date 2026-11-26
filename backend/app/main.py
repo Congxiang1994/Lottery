@@ -29,6 +29,8 @@ from app.ctshare import store as ctshare_store
 from app.babysong import downloads
 from app.smzdm import router as smzdm_router
 from app.smzdm import scheduler as smzdm_scheduler
+from app.workbuddy import router as workbuddy_router
+from app.workbuddy import store as workbuddy_store
 from app.trigger import scheduler
 from app.common import password as password_store
 from app.common.db import harden_dir
@@ -59,6 +61,8 @@ async def lifespan(app: FastAPI):
     smzdm_scheduler.start()
     # 儿歌下载队列恢复：建表 + 清理崩溃残留 + 队列有 pending 则继续下载（重启不丢任务）
     downloads.resume_pending()
+    # WorkBuddy 账号池：建表（凭据库独立、密钥文件 0600）
+    workbuddy_store.init()
     yield
     # 退出前把访问日志队列 flush 干净（否则最后 1 秒的记录会丢）
     access_store.shutdown()
@@ -81,6 +85,7 @@ app.include_router(story_router.router)
 app.include_router(access_router.router)
 app.include_router(ctshare_router.router)
 app.include_router(smzdm_router.router)
+app.include_router(workbuddy_router.router)
 
 # 对外 API 调用明细日志：只处理 /api/story/v1/ 前缀，其他路由原样放行
 app.middleware("http")(v1_call_logger)

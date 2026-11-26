@@ -47,6 +47,7 @@ const Tools = lazy(() => import("./tools/Tools"));
 const DealsAdmin = lazy(() => import("./deals/DealsAdmin"));
 const CT = lazy(() => import("./ct/CT"));
 const CTAdmin = lazy(() => import("./ct/CTAdmin"));
+const WorkBuddy = lazy(() => import("./workbuddy/WorkBuddy"));
 
 export default function App() {
   const [lotteries, setLotteries] = useState<LotteryInfo[]>([]);
@@ -99,6 +100,7 @@ export default function App() {
                   <Route path="/deals-admin" element={<DealsAdmin />} />
                   <Route path="/ct" element={<CT />} />
                   <Route path="/ct-admin" element={<CTAdmin />} />
+                  <Route path="/workbuddy" element={<WorkBuddy />} />
                   {/* 兼容旧链接：/ 原为彩票首页，现统一指向聚合门户 */}
                   <Route path="*" element={<Portal />} />
                 </Routes>
