@@ -67,17 +67,11 @@ export function Lightbox({ image, onClose }: LightboxProps) {
   const gesture = useRef<Gesture>({ ...INITIAL_GESTURE });
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
-  /** 桌面端单击关闭的延时句柄（双击缩放时取消） */
-  const clickCloseTimer = useRef<number | null>(null);
 
   /** 关闭时复位缩放 */
   useEffect(() => {
     setZoom(IDENTITY);
     gesture.current = { ...INITIAL_GESTURE };
-    if (clickCloseTimer.current !== null) {
-      window.clearTimeout(clickCloseTimer.current);
-      clickCloseTimer.current = null;
-    }
   }, [image]);
 
   /** 量容器与图片显示尺寸（供 pan 钳制） */
@@ -197,12 +191,7 @@ export function Lightbox({ image, onClose }: LightboxProps) {
         // 手指没落在照片上时 —— 照片上的轻点留给双击缩放）。
         // 放大后轻点空白同样关闭；拖拽/捏合（moved）不会误关。
         if (g.mode === "pan" && !g.moved && !g.onImage) {
-          // 单击关闭延后 300ms：等一等，若紧跟着第二次轻点则是双击（不关）
-          const firstTapAt = g.lastTapAt;
-          window.setTimeout(() => {
-            if (gesture.current.lastTapAt !== firstTapAt) return; // 已被双击消费
-            onClose();
-          }, 300);
+          onClose(); // 轻点非照片区域：立即关闭
         }
         g.mode = "none";
       }
@@ -272,20 +261,10 @@ export function Lightbox({ image, onClose }: LightboxProps) {
         className="ct-zoom-stage relative h-full w-full overflow-hidden"
         onClick={(e) => {
           // 照片上的轻点留给双击缩放；按钮交给它自己的 onClick；
-          // 点照片外的空白处 → 关闭预览（桌面端；移动端走 onEnd 的轻点逻辑）。
+          // 点照片外的空白处 → 立即关闭预览（桌面端；移动端走 onEnd 的轻点逻辑）。
           const t = e.target;
           if (t instanceof Element && t.closest("img, button, a, input")) return;
-          if (clickCloseTimer.current !== null) window.clearTimeout(clickCloseTimer.current);
-          clickCloseTimer.current = window.setTimeout(() => {
-            clickCloseTimer.current = null;
-            onClose();
-          }, 300); // 等双击缩放的第二次点击到来后取消
-        }}
-        onDoubleClick={() => {
-          if (clickCloseTimer.current !== null) {
-            window.clearTimeout(clickCloseTimer.current);
-            clickCloseTimer.current = null;
-          }
+          onClose();
         }}
       >
         <div
