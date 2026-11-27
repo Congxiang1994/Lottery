@@ -20,7 +20,9 @@ import {
  *
  * 交互（全部围绕这一张图）：
  * - 双指捏合放大照片本身（浏览器默认会缩放整个网页，这里接管）；
- * - 双击 1x / 2.5x 切换；放大后单指拖动；轻点任意处或右上角 × 关闭；
+ * - 双击 1x / 2.5x 切换；放大后单指拖动；
+ * - 点击/轻点照片外的空白处即关闭（更符合相册直觉），点右上角 × 也关闭；
+ *   照片本身保留双击缩放与拖动，不会被误关；
  * - 返回键 / 侧滑只关预览不离开页面（CT.tsx 的 useModalHistory）。
  *
  * ⚠️ 不能只靠 meta viewport 的 ``user-scalable=no``：iOS Safari 10+ 直接忽略它，
@@ -47,11 +49,13 @@ interface Gesture {
   lastTapAt: number;
   /** 本次触摸是否已经产生动作（拖拽/捏合/双击），用于区分「轻点关闭」 */
   moved: boolean;
+  /** 手指落在照片上：照片上的轻点要留给双击缩放，不触发关闭 */
+  onImage: boolean;
 }
 
 const INITIAL_GESTURE: Gesture = {
   mode: "none", startDist: 0, startScale: 1,
-  lastX: 0, lastY: 0, lastTapAt: 0, moved: false,
+  lastX: 0, lastY: 0, lastTapAt: 0, moved: false, onImage: false,
 };
 
 export function Lightbox({ image, onClose }: LightboxProps) {
@@ -63,11 +67,17 @@ export function Lightbox({ image, onClose }: LightboxProps) {
   const gesture = useRef<Gesture>({ ...INITIAL_GESTURE });
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  /** 桌面端单击关闭的延时句柄（双击缩放时取消） */
+  const clickCloseTimer = useRef<number | null>(null);
 
   /** 关闭时复位缩放 */
   useEffect(() => {
     setZoom(IDENTITY);
     gesture.current = { ...INITIAL_GESTURE };
+    if (clickCloseTimer.current !== null) {
+      window.clearTimeout(clickCloseTimer.current);
+      clickCloseTimer.current = null;
+    }
   }, [image]);
 
   /** 量容器与图片显示尺寸（供 pan 钳制） */
@@ -108,10 +118,13 @@ export function Lightbox({ image, onClose }: LightboxProps) {
     //    右上角 × 就会「点了没反应」。交给浏览器走原生 click → onClose。
     const isControl = (target: EventTarget | null) =>
       target instanceof Element && !!target.closest("button, a, input");
+    const isImage = (target: EventTarget | null) =>
+      target instanceof Element && !!target.closest("img");
 
     const onStart = (e: TouchEvent) => {
       if (isControl(e.target)) return; // 交互元素：不做手势，让 click 正常合成
       const g = gesture.current;
+      g.onImage = isImage(e.target);
       if (e.touches.length === 2) {
         const [a, b] = points(e.touches);
         g.mode = "pinch";
@@ -180,8 +193,10 @@ export function Lightbox({ image, onClose }: LightboxProps) {
         g.lastY = p.y;
       } else if (e.touches.length === 0) {
         // ⚠️ touchstart 的 preventDefault 会抑制合成 click，
-        // 所以「轻点关闭」要在这里自己处理（且仅在未放大、没拖动、非双击时）。
-        if (g.mode === "pan" && !g.moved && zoomRef.current.scale <= MIN_SCALE + 0.01) {
+        // 所以「轻点关闭」要在这里自己处理（仅在没拖动、非双击、
+        // 手指没落在照片上时 —— 照片上的轻点留给双击缩放）。
+        // 放大后轻点空白同样关闭；拖拽/捏合（moved）不会误关。
+        if (g.mode === "pan" && !g.moved && !g.onImage) {
           // 单击关闭延后 300ms：等一等，若紧跟着第二次轻点则是双击（不关）
           const firstTapAt = g.lastTapAt;
           window.setTimeout(() => {
@@ -252,7 +267,27 @@ export function Lightbox({ image, onClose }: LightboxProps) {
       className="ct-lightbox-panel"
     >
       {/* 全屏舞台：只有照片和右上角 ×，没有任何文字 */}
-      <div ref={stageRef} className="ct-zoom-stage relative h-full w-full overflow-hidden">
+      <div
+        ref={stageRef}
+        className="ct-zoom-stage relative h-full w-full overflow-hidden"
+        onClick={(e) => {
+          // 照片上的轻点留给双击缩放；按钮交给它自己的 onClick；
+          // 点照片外的空白处 → 关闭预览（桌面端；移动端走 onEnd 的轻点逻辑）。
+          const t = e.target;
+          if (t instanceof Element && t.closest("img, button, a, input")) return;
+          if (clickCloseTimer.current !== null) window.clearTimeout(clickCloseTimer.current);
+          clickCloseTimer.current = window.setTimeout(() => {
+            clickCloseTimer.current = null;
+            onClose();
+          }, 300); // 等双击缩放的第二次点击到来后取消
+        }}
+        onDoubleClick={() => {
+          if (clickCloseTimer.current !== null) {
+            window.clearTimeout(clickCloseTimer.current);
+            clickCloseTimer.current = null;
+          }
+        }}
+      >
         <div
           className="flex h-full w-full items-center justify-center"
           onDoubleClick={(e) => doubleTapAt(e.clientX, e.clientY)}
